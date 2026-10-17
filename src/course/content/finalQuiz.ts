@@ -1,0 +1,122 @@
+import type { QuizDef } from '../types';
+
+/** Sluttquiz: nøyaktig disse 15 spørsmålene. Bestått er minst 12 riktige. */
+export const FINAL_QUIZ: QuizDef[] = [
+  {
+    id: 'q1',
+    question: 'En sliten bolig koster 3,0 millioner og en ferdig bolig ser ut til å være verdt 3,5 millioner. Hvor stor er fortjenesten?',
+    options: ['Alltid 500 000 kr', 'Kan ikke fastslås før alle prosjektkostnadene er beregnet', 'Minst 400 000 kr'],
+    correct: 1,
+    explain: 'Prisforskjellen må først dekke alle kjøps-, oppussings-, finansierings-, drifts- og salgskostnader, og eventuell skatt og egen tid.',
+  },
+  {
+    id: 'q2',
+    question: 'Hva betyr fellesgjeld?',
+    options: ['Din private kredittkortgjeld', 'Gjeld i borettslag/sameie som påvirker boligens økonomi', 'Meglers kostnad'],
+    correct: 1,
+    explain: 'Fellesgjeld er gjeld borettslaget eller sameiet har tatt opp. Renter og avdrag betales normalt gjennom felleskostnadene.',
+  },
+  {
+    id: 'q3',
+    question: 'Hva betyr TGIU?',
+    options: ['Ingen avvik', 'Ikke undersøkt', 'Nyoppusset'],
+    correct: 1,
+    explain: 'TGIU betyr ikke undersøkt, og det er ikke det samme som at det ikke er noe problem.',
+  },
+  {
+    id: 'q4',
+    question: 'Er prisantydning det samme som dokumentert oppnådd salgspris?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Prisantydning er ikke oppnådd salgspris. En gammel «solgt»-annonse uten dokumentert salgssum er heller ikke dokumentasjon.',
+  },
+  {
+    id: 'q5',
+    question: 'Bør generell forventet markedsvekst være nødvendig for at basisscenarioet skal bli lønnsomt?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Markedsvekst er mulig oppside, ikke forretningsmodellen. Hvis prosjektet bare fungerer fordi markedet stiger, er marginen for svak.',
+  },
+  {
+    id: 'q6',
+    question: 'Kan full verdi av et ekstra soverom legges inn før løsningen er tilstrekkelig avklart?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Verdien kan ikke regnes inn som sikker før løsningen er teknisk og juridisk avklart.',
+  },
+  {
+    id: 'q7',
+    question: 'Har ordinær brukt borettslagsandel normalt samme dokumentavgift som en selveier?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Det beregnes normalt ikke dokumentavgift ved overføring av en borettslagsandel. Det betales registrerings- eller tinglysingsgebyr.',
+  },
+  {
+    id: 'q8',
+    question: 'Hva er riktig om reserve?',
+    options: [
+      'Den gjør at alle ukjente kostnader kan settes til null',
+      'Den skal dekke normal prosjektusikkerhet, men erstatter ikke analyse av identifiserte risikoer',
+      'Den er bare til dyrere materialvalg',
+    ],
+    correct: 1,
+    explain: 'Reserve erstatter ikke analyse. Identifisert risiko er en egen post.',
+  },
+  {
+    id: 'q9',
+    question: 'Er hele kostnaden til nytt kjøkken automatisk skattemessig påkostning?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Én faktura kan inneholde både vedlikehold og påkostning. En del kan være utskifting og en del standardheving.',
+  },
+  {
+    id: 'q10',
+    question: 'Du har eid egen bolig i 13 måneder, men bare bodd der i fire måneder. Er gevinst automatisk skattefri?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Både eiertid og botid må være oppfylt. Botid er minst 12 måneder i løpet av de siste 24 månedene før realisasjonen.',
+  },
+  {
+    id: 'q11',
+    question: 'Hva betyr budregelen om kl. 12?',
+    options: [
+      'Du kan ikke sende bud før kl. 12',
+      'Den regulerer tidligste akseptfrist megler kan formidle etter siste annonserte visning i den aktuelle situasjonen',
+      'Alle budrunder starter kl. 12',
+    ],
+    correct: 1,
+    explain: 'Regelen gjelder hvilken akseptfrist megler kan formidle, ikke når du kan gi budet.',
+  },
+  {
+    id: 'q12',
+    question: 'Har du generell angrerett etter at bindende boligkjøp er inngått?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Det er ikke angrerett ved et bindende boligkjøp.',
+  },
+  {
+    id: 'q13',
+    question: 'Hva bør bestemme maksbudet ditt?',
+    options: ['Prisantydningen', 'Hvor mye neste budgiver byr', 'Kalkylen og ditt avkastnings-/fortjenestekrav', 'Bankens absolutte maksimum'],
+    correct: 2,
+    explain: 'Maksbudet bestemmes av kalkylen før budrunden.',
+  },
+  {
+    id: 'q14',
+    question: 'Kan en vanlig ufaglært boligeier legge fastmonterte varmekabler og få elektrikeren til å koble dem til senere?',
+    options: ['Ja', 'Nei'],
+    correct: 1,
+    explain: 'Fastmonterte varmekabler og ordinære endringer i den faste elektriske installasjonen skal ikke gjøres av ufaglærte.',
+  },
+  {
+    id: 'q15',
+    question: 'Et prosjekt gir 150 000 kr før skatt og har krevd 500 timer egeninnsats. Hva er den enkleste økonomiske tolkningen?',
+    options: [
+      'Egen arbeidstid er irrelevant fordi du ikke har betalt lønn',
+      'Prosjektet har gitt 300 kr per egen arbeidstime før skatt dersom resultatet fordeles på timene',
+      'Prosjektet har garantert vært godt',
+    ],
+    correct: 1,
+    explain: '150 000 / 500 = 300 kr/time. Dette må sees i sammenheng med kapitalbinding og risiko.',
+  },
+];

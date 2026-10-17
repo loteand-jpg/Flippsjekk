@@ -1,0 +1,796 @@
+{
+  "contract": "flipprom-agent-analysis",
+  "contractVersion": 1,
+  "analysisSchemaVersion": 1,
+  "finnId": "900000101",
+  "generatedAt": "2026-10-16T08:00:00.000Z",
+  "agent": {
+    "name": "flipprom-mock-agent",
+    "version": "1.0.0"
+  },
+  "listing": {
+    "observedAt": "2026-10-16T08:00:00.000Z",
+    "sourceUrl": "https://www.finn.no/realestate/homes/ad.html?finnkode=900000101",
+    "address": "Elvekanten 17 B",
+    "postalCode": "7014",
+    "district": "Møllenberg",
+    "municipality": "Trondheim",
+    "propertyType": "leilighet",
+    "tenure": {
+      "value": "selveier",
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    "saleStatus": {
+      "value": "aktiv",
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    "saleStatusNote": null,
+    "askingPrice": {
+      "value": 2890000,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "sharedDebt": {
+      "value": 0,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "listingTotalInclCosts": {
+      "value": 2969085,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    "monthlyCommonCosts": {
+      "value": 2350,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "areaBRAi": {
+      "value": 58,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "rooms": {
+      "value": 3,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "bedrooms": {
+      "value": 2,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    "floor": {
+      "value": 2,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    "buildYear": {
+      "value": 1932,
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse",
+      "page": 1
+    },
+    "plotArea": {
+      "value": null,
+      "status": "uavklart",
+      "sourceId": null
+    },
+    "energyLabel": "F – oransje"
+  },
+  "viewings": [
+    {
+      "id": "2c0f72ff-a192-4c6a-a092-0ad79f920944",
+      "start": "2026-10-19T15:00:00.000Z",
+      "end": "2026-10-19T16:00:00.000Z",
+      "status": "planlagt",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    {
+      "id": "2b0f716c-9d04-40a9-aa04-5bf09b045d83",
+      "start": "2026-10-21T10:00:00.000Z",
+      "end": "2026-10-21T11:00:00.000Z",
+      "status": "planlagt",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    }
+  ],
+  "sources": [
+    {
+      "id": "src-900000101:v1:eksempel-annonse",
+      "kind": "annonse",
+      "title": "Demodata: fiktiv annonse for Elvekanten 17 B (ingen FINN-data hentet)",
+      "url": "https://www.finn.no/realestate/homes/ad.html?finnkode=900000101",
+      "documentName": null,
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-salgsoppgave",
+      "kind": "salgsoppgave",
+      "title": "Demodata: fiktiv salgsoppgave",
+      "url": null,
+      "documentName": "fiktiv salgsoppgave.pdf",
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-tilstandsrapport",
+      "kind": "tilstandsrapport",
+      "title": "Demodata: fiktiv tilstandsrapport",
+      "url": null,
+      "documentName": "fiktiv tilstandsrapport.pdf",
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-egenerklaering",
+      "kind": "egenerklaering",
+      "title": "Demodata: fiktiv egenerklæring fra selger",
+      "url": null,
+      "documentName": "fiktiv egenerklæring fra selger.pdf",
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-tegninger",
+      "kind": "tegninger",
+      "title": "Demodata: fiktive godkjente tegninger",
+      "url": null,
+      "documentName": "fiktive godkjente tegninger.pdf",
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-vedtekter",
+      "kind": "vedtekter",
+      "title": "Demodata: fiktive vedtekter og årsregnskap",
+      "url": null,
+      "documentName": "fiktive vedtekter og årsregnskap.pdf",
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    },
+    {
+      "id": "src-900000101:v1:eksempel-sammenligning",
+      "kind": "sammenligning",
+      "title": "Demodata: fiktive sammenligningsobjekter",
+      "url": null,
+      "documentName": null,
+      "page": null,
+      "fetchedAt": "2026-10-16T08:00:00.000Z",
+      "observedAt": "2026-10-16",
+      "status": "dokumentert",
+      "isDemo": true
+    }
+  ],
+  "assessment": {
+    "recommendation": "interessant",
+    "recommendationRationale": "Tydelig avstand mellom pris for uoppusset og oppusset standard i området, og dokumentasjonen er god.",
+    "summary": "Uoppusset treroms i populært område der oppussede leiligheter selges med god margin.",
+    "strategy": "Standardheving: nytt bad og kjøkken, nye overflater og oppgradert el. Ingen endring av planløsning.",
+    "conditions": [
+      "Kjøpesum godt under modellert maksbud.",
+      "Tilstandsrapporten bekrefter at bjelkelag på bad ikke har fuktskade.",
+      "Håndverkertilbud på bad innhentes før bud."
+    ]
+  },
+  "estimates": {
+    "sale": {
+      "basis": "kontant",
+      "low": 3850000,
+      "base": 4100000,
+      "high": 4300000,
+      "rationaleLow": "Tilsvarer nivået for oppussede leiligheter i 1. etasje uten balkong.",
+      "rationaleBase": "Tre faktiske salg av oppussede treroms i samme kvartal de siste seks månedene ligger rundt 70 000 kr/m².",
+      "rationaleHigh": "Krever svært god gjennomføring og salg i vårmarkedet; ikke basis.",
+      "includesMarketGrowth": false
+    },
+    "renovationOptions": [
+      {
+        "id": "opt-900000101:v1:eksempel-lett",
+        "level": "lett",
+        "title": "Lett oppfrisking",
+        "description": "Maling, nye kjøkkenfronter og småreparasjoner. Bad beholdes.",
+        "items": [
+          {
+            "id": "item-900000101:v1:eksempel-lett-0",
+            "room": "Alle rom",
+            "title": "Sparkling og maling av vegger og tak",
+            "materials": 15080,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 0,
+            "hours": 64,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-lett-1",
+            "room": "Kjøkken",
+            "title": "Nye fronter, benkeplate og blandebatteri",
+            "materials": 28000,
+            "electrician": 0,
+            "plumber": 4500,
+            "other": 3500,
+            "hours": 16,
+            "priority": "verdiokende",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-lett-2",
+            "room": "Hele boligen",
+            "title": "Småreparasjoner, lister og dører",
+            "materials": 12000,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 0,
+            "hours": 25,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-lett-3",
+            "room": "Hele boligen",
+            "title": "Rydding, vask og avfallshåndtering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 9000,
+            "hours": 8,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-lett-4",
+            "room": "Salg",
+            "title": "Boligstyling og fotografering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 14000,
+            "hours": 4,
+            "priority": "valgfri",
+            "included": true
+          }
+        ],
+        "suggestedMonths": 3,
+        "saleEffectNote": "Gir et ryddig førsteinntrykk, men badet trekker ned salgsverdien.",
+        "requiresApproval": false,
+        "vatIncluded": true
+      },
+      {
+        "id": "opt-900000101:v1:eksempel-hoved",
+        "level": "hoved",
+        "title": "Hovedalternativ",
+        "description": "Nytt bad og kjøkken, nye overflater og gulv, oppgradert el-anlegg.",
+        "items": [
+          {
+            "id": "item-900000101:v1:eksempel-hoved-0",
+            "room": "Bad",
+            "title": "Totalrenovering av bad med ny membran, sluk og fliser",
+            "materials": 78000,
+            "electrician": 16000,
+            "plumber": 52000,
+            "other": 58000,
+            "hours": 25,
+            "priority": "pakrevd",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-1",
+            "room": "Kjøkken",
+            "title": "Nytt kjøkken i standard kvalitet inkl. hvitevarer og montering",
+            "materials": 82000,
+            "electrician": 14000,
+            "plumber": 11000,
+            "other": 12000,
+            "hours": 40,
+            "priority": "verdiokende",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-2",
+            "room": "Alle rom",
+            "title": "Sparkling og maling av vegger og tak",
+            "materials": 15080,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 0,
+            "hours": 64,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-3",
+            "room": "Alle rom",
+            "title": "Nytt parkettgulv med lister",
+            "materials": 35960,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 6960,
+            "hours": 35,
+            "priority": "verdiokende",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-4",
+            "room": "Teknisk",
+            "title": "Oppgradering av sikringsskap og utvalgte kurser",
+            "materials": 0,
+            "electrician": 38000,
+            "plumber": 0,
+            "other": 0,
+            "hours": 0,
+            "priority": "pakrevd",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-5",
+            "room": "Hele boligen",
+            "title": "Rydding, vask og avfallshåndtering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 9000,
+            "hours": 8,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-hoved-6",
+            "room": "Salg",
+            "title": "Boligstyling og fotografering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 14000,
+            "hours": 4,
+            "priority": "valgfri",
+            "included": true
+          }
+        ],
+        "suggestedMonths": null,
+        "saleEffectNote": "Gir en innflyttingsklar bolig på nivå med oppussede sammenligningsobjekter.",
+        "requiresApproval": false,
+        "vatIncluded": true
+      },
+      {
+        "id": "opt-900000101:v1:eksempel-omfattende",
+        "level": "omfattende",
+        "title": "Omfattende / ombygging",
+        "description": "Hovedalternativet pluss endret planløsning. Krever avklaring av godkjenning før verdien kan regnes med.",
+        "items": [
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-0",
+            "room": "Bad",
+            "title": "Totalrenovering av bad med ny membran, sluk og fliser",
+            "materials": 78000,
+            "electrician": 16000,
+            "plumber": 52000,
+            "other": 58000,
+            "hours": 25,
+            "priority": "pakrevd",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-1",
+            "room": "Kjøkken",
+            "title": "Nytt kjøkken i standard kvalitet inkl. hvitevarer og montering",
+            "materials": 98400,
+            "electrician": 16800,
+            "plumber": 13200,
+            "other": 14400,
+            "hours": 40,
+            "priority": "verdiokende",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-2",
+            "room": "Alle rom",
+            "title": "Sparkling og maling av vegger og tak",
+            "materials": 15080,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 0,
+            "hours": 64,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-3",
+            "room": "Alle rom",
+            "title": "Nytt parkettgulv med lister",
+            "materials": 35960,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 6960,
+            "hours": 35,
+            "priority": "verdiokende",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-4",
+            "room": "Teknisk",
+            "title": "Oppgradering av sikringsskap og utvalgte kurser",
+            "materials": 0,
+            "electrician": 55000,
+            "plumber": 0,
+            "other": 0,
+            "hours": 0,
+            "priority": "pakrevd",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-5",
+            "room": "Stue",
+            "title": "Flytting av vegg for åpen kjøkkenløsning",
+            "materials": 18000,
+            "electrician": 6000,
+            "plumber": 0,
+            "other": 42000,
+            "hours": 30,
+            "priority": "valgfri",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-6",
+            "room": "Hele boligen",
+            "title": "Rydding, vask og avfallshåndtering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 9000,
+            "hours": 8,
+            "priority": "anbefalt",
+            "included": true
+          },
+          {
+            "id": "item-900000101:v1:eksempel-omfattende-7",
+            "room": "Salg",
+            "title": "Boligstyling og fotografering",
+            "materials": 0,
+            "electrician": 0,
+            "plumber": 0,
+            "other": 14000,
+            "hours": 4,
+            "priority": "valgfri",
+            "included": true
+          }
+        ],
+        "suggestedMonths": 8,
+        "saleEffectNote": "Mulig høyere salgsverdi er ikke innregnet før endringen er avklart.",
+        "requiresApproval": true,
+        "vatIncluded": true
+      }
+    ],
+    "defaultRenovationOptionId": "opt-900000101:v1:eksempel-hoved",
+    "months": null,
+    "monthlyBreakdown": [
+      {
+        "label": "Felleskostnader",
+        "amount": 2350
+      },
+      {
+        "label": "Strøm og oppvarming",
+        "amount": 1400
+      },
+      {
+        "label": "Forsikring",
+        "amount": 450
+      },
+      {
+        "label": "Kommunale avgifter og eiendomsskatt",
+        "amount": 700
+      }
+    ],
+    "buyFees": null,
+    "debtAtSale": null,
+    "suggestedPurchasePrice": null,
+    "dutyRule": {
+      "basis": "kjopesum_pluss_fellesgjeld",
+      "ratePct": 2.5,
+      "customBase": null,
+      "note": "Modellregel for selveier: 2,5 % av kjøpesum + eventuell fellesgjeld. Grunnlaget følger kjøpsprisen du legger inn."
+    }
+  },
+  "risks": [
+    {
+      "id": "risk-900000101:v1:eksempel-0",
+      "title": "Bjelkelag under bad",
+      "category": "vatrom",
+      "level": 5,
+      "costLow": 30000,
+      "costHigh": 120000,
+      "rationale": "TG2 på bad med fuktmerker ved sluk. Bjelkelaget er ikke kontrollert.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "action": "Fuktmåling og hulltaking før bud."
+    },
+    {
+      "id": "risk-900000101:v1:eksempel-1",
+      "title": "Eldre el-anlegg",
+      "category": "elektrisk",
+      "level": 3,
+      "costLow": 20000,
+      "costHigh": 60000,
+      "rationale": "Skrusikringer i sikringsskap, delvis oppgradert 1998.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "action": "Innhent pris fra elektriker."
+    },
+    {
+      "id": "risk-900000101:v1:eksempel-2",
+      "title": "Salg i høstmarkedet",
+      "category": "marked",
+      "level": 4,
+      "costLow": 0,
+      "costHigh": 150000,
+      "rationale": "Ferdigstillelse i november kan gi svakere etterspørsel enn vår.",
+      "sourceId": null,
+      "action": "Planlegg ferdigstillelse til februar/mars."
+    }
+  ],
+  "checklist": [
+    {
+      "key": "salgsoppgave",
+      "status": "dokumentert",
+      "note": "Salgsoppgave og egenerklæring er gjennomgått.",
+      "sourceId": "src-900000101:v1:eksempel-salgsoppgave",
+      "beforeBidTask": null
+    },
+    {
+      "key": "tilstandsrapport",
+      "status": "dokumentert",
+      "note": "Tilstandsrapport er gjennomgått, inkludert TG2 og TG3.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": null
+    },
+    {
+      "key": "tegninger",
+      "status": "dokumentert",
+      "note": "Godkjente tegninger samsvarer med dagens rombruk.",
+      "sourceId": "src-900000101:v1:eksempel-tegninger",
+      "beforeBidTask": null
+    },
+    {
+      "key": "vatrom",
+      "status": "delvis",
+      "note": "TG2 på bad. Bjelkelag ikke kontrollert.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": "Kontroller membran, sluk og fuktmåling på bad. Ta med fuktmåler eller fagperson."
+    },
+    {
+      "key": "elektrisk",
+      "status": "delvis",
+      "note": "Ingen samsvarserklæring for oppgraderingen i 1998.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": "Be om samsvarserklæring og siste el-kontroll."
+    },
+    {
+      "key": "vann_avlop",
+      "status": "dokumentert",
+      "note": "Vann og avløp er vurdert.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": null
+    },
+    {
+      "key": "tak_fasade",
+      "status": "dokumentert",
+      "note": "Tak, fasade og vinduer er vurdert.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": null
+    },
+    {
+      "key": "fukt_grunn",
+      "status": "dokumentert",
+      "note": "Fukt og grunnmur er vurdert.",
+      "sourceId": "src-900000101:v1:eksempel-tilstandsrapport",
+      "beforeBidTask": null
+    },
+    {
+      "key": "fellesgjeld_vedtekter",
+      "status": "dokumentert",
+      "note": "Sameie uten fellesgjeld. Vedlikeholdsplan viser takomlegging om 8–10 år.",
+      "sourceId": "src-900000101:v1:eksempel-vedtekter",
+      "beforeBidTask": null
+    },
+    {
+      "key": "sammenlignbare_salg",
+      "status": "dokumentert",
+      "note": "Flere faktiske salg av sammenlignbare boliger er dokumentert.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "beforeBidTask": null
+    },
+    {
+      "key": "finansiering",
+      "status": "mangler",
+      "note": "Finansieringsbevis og sikkerhet for prosjektlån er ikke avklart.",
+      "sourceId": null,
+      "beforeBidTask": "Avklar finansieringsbevis, sikkerhet og rentevilkår med bank før bud."
+    },
+    {
+      "key": "skatt",
+      "status": "mangler",
+      "note": "Skattebehandling av gevinst er ikke avklart for valgt kjøpertype.",
+      "sourceId": null,
+      "beforeBidTask": "Avklar skattebehandling med revisor/regnskapsfører for valgt kjøpertype."
+    }
+  ],
+  "comparables": [
+    {
+      "id": "comp-900000101:v1:eksempel-0",
+      "name": "Demo: Elvekanten 9, 3 rom, oppusset 2023",
+      "url": null,
+      "kind": "solgt",
+      "askingPrice": 4080000,
+      "soldPrice": 4080000,
+      "commonCosts": 2500,
+      "soldTotalPrice": null,
+      "area": 57,
+      "date": "2026-08-17",
+      "notes": "Faktisk salgssum, tilsvarende standard etter oppussing.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-1",
+      "name": "Demo: Kvernbakken 4, 3 rom, oppusset",
+      "url": null,
+      "kind": "solgt",
+      "askingPrice": 4220000,
+      "soldPrice": 4250000,
+      "commonCosts": 2600,
+      "soldTotalPrice": null,
+      "area": 61,
+      "date": "2026-06-18",
+      "notes": "Balkong mot bakgård.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-2",
+      "name": "Demo: Bryggestien 2, 3 rom, delvis oppusset",
+      "url": null,
+      "kind": "solgt",
+      "askingPrice": 3690000,
+      "soldPrice": 3650000,
+      "commonCosts": 2200,
+      "soldTotalPrice": null,
+      "area": 55,
+      "date": "2026-05-19",
+      "notes": "Eldre bad – lavere standard.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-3",
+      "name": "Demo: Elvekanten 21, 3 rom",
+      "url": null,
+      "kind": "prisantydning",
+      "askingPrice": 4390000,
+      "soldPrice": null,
+      "commonCosts": 2350,
+      "soldTotalPrice": null,
+      "area": 60,
+      "date": "2026-10-01",
+      "notes": "Prisantydning, ikke oppnådd pris.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-4",
+      "name": "Demo: Kvernbakken 10, 2 rom",
+      "url": null,
+      "kind": "solgt_uten_sum",
+      "askingPrice": null,
+      "soldPrice": null,
+      "commonCosts": 1950,
+      "soldTotalPrice": null,
+      "area": 48,
+      "date": "2026-09-16",
+      "notes": "Markert solgt, men salgssum er ikke dokumentert.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true
+    }
+  ],
+  "facts": [
+    {
+      "label": "Datakilde",
+      "value": "Demodata – fiktivt objekt",
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    },
+    {
+      "label": "Energimerke",
+      "value": "F – oransje",
+      "status": "dokumentert",
+      "sourceId": "src-900000101:v1:eksempel-annonse"
+    }
+  ],
+  "assumptions": [
+    "Ingen markedsvekst er lagt inn i basisscenarioet.",
+    "Oppussingsanslag er grove anslag inkl. mva. – ikke pristilbud.",
+    "Uavklart verdiøkning (nytt soverom, utleiedel, seksjonering) er ikke innregnet.",
+    "Månedlige kostnader inkluderer felleskostnader (også eventuelle renter/avdrag på fellesgjeld), strøm, forsikring og kommunale avgifter."
+  ],
+  "uncertainties": [
+    "Faktisk oppnådd salgspris kan avvike fra anslaget.",
+    "Skjulte feil kan gi merkostnader utover reserven."
+  ],
+  "report": [
+    {
+      "title": "Konklusjon",
+      "body": "Interessant. Uoppusset treroms i populært område der oppussede leiligheter selges med god margin. Tydelig avstand mellom pris for uoppusset og oppusset standard i området, og dokumentasjonen er god."
+    },
+    {
+      "title": "Objekt og grunnlag",
+      "body": "Elvekanten 17 B, Møllenberg. 58 m² BRA-i, byggeår 1932. Demodata – fiktivt objekt. Opplysninger merket «Uavklart» er ikke oppgitt i grunnlaget og er ikke satt til null kroner."
+    },
+    {
+      "title": "Oppussing",
+      "body": "Lett oppfrisking: Maling, nye kjøkkenfronter og småreparasjoner. Bad beholdes. Hovedalternativ: Nytt bad og kjøkken, nye overflater og gulv, oppgradert el-anlegg. Omfattende / ombygging: Hovedalternativet pluss endret planløsning. Krever avklaring av godkjenning før verdien kan regnes med. Anslagene er ikke pristilbud og er oppgitt inkl. mva."
+    },
+    {
+      "title": "Salgsverdi etter oppussing",
+      "body": "Normalt scenario: Tre faktiske salg av oppussede treroms i samme kvartal de siste seks månedene ligger rundt 70 000 kr/m². Lavt: Tilsvarer nivået for oppussede leiligheter i 1. etasje uten balkong. Høyt: Krever svært god gjennomføring og salg i vårmarkedet; ikke basis. Prisgrunnlag: kontant. Ingen udokumentert markedsvekst er lagt inn."
+    },
+    {
+      "title": "Økonomi",
+      "body": "Alle økonomiske nøkkeltall (fortjeneste, prosjektavkastning, maksbud, nullpunkt og stresstester) beregnes deterministisk av Flippsjekks beregningsmotor ut fra forutsetningene i ditt scenario – ikke av analysen selv."
+    },
+    {
+      "title": "Risiko",
+      "body": "Bjelkelag under bad: TG2 på bad med fuktmerker ved sluk. Bjelkelaget er ikke kontrollert. Eldre el-anlegg: Skrusikringer i sikringsskap, delvis oppgradert 1998. Salg i høstmarkedet: Ferdigstillelse i november kan gi svakere etterspørsel enn vår."
+    }
+  ],
+  "bidSteps": [
+    {
+      "title": "Før bud",
+      "detail": "Gå gjennom sjekklisten og avklar punktene merket «Mangler».",
+      "condition": "Kjøp bør ikke vurderes før påkrevde avklaringer er gjort."
+    },
+    {
+      "title": "Åpningsbud",
+      "detail": "Start godt under ditt modellerte maksbud for å ha rom til å øke.",
+      "condition": "Bare hvis kalkylen er komplett."
+    },
+    {
+      "title": "Budøkning",
+      "detail": "Øk i moderate trinn og oppdater kalkylen ved ny informasjon.",
+      "condition": null
+    },
+    {
+      "title": "Stopp",
+      "detail": "Stopp ved modellert maksbud eller din egen smertegrense, den laveste av dem.",
+      "condition": "Maksbudet er en modell – ikke en budfullmakt."
+    }
+  ],
+  "nextSteps": [
+    "Kontroller membran, sluk og fuktmåling på bad. Ta med fuktmåler eller fagperson.",
+    "Be om samsvarserklæring og siste el-kontroll.",
+    "Avklar finansieringsbevis, sikkerhet og rentevilkår med bank før bud.",
+    "Avklar skattebehandling med revisor/regnskapsfører for valgt kjøpertype."
+  ]
+}
