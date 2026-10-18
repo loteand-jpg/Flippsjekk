@@ -531,7 +531,8 @@
           "bedrooms": 2,
           "layoutNote": "Uendret planløsning med to soverom.",
           "kitchenChange": "nytt",
-          "bathChange": "nytt"
+          "bathChange": "nytt",
+          "standardClass": "nyoppusset"
         },
         "items": [
           {
@@ -670,7 +671,14 @@
           "comp-900000101:v1:eksempel-1",
           "comp-900000101:v1:eksempel-3"
         ],
-        "referenceNote": "Sammenlignes mot nyoppussede treroms. Salg av oppussingsobjekter i samme bygg brukes ikke som ferdigverdi."
+        "referenceNote": "Sammenlignes mot nyoppussede treroms. Salg av oppussingsobjekter i samme bygg brukes ikke som ferdigverdi.",
+        "risk": {
+          "technical": "lav",
+          "cost": "middels",
+          "time": "lav",
+          "approval": "lav",
+          "note": "Kjente tiltak uten søknadsplikt. Kostnadsusikkerhet knyttet til bjelkelag under bad (TG2)."
+        }
       },
       {
         "id": "scn-900000101-1",
@@ -689,7 +697,8 @@
           "bedrooms": 2,
           "layoutNote": "Åpen løsning mellom kjøkken og stue. Fortsatt to soverom.",
           "kitchenChange": "nytt",
-          "bathChange": "nytt"
+          "bathChange": "nytt",
+          "standardClass": "nyoppusset"
         },
         "items": [
           {
@@ -846,7 +855,77 @@
           "comp-900000101:v1:eksempel-0",
           "comp-900000101:v1:eksempel-1"
         ],
-        "referenceNote": "Få direkte sammenlignbare salg med åpen løsning."
+        "referenceNote": "Få direkte sammenlignbare salg med åpen løsning.",
+        "risk": {
+          "technical": "middels",
+          "cost": "middels",
+          "time": "middels",
+          "approval": "middels",
+          "note": "Bærevegg ikke kontrollert, og tiltaket kan være søknadspliktig."
+        },
+        "anchorAdjustment": {
+          "pct": 2,
+          "category": "planlosning_kvalitet",
+          "reason": "Åpen løsning mellom kjøkken og stue gir mer lys og bedre flyt enn sammenlignbare lukkede planløsninger i bygget."
+        },
+        "screening": {
+          "concept": "annet",
+          "addedBedrooms": 0,
+          "checks": [
+            {
+              "aspect": "dagslys_vindu",
+              "result": "ok",
+              "note": "Vindu og dagslys vurdert."
+            },
+            {
+              "aspect": "romgeometri",
+              "result": "ok",
+              "note": "Romgeometri vurdert."
+            },
+            {
+              "aspect": "teknisk",
+              "result": "tvil",
+              "note": "Teknisk gjennomførbarhet vurdert."
+            },
+            {
+              "aspect": "vann_avlop",
+              "result": "ok",
+              "note": "Vann og avløp vurdert."
+            },
+            {
+              "aspect": "ventilasjon",
+              "result": "ok",
+              "note": "Ventilasjon vurdert."
+            },
+            {
+              "aspect": "myndighet",
+              "result": "tvil",
+              "note": "Myndighetsavklaringer vurdert."
+            },
+            {
+              "aspect": "okonomi",
+              "result": "ok",
+              "note": "Økonomisk plausibilitet vurdert."
+            }
+          ]
+        },
+        "referenceClassification": [
+          {
+            "comparableId": "comp-900000101:v1:eksempel-0",
+            "layoutMatch": "delvis",
+            "note": "Lukket kjøkken, ellers lik planløsning."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-1",
+            "layoutMatch": "delvis",
+            "note": "Delvis åpen løsning."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-3",
+            "layoutMatch": "delvis",
+            "note": "Lukket kjøkken, ellers lik planløsning."
+          }
+        ]
       },
       {
         "id": "scn-900000101-2",
@@ -865,7 +944,8 @@
           "bedrooms": 3,
           "layoutNote": "Stue deles slik at det blir tre soverom og mindre stue.",
           "kitchenChange": "nytt",
-          "bathChange": "nytt"
+          "bathChange": "nytt",
+          "standardClass": "nyoppusset"
         },
         "items": [
           {
@@ -1019,12 +1099,117 @@
           "note": "Verdiøkningen forutsetter godkjenning som ikke er avklart. Svakt referansegrunnlag for tre soverom på 58 m²."
         },
         "referenceIds": [
-          "comp-900000101:v1:eksempel-1"
+          "comp-900000101:v1:eksempel-7",
+          "comp-900000101:v1:eksempel-8"
         ],
-        "referenceNote": "Ingen nære salg av tilsvarende tre-roms på denne størrelsen."
+        "referenceNote": "To salg av nyoppussede tre-soverom på tilsvarende størrelse. Få observasjoner.",
+        "risk": {
+          "technical": "middels",
+          "cost": "hoy",
+          "time": "hoy",
+          "approval": "hoy",
+          "note": "Bruksendring, vindu og rømning er ikke avklart. Kostnad og tid avhenger av vedtak."
+        },
+        "screening": {
+          "concept": "dele_rom",
+          "addedBedrooms": 1,
+          "checks": [
+            {
+              "aspect": "dagslys_vindu",
+              "result": "tvil",
+              "note": "Vindu og dagslys vurdert."
+            },
+            {
+              "aspect": "romgeometri",
+              "result": "ok",
+              "note": "Romgeometri vurdert."
+            },
+            {
+              "aspect": "teknisk",
+              "result": "ok",
+              "note": "Teknisk gjennomførbarhet vurdert."
+            },
+            {
+              "aspect": "vann_avlop",
+              "result": "ok",
+              "note": "Vann og avløp vurdert."
+            },
+            {
+              "aspect": "ventilasjon",
+              "result": "tvil",
+              "note": "Ventilasjon vurdert."
+            },
+            {
+              "aspect": "myndighet",
+              "result": "uavklart",
+              "note": "Myndighetsavklaringer vurdert."
+            },
+            {
+              "aspect": "okonomi",
+              "result": "ok",
+              "note": "Økonomisk plausibilitet vurdert."
+            }
+          ]
+        },
+        "referenceClassification": [
+          {
+            "comparableId": "comp-900000101:v1:eksempel-7",
+            "layoutMatch": "lik",
+            "note": "Tre soverom ved deling av stue, tilsvarende størrelse."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-8",
+            "layoutMatch": "delvis",
+            "note": "Tre soverom, noe større leilighet."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-0",
+            "layoutMatch": "ulik",
+            "note": "To soverom."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-1",
+            "layoutMatch": "ulik",
+            "note": "To soverom."
+          },
+          {
+            "comparableId": "comp-900000101:v1:eksempel-3",
+            "layoutMatch": "ulik",
+            "note": "To soverom."
+          }
+        ]
       }
     ],
-    "defaultScenarioId": "scn-900000101-0"
+    "defaultScenarioId": "scn-900000101-0",
+    "scenarioSearch": {
+      "status": "ferdig",
+      "considered": [
+        {
+          "concept": "annet",
+          "outcome": "valgt",
+          "reason": "Åpen løsning mellom kjøkken og stue: lite inngrep, tydelig lysgevinst.",
+          "scenarioId": "scn-900000101-1"
+        },
+        {
+          "concept": "dele_rom",
+          "outcome": "valgt",
+          "reason": "Stuen er stor nok til å dele i to rom med tilfredsstillende mål, forutsatt godkjenning.",
+          "scenarioId": "scn-900000101-2"
+        },
+        {
+          "concept": "flytte_kjokken_nytt_soverom",
+          "outcome": "avvist",
+          "reason": "Gammelt kjøkken ligger uten vindu mot yttervegg, og avløpet kan ikke flyttes uten å åpne bjelkelaget.",
+          "scenarioId": null
+        },
+        {
+          "concept": "flytte_bad",
+          "outcome": "avvist",
+          "reason": "Badet totalrenoveres uansett, men en flytting gir ikke vesentlig verdi.",
+          "scenarioId": null
+        }
+      ]
+    }
   },
   "risks": [
     {
@@ -1324,6 +1509,60 @@
       "notes": "Markert solgt, men salgssum er ikke dokumentert.",
       "sourceId": "src-900000101:v1:eksempel-sammenligning",
       "isDemo": true
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-7",
+      "name": "Demo: Kjøpmannsgata 31, 3 soverom, nyoppusset",
+      "url": null,
+      "kind": "solgt",
+      "askingPrice": 4710000.0,
+      "soldPrice": 4620000,
+      "commonCosts": 2500,
+      "soldTotalPrice": null,
+      "area": 60,
+      "date": "2026-05-19",
+      "notes": "Tre soverom ved deling av stue. Nyoppusset.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true,
+      "bedrooms": 3,
+      "propertyType": "leilighet",
+      "tenure": "selveier",
+      "sharedDebt": null,
+      "locationLevel": "bydel",
+      "standardClass": "nyoppusset",
+      "layoutMatch": "lik",
+      "floor": 2,
+      "elevator": false,
+      "balcony": false,
+      "parking": false,
+      "dataQuality": "middels"
+    },
+    {
+      "id": "comp-900000101:v1:eksempel-8",
+      "name": "Demo: Prinsens gate 22 B, 3 soverom, nyoppusset",
+      "url": null,
+      "kind": "solgt",
+      "askingPrice": 4880000.0,
+      "soldPrice": 4780000,
+      "commonCosts": 2500,
+      "soldTotalPrice": null,
+      "area": 62,
+      "date": "2026-03-19",
+      "notes": "Tre soverom ved deling av stue. Nyoppusset.",
+      "sourceId": "src-900000101:v1:eksempel-sammenligning",
+      "isDemo": true,
+      "bedrooms": 3,
+      "propertyType": "leilighet",
+      "tenure": "selveier",
+      "sharedDebt": null,
+      "locationLevel": "bydel",
+      "standardClass": "nyoppusset",
+      "layoutMatch": "delvis",
+      "floor": 3,
+      "elevator": false,
+      "balcony": true,
+      "parking": false,
+      "dataQuality": "hoy"
     }
   ],
   "facts": [

@@ -64,7 +64,7 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
   "format": "flipprom-scenarios",
   "version": 1,
   "exportedAt": "2026-10-16T08:00:00.000Z",
-  "calcModelVersion": "1.0.0",
+  "calcModelVersion": "1.2.0",
   "units": { "percent": "prosentpoeng", "currency": "NOK" },
   "scenarios": [
     {
@@ -80,9 +80,15 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
         "status": "complete",
         "profitBeforeTaxAndOwnWork": 278627,
         "projectReturn": 0.0729,
+        "profitPerOwnHour": 1850,
+        "equityNeed": 574000,
+        "equityGap": 274000,
         "cashSale": 4100000,
         "totalCosts": 3821373,
         "maxBid": 2835590,
+        "maxBidLimitedBy": "profit",
+        "maxBidProfitTarget": 2835590,
+        "maxBidHourlyRequirement": 3100000,
         "missing": []
       }
     }
@@ -90,4 +96,4 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
 }
 ```
 
-`values` følger `ScenarioValuesSchema`, og ukjente verdier er `null`. `result` er beregnet med motoren ved eksporttidspunktet og merket med `calcModelVersion`. Felles analyseinnhold eksporteres ikke.
+`values` følger `ScenarioValuesSchema` (fra modell 1.2 med `regulatedCompetence {ror, elektro, bad_vatrom}`), og ukjente verdier er `null`. `maxBid` er anbefalt maksbud (laveste av grensene), `maxBidLimitedBy` angir hva som begrenser (`profit` = fortjenestemål, `hourly` = minimum per egeninnsatstime), og de to grensene er oppgitt hver for seg. `result` er beregnet med motoren ved eksporttidspunktet og merket med `calcModelVersion`. Felles analyseinnhold eksporteres ikke.
