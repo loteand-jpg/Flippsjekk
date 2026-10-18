@@ -17,6 +17,7 @@ import {
   type VippsPending,
 } from '../types';
 import { computeEntitlements, type MockContext } from './context';
+import { normalizeNorwegianMobile } from './courseServices';
 
 export const CODE_LENGTH = EMAIL_CODE_LENGTH;
 export const CODE_TTL_MS = 10 * 60_000;
@@ -192,8 +193,8 @@ export class MockSubscriptionService implements SubscriptionService {
     await this.ctx.delay();
     const uid = this.ctx.uid();
     const plan = getPlan(input.planId);
-    const digits = input.phone.replace(/[\s+\-]/g, '').replace(/^0047|^47(?=\d{8}$)/, '');
-    if (!/^[49]\d{7}$/.test(digits)) throw new ServiceError('validation', 'Skriv inn et norsk mobilnummer med 8 siffer (starter på 4 eller 9).');
+    const digits = normalizeNorwegianMobile(input.phone);
+    if (!digits) throw new ServiceError('validation', 'Skriv inn et norsk mobilnummer med 8 siffer (starter på 4 eller 9).');
     const now = this.ctx.now();
     const hadBefore = this.ctx.db.read((s) => s.subscriptions.some((x) => x.userId === uid));
     const trial = !hadBefore && plan.trialDays > 0;
@@ -228,7 +229,7 @@ export class MockSubscriptionService implements SubscriptionService {
     if (p.uid !== uid) throw new ServiceError('forbidden', 'Avtalen tilhører en annen konto.');
     const now = this.ctx.now();
     if (now.getTime() > p.expiresAt) throw new ServiceError('conflict', 'Vipps-avtalen utløp før den ble godkjent. Start på nytt.');
-    if (outcome === 'rejected') return { status: 'rejected' as const, subscription: null };
+    if (outcome === 'rejected') return { status: 'rejected' as const, subscription: null, purchase: null };
     const plan = getPlan(p.planId);
     const subscription = this.ctx.db.transaction((d) => {
       const hadBefore = d.subscriptions.some((x) => x.userId === uid);
@@ -255,7 +256,7 @@ export class MockSubscriptionService implements SubscriptionService {
       d.subscriptions.push(sub);
       return sub;
     });
-    return { status: 'approved' as const, subscription };
+    return { status: 'approved' as const, subscription, purchase: null };
   }
 
   async openCustomerPortal() {

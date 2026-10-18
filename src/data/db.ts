@@ -12,6 +12,7 @@ import {
   UsageEventSchema,
   UserComparableSchema,
   UserRiskSchema,
+  CoursePurchaseSchema,
   UserPropertySchema,
   UserSchema,
   ViewingSchema,
@@ -28,6 +29,7 @@ import {
   type User,
   type UserComparable,
   type UserRisk,
+  type CoursePurchase,
   type UserProperty,
   type Viewing,
 } from '../domain/schemas';
@@ -78,6 +80,7 @@ export interface DbState {
   calendarOverrides: CalendarOverride[];
   userComparables: UserComparable[];
   userRisks: UserRisk[];
+  coursePurchases: CoursePurchase[];
   session: { userId: string | null };
   demo: DemoState;
 }
@@ -100,6 +103,7 @@ const TABLE_SCHEMAS: Record<TableName, ZodType> = {
   calendarOverrides: CalendarOverrideSchema,
   userComparables: UserComparableSchema,
   userRisks: UserRiskSchema,
+  coursePurchases: CoursePurchaseSchema,
 };
 export const TABLE_NAMES = Object.keys(TABLE_SCHEMAS) as TableName[];
 

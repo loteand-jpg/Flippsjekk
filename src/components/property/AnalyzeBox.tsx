@@ -68,7 +68,7 @@ export function AnalyzeBox({ autoFocus, compact, initialUrl = '', onDone }: { au
       ) : (
         !compact && (
           <p id={`${id}-hint`} className="mt-1.5 text-xs text-slate-600">
-            Finnes det allerede en analyse av boligen, hentes den uten å belaste kvoten. Ingen data leses fra FINN i demoen.
+            Lim inn lenken til en bolig på FINN, så lager vi analysen. Ingen data leses fra FINN i demoen.
           </p>
         )
       )}

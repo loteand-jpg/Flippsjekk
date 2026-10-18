@@ -3,7 +3,7 @@ import { Select, NumberInput, Field } from '../../components/ui/forms';
 import { Alert, Button } from '../../components/ui/primitives';
 import { formatNOK, UNKNOWN } from '../../lib/format';
 import { EvidenceTag, type EvidenceKind } from '../components';
-import { COURSE_CHECKED } from '../types';
+import { COURSE_CHECKED, COURSE_TITLE } from '../types';
 import { downloadText, escapeHtml, printHtml } from '../print';
 import { useCourse, type BudgetLine, type LineTag } from '../progress';
 import { useCalc } from './Calculator';
@@ -159,7 +159,7 @@ export function budgetHtml(lines: Record<string, BudgetLine>, reservePct: number
           .join('')}<tr><th>Sum kjente poster${cat.monthly ? ' per måned' : ''}</th><th></th><th class="n">${escapeHtml(formatNOK(sum.known))}${sum.unknown ? ` + ${sum.unknown} uavklart` : ''}</th></tr></table>`,
     )
     .join('');
-  return `<h1>Flippbudsjett</h1><p class="meta">Flippsjekk – Nivå 1 Flipping som privatperson · Faglig kontrollert: ${COURSE_CHECKED}</p>${body}<h2>Reserve</h2><p>Reserve på oppussing: ${reservePct === null ? UNKNOWN : `${reservePct} %`}</p><h2>Resultat i kalkulatoren</h2><p>${escapeHtml(summary)}</p><p class="note">Poster merket «Uavklart» er ikke undersøkt og er ikke 0 kroner. Oppussingsanslag er ikke pristilbud. Skatt er ikke inkludert. Kurset gir generell opplæring og ingen garanti for fortjeneste.</p>`;
+  return `<h1>Flippbudsjett</h1><p class="meta">Flippsjekk – ${COURSE_TITLE} · Faglig kontrollert: ${COURSE_CHECKED}</p>${body}<h2>Reserve</h2><p>Reserve på oppussing: ${reservePct === null ? UNKNOWN : `${reservePct} %`}</p><h2>Resultat i kalkulatoren</h2><p>${escapeHtml(summary)}</p><p class="note">Poster merket «Uavklart» er ikke undersøkt og er ikke 0 kroner. Oppussingsanslag er ikke pristilbud. Skatt er ikke inkludert. Kurset gir generell opplæring og ingen garanti for fortjeneste.</p>`;
 }
 
 export function budgetCsv(lines: Record<string, BudgetLine>, reservePct: number | null): string {

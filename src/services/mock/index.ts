@@ -10,6 +10,7 @@ import { uuid } from '../../lib/ids';
 import { ServiceError, type DemoService, type Services, type SubscriptionPreset } from '../types';
 import { MockAuthService, MockProfileService, MockSubscriptionService, SIMULATED_GOOGLE_ACCOUNTS } from './accountServices';
 import { createPropertyIdentity, MockAnalysisService } from './analysisService';
+import { MockCourseService } from './courseServices';
 import { MockCalendarService, MockImportService } from './calendarImportServices';
 import { computeEntitlements, latestSharedAnalysis, MockContext } from './context';
 import { MockComparableRepository, MockPropertyRepository, MockRiskRepository, MockScenarioRepository } from './dataServices';
@@ -46,6 +47,7 @@ export function createMockServices(opts: MockServiceOptions): MockServices {
   });
   const analysis = new MockAnalysisService(ctx);
   const subscriptionService = new MockSubscriptionService(ctx);
+  const courseService = new MockCourseService(ctx);
 
   const mutateSub = (fn: (s: Subscription) => void): Subscription => {
     const uid = ctx.uid();
@@ -72,7 +74,7 @@ export function createMockServices(opts: MockServiceOptions): MockServices {
       return SIMULATED_GOOGLE_ACCOUNTS;
     },
     vipps: {
-      decide: (agreementId, outcome) => subscriptionService.decideVipps(agreementId, outcome),
+      decide: (id, outcome) => (courseService.hasPending(id) ? courseService.decideVipps(id, outcome) : subscriptionService.decideVipps(id, outcome)),
     },
     async listAccounts() {
       return db.read((s) =>
@@ -219,6 +221,7 @@ export function createMockServices(opts: MockServiceOptions): MockServices {
     scenarios: new MockScenarioRepository(ctx),
     comparables: new MockComparableRepository(ctx),
     risks: new MockRiskRepository(ctx),
+    courses: courseService,
     analysis,
     calendar: new MockCalendarService(ctx),
     imports: new MockImportService(ctx),

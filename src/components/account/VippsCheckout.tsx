@@ -9,8 +9,8 @@ import type { VippsPending } from '../../services/types';
 import { Field, Segmented, TextInput } from '../ui/forms';
 import { Dialog } from '../ui/overlay';
 import { Alert, Button } from '../ui/primitives';
+import { VIPPS_BUTTON, VippsApprovalCard } from './VippsApproval';
 
-const VIPPS = 'bg-[#ff5b24] text-white hover:bg-[#e8501f] disabled:opacity-55';
 
 /** Abonnement betales med Vipps: velg intervall, oppgi mobilnummer og godkjenn avtalen i Vipps. */
 export function VippsCheckout({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -77,7 +77,7 @@ export function VippsCheckout({ open, onClose }: { open: boolean; onClose: () =>
         ) : (
           <>
             <Button onClick={close}>Avbryt</Button>
-            <button type="button" className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold ${VIPPS}`} disabled={busy || !phone.trim()} onClick={start}>
+            <button type="button" className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold ${VIPPS_BUTTON}`} disabled={busy || !phone.trim()} onClick={start}>
               <Smartphone className="size-4" aria-hidden /> Fortsett med Vipps
             </button>
           </>
@@ -118,35 +118,18 @@ export function VippsCheckout({ open, onClose }: { open: boolean; onClose: () =>
         </div>
       ) : (
         <div className="space-y-3 text-sm">
-          <div className="mx-auto max-w-xs rounded-2xl border-4 border-slate-800 bg-white p-4 shadow-lg" aria-label="Simulert Vipps-app">
-            <p className="text-center text-lg font-bold text-[#ff5b24]">vipps</p>
-            <p className="mt-2 text-center text-xs text-slate-600">Til {pending.phoneMasked}</p>
-            <p className="mt-3 font-semibold">Godkjenn betalingsavtale</p>
-            <dl className="mt-2 space-y-1 text-xs">
-              <div className="flex justify-between gap-2">
-                <dt className="text-slate-600">Mottaker</dt>
-                <dd className="font-medium">Flippsjekk</dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-slate-600">Beløp</dt>
-                <dd className="num font-medium">
-                  {formatNOK(pending.amount)} / {pending.interval === 'month' ? 'måned' : 'år'}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-slate-600">Første trekk</dt>
-                <dd className="font-medium">{formatDate(pending.firstChargeAt)}</dd>
-              </div>
-            </dl>
-            <div className="mt-4 grid gap-2">
-              <button type="button" className={`h-10 rounded-lg px-4 text-sm font-semibold ${VIPPS}`} disabled={busy} onClick={() => decide('approved')}>
-                Godkjenn
-              </button>
-              <button type="button" className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-medium hover:bg-slate-50 disabled:opacity-55" disabled={busy} onClick={() => decide('rejected')}>
-                Avvis
-              </button>
-            </div>
-          </div>
+          <VippsApprovalCard
+            phoneMasked={pending.phoneMasked}
+            title="Godkjenn betalingsavtale"
+            rows={[
+              ['Mottaker', 'Flippsjekk'],
+              ['Beløp', `${formatNOK(pending.amount)} / ${pending.interval === 'month' ? 'måned' : 'år'}`],
+              ['Første trekk', formatDate(pending.firstChargeAt)],
+            ]}
+            busy={busy}
+            onApprove={() => decide('approved')}
+            onReject={() => decide('rejected')}
+          />
           {error && <Alert tone="danger">{error}</Alert>}
           <p className="text-xs text-slate-600">I produksjon åpner du Vipps-appen eller sendes til Vipps, og tilgangen aktiveres først når Vipps har bekreftet avtalen til serveren.</p>
         </div>

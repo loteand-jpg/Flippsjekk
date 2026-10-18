@@ -1,5 +1,5 @@
 import { CALC_MODEL_VERSION } from '../../calc/engine';
-import { DEMO_JOB } from '../../config/freshness';
+import { DEMO_JOB, FRESHNESS } from '../../config/freshness';
 import { deterministicUuid } from '../../data/analysisBuilder';
 import type { DbState } from '../../data/db';
 import { SEED_PROPERTIES } from '../../data/seedProperties';
@@ -46,7 +46,8 @@ export function createJob(
     targetAnalysisVersion: targetVersion,
     dedupeKey: dedupeKeyFor(property.id, type, targetVersion),
     status: 'running',
-    steps: type === 'full_analysis' ? [...DEMO_JOB.fullSteps] : [...DEMO_JOB.refreshSteps],
+    // En «koblet» analyse har samme trinn og tempo som en ny analyse, så brukeren ser det samme.
+    steps: type === 'light_refresh' ? [...DEMO_JOB.refreshSteps] : [...DEMO_JOB.fullSteps],
     stepIndex: 0,
     stepDurationMs: stepMs,
     attempt: 1,
@@ -169,32 +170,76 @@ function publishFull(draft: DbState, job: AnalysisJob, now: Date): void {
       sc.analysisVersion = analysis.version;
     }
   }
+  // Alle som har bedt om analysen belastes for en ny analyse – uavhengig av hverandre.
   for (const userId of job.requestedBy) {
-    ensureLink(draft, userId, job.propertyId, now);
+    const link = ensureLink(draft, userId, job.propertyId, now);
+    link.analyzedAt = now.toISOString();
     ensureDefaultScenario(draft, userId, job.propertyId, analysis, now);
-    if (userId === job.createdBy) {
-      addUsage(draft, {
-        userId,
-        kind: 'new_analysis',
-        propertyId: job.propertyId,
-        jobId: job.id,
-        analysisId: analysis.id,
-        idempotencyKey: `new_analysis:${job.dedupeKey}`,
-        chargeable: true,
-        createdAt: now.toISOString(),
-      });
-    } else {
-      recordReuse(draft, userId, analysis, now);
-    }
+    addUsage(draft, {
+      userId,
+      kind: 'new_analysis',
+      propertyId: job.propertyId,
+      jobId: job.id,
+      analysisId: analysis.id,
+      idempotencyKey: userId === job.createdBy ? `new_analysis:${job.dedupeKey}` : `new_analysis:${job.dedupeKey}:${userId}`,
+      chargeable: true,
+      createdAt: now.toISOString(),
+    });
   }
 }
 
-/** Lett oppfrisking: ny versjon av volatile annonsefakta og visninger. Ingen ny grunnanalyse. */
-function publishRefresh(draft: DbState, job: AnalysisJob, now: Date): void {
+/** Trenger annonseopplysningene oppfriskning før brukeren får analysen? Eldre enn ett døgn, eller en visning har vært siden sist. */
+export function needsRefresh(draft: Readonly<DbState>, propertyId: string, now: Date): boolean {
+  const snap = latestSnapshot(draft, propertyId);
+  if (!snap) return false;
+  const observed = Date.parse(snap.observedAt);
+  if (now.getTime() - observed > FRESHNESS.volatileMaxAgeHours * 3_600_000) return true;
+  return draft.viewings.some((v) => v.propertyId === propertyId && v.status !== 'avlyst' && Date.parse(v.start) > observed && Date.parse(v.start) <= now.getTime());
+}
+
+/**
+ * Brukerens egen analyse av en bolig som allerede er analysert. Er opplysningene gamle eller har en visning vært,
+ * oppdateres pris, visninger og salgsstatus først. Brukeren får samme dato, samme visning og samme belastning
+ * som ved en helt ny analyse, uavhengig av hva andre har gjort.
+ */
+function publishLinked(draft: DbState, job: AnalysisJob, now: Date): void {
+  const analysis = latestSharedAnalysis(draft, job.propertyId);
+  if (!analysis) {
+    failJob(job, now, 'no_analysis', 'Fant ikke analysegrunnlaget.');
+    return;
+  }
+  if (needsRefresh(draft, job.propertyId, now)) {
+    const snap = applyRefresh(draft, job, now);
+    if (!snap) return;
+  }
+  job.status = 'succeeded';
+  job.stepIndex = job.steps.length;
+  job.resultAnalysisId = analysis.id;
+  job.finishedAt = now.toISOString();
+  job.updatedAt = now.toISOString();
+  job.error = null;
+  const userId = job.createdBy;
+  const link = ensureLink(draft, userId, job.propertyId, now);
+  link.analyzedAt = now.toISOString();
+  ensureDefaultScenario(draft, userId, job.propertyId, analysis, now);
+  addUsage(draft, {
+    userId,
+    kind: 'new_analysis',
+    propertyId: job.propertyId,
+    jobId: job.id,
+    analysisId: analysis.id,
+    idempotencyKey: `new_analysis:${job.dedupeKey}`,
+    chargeable: true,
+    createdAt: now.toISOString(),
+  });
+}
+
+/** Oppdaterer pris, visninger og salgsstatus (ny annonseversjon). Returnerer null og feiler jobben hvis grunnlag mangler. */
+function applyRefresh(draft: DbState, job: AnalysisJob, now: Date) {
   const prev = latestSnapshot(draft, job.propertyId);
   if (!prev) {
     failJob(job, now, 'no_snapshot', 'Fant ikke annonsegrunnlag å oppdatere.');
-    return;
+    return null;
   }
   const script = draft.demo.refreshScripts[job.propertyId];
   const snapshot = {
@@ -242,9 +287,15 @@ function publishRefresh(draft: DbState, job: AnalysisJob, now: Date): void {
   }
   for (const v of draft.viewings) if (v.propertyId === job.propertyId && v.status !== 'avlyst') v.verifiedAt = now.toISOString();
   draft.snapshots.push(snapshot);
+  job.resultSnapshotId = snapshot.id;
+  return snapshot;
+}
+
+/** Lett oppfrisking: ny versjon av volatile annonsefakta og visninger. Ingen ny grunnanalyse. */
+function publishRefresh(draft: DbState, job: AnalysisJob, now: Date): void {
+  if (!applyRefresh(draft, job, now)) return;
   job.status = 'succeeded';
   job.stepIndex = job.steps.length;
-  job.resultSnapshotId = snapshot.id;
   job.finishedAt = now.toISOString();
   job.updatedAt = now.toISOString();
   addUsage(draft, {
@@ -287,6 +338,7 @@ export function advanceJobs(draft: DbState, now: Date): boolean {
     }
     if (step >= job.steps.length) {
       if (job.type === 'full_analysis') publishFull(draft, job, now);
+      else if (job.type === 'linked_analysis') publishLinked(draft, job, now);
       else publishRefresh(draft, job, now);
       changed = true;
     }

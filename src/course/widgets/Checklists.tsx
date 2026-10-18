@@ -1,7 +1,7 @@
 import { Download, Printer, RotateCcw } from 'lucide-react';
 import { Checkbox } from '../../components/ui/forms';
 import { Button } from '../../components/ui/primitives';
-import { COURSE_CHECKED } from '../types';
+import { COURSE_CHECKED, COURSE_TITLE } from '../types';
 import { downloadText, escapeHtml, printHtml } from '../print';
 import { useCourse } from '../progress';
 
@@ -72,7 +72,7 @@ export function checklistHtml(title: string, groups: ChecklistGroup[], checked: 
           .join('')}</ul>`,
     )
     .join('');
-  return `<h1>${escapeHtml(title)}</h1><p class="meta">Flippsjekk – Nivå 1 Flipping som privatperson · Faglig kontrollert: ${COURSE_CHECKED}</p>${body}<p class="note">Regler, renter, priser og markedsforhold kan endres. Avkrysningen er din private bekreftelse og gjør ikke en opplysning dokumentert. Kurset gir generell opplæring og ingen garanti for fortjeneste.</p>`;
+  return `<h1>${escapeHtml(title)}</h1><p class="meta">Flippsjekk – ${COURSE_TITLE} · Faglig kontrollert: ${COURSE_CHECKED}</p>${body}<p class="note">Regler, renter, priser og markedsforhold kan endres. Avkrysningen er din private bekreftelse og gjør ikke en opplysning dokumentert. Kurset gir generell opplæring og ingen garanti for fortjeneste.</p>`;
 }
 
 export function ChecklistWidget({ id: key, title, groups, filename }: { id: string; title: string; groups: ChecklistGroup[]; filename: string }) {

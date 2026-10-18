@@ -22,7 +22,7 @@ import { NEW_ACCOUNT_DEFAULTS } from '../config/defaults';
 import { preliminaryReasons } from '../domain/assessment';
 import { PROPERTY_TYPE_LABEL, RECOMMENDATION_LABEL, TENURE_LABEL, WORK_STATUS_LABEL, WORK_STATUSES, type WorkStatus } from '../domain/enums';
 import type { ScenarioValues, SharedAnalysis } from '../domain/schemas';
-import { formatArea, formatDateTime, formatNOK, formatRelative } from '../lib/format';
+import { formatArea, formatDate, formatNOK, formatRelative } from '../lib/format';
 import { uuid } from '../lib/ids';
 
 const TABS = [
@@ -120,7 +120,7 @@ export function PropertyPage() {
   if (!item.data) {
     return (
       <EmptyState title="Fant ikke objektet i listen din" action={<Link to="/oversikt" className="font-medium text-pine-800 underline">Til oversikten</Link>}>
-        Objektet kan være fjernet fra listen din, eller lenken er feil. Felles data for andre brukere påvirkes aldri når du fjerner et objekt.
+        Objektet kan være fjernet fra listen din, eller lenken er feil.
       </EmptyState>
     );
   }
@@ -180,7 +180,9 @@ export function PropertyPage() {
   const latest = it.latestAnalysis;
   const hasNewVersion = Boolean(latest && analysis.visibility === 'shared' && latest.version > analysis.version);
   const sharedAvailableForImport = Boolean(latest && analysis.visibility === 'private');
-  const analysisAge = (now.getTime() - Date.parse(analysis.publishedAt ?? analysis.createdAt)) / 86_400_000;
+  // Analysedatoen er datoen brukeren selv analyserte boligen – ikke når grunnlaget først ble laget.
+  const analysisDate = it.link.analyzedAt ?? analysis.publishedAt ?? analysis.createdAt;
+  const analysisAge = (now.getTime() - Date.parse(analysisDate)) / 86_400_000;
   const volatileAgeH = it.snapshot ? (now.getTime() - Date.parse(it.snapshot.observedAt)) / 3_600_000 : null;
   const priceChanged = baseSnapshot && it.snapshot && baseSnapshot.id !== it.snapshot.id && baseSnapshot.askingPrice !== it.snapshot.askingPrice;
   const prelim = preliminaryReasons(analysis);
@@ -219,7 +221,7 @@ export function PropertyPage() {
     run(`refresh-${kind}`, async () => {
       const r = await services.analysis.requestRefresh(it.property.id, kind, uuid());
       if (r.outcome === 'already_fresh') toast({ tone: 'info', title: 'Annonseopplysningene er allerede ferske', body: 'Ingen oppfrisking ble belastet.' });
-      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : 'Ny analyse startet', body: r.outcome === 'job_joined' ? 'Koblet til pågående jobb.' : undefined });
+      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : 'Ny analyse startet' });
     });
 
   return (
@@ -253,7 +255,7 @@ export function PropertyPage() {
             </a>
           </div>
           <p className="mt-1 text-xs text-slate-600">
-            {analysis.visibility === 'private' ? 'Privat importert utkast' : `Grunnanalyse v${analysis.version}`} fra {formatDateTime(analysis.publishedAt ?? analysis.createdAt)} · annonse kontrollert{' '}
+            {analysis.visibility === 'private' ? 'Privat importert utkast' : 'Analyse'} fra {formatDate(analysisDate)} · annonse kontrollert{' '}
             {it.snapshot ? formatRelative(it.snapshot.observedAt, now) : 'aldri'}
           </p>
         </div>
@@ -290,19 +292,19 @@ export function PropertyPage() {
       {/* Varsler om grunnlaget */}
       <div className="space-y-2">
         {hasNewVersion && (
-          <Alert tone="info" title={`Ny grunnanalyse (v${latest!.version}) er publisert`} action={<Button size="sm" variant="primary" onClick={() => setRebaseOpen(true)}>Se endringer og velg</Button>}>
-            Scenarioet ditt bygger fortsatt på v{analysis.version}. Ingenting oppdateres uten at du velger det.
+          <Alert tone="warning" title="Dataene kan være utdatert" action={<Button size="sm" variant="primary" onClick={() => setRebaseOpen(true)}>Oppfrisk analysen</Button>}>
+            Det finnes nyere opplysninger om boligen. Vi anbefaler at du oppfrisker analysen. Kalkylene og endringene dine beholdes, og ingenting oppdateres uten at du velger det.
           </Alert>
         )}
         {sharedAvailableForImport && (
-          <Alert tone="info" title="En felles grunnanalyse finnes for objektet" action={<Button size="sm" onClick={() => setRebaseOpen(true)}>Sammenlign</Button>}>
-            Scenarioet bygger på ditt private, importerte utkast.
+          <Alert tone="info" title="Det finnes oppdaterte opplysninger om boligen" action={<Button size="sm" onClick={() => setRebaseOpen(true)}>Sammenlign</Button>}>
+            Scenarioet bygger på ditt importerte utkast.
           </Alert>
         )}
         {analysis.visibility === 'shared' && analysisAge > FRESHNESS.analysisMaxAgeDays && (
           <Alert
             tone="warning"
-            title={`Grunnanalysen er ${Math.floor(analysisAge)} dager gammel`}
+            title={`Analysen er ${Math.floor(analysisAge)} dager gammel`}
             action={
               <Button size="sm" loading={busy === 'refresh-full'} disabled={!entitlements?.canRequestNewAnalysis || Boolean(it.activeJob)} onClick={() => refresh('full')}>
                 Bestill full ny analyse
@@ -519,7 +521,7 @@ export function PropertyPage() {
           </>
         }
       >
-        <p className="text-sm">Bare dette private scenarioet slettes. Grunnanalysen og andre scenarioer berøres ikke.</p>
+        <p className="text-sm">Bare dette scenarioet slettes. Analysen og andre scenarioer beholdes.</p>
       </Dialog>
 
       {latest && (
@@ -537,7 +539,7 @@ export function PropertyPage() {
             const ok = await run('rebase', async () => {
               await services.scenarios.update(selected.id, { analysisId: latest.id, values });
               await services.properties.updatePersonalStatus(it.property.id, { lastSeenAnalysisVersion: latest.version });
-            }, `Scenarioet bygger nå på v${latest.version}`);
+            }, 'Analysen er oppfrisket');
             if (ok) setRebaseOpen(false);
           }}
         />
@@ -624,10 +626,10 @@ function RebaseDialog({
       open={open}
       onClose={onClose}
       size="lg"
-      title={newAnalysis.visibility === 'shared' && oldAnalysis.visibility === 'shared' ? `Endringer fra v${oldAnalysis.version} til v${newAnalysis.version}` : 'Bytt til felles grunnanalyse'}
+      title={newAnalysis.visibility === 'shared' && oldAnalysis.visibility === 'shared' ? 'Oppfrisk analysen' : 'Bytt til oppdatert analyse'}
       footer={
         <>
-          <Button onClick={onClose}>Behold nåværende grunnlag</Button>
+          <Button onClick={onClose}>Behold nåværende analyse</Button>
           <Button onClick={() => onApply('replace_all')}>Erstatt alle forutsetninger</Button>
           <Button variant="primary" onClick={() => onApply('keep_my_changes')}>
             Oppdater – behold mine endringer
@@ -673,7 +675,7 @@ function RebaseDialog({
           </div>
         )}
         <Alert tone="info">
-          «Behold mine endringer» beholder de {myChanges.length} forutsetningene du selv har endret, og henter resten fra den nye analysen. Endringen lagres i scenarioet.
+          «Behold mine endringer» beholder de {myChanges.length} forutsetningene du selv har endret, og henter resten fra de nye opplysningene. Endringen lagres i kalkylen din.
         </Alert>
       </div>
     </Dialog>

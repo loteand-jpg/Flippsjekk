@@ -112,7 +112,7 @@ export function DashboardPage() {
         {entitlements?.access === 'full' && entitlements.plan && (
           <p className="mt-2 text-xs text-slate-600">
             Nye analyser denne perioden: {entitlements.used.newAnalyses} av {entitlements.limits.newAnalyses}
-            {entitlements.used.pendingNewAnalyses ? ` (+${entitlements.used.pendingNewAnalyses} pågår)` : ''} · Gjenbruk belastes ikke.
+            {entitlements.used.pendingNewAnalyses ? ` (+${entitlements.used.pendingNewAnalyses} pågår)` : ''}
           </p>
         )}
       </Card>

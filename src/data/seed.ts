@@ -297,6 +297,18 @@ export function createSeed(now: Date): DbState {
     calendarOverrides,
     userComparables,
     userRisks: [],
+    coursePurchases: [
+      // Ada har kjøpt kurset (viser innhold). Bjørn har ikke kjøpt (viser betalingsmuren).
+      {
+        id: deterministicUuid('course:ada:flipping-privat'),
+        userId: DEMO_USERS.ada.id,
+        courseId: 'flipping-privat',
+        amountPaid: 2999,
+        provider: 'vipps',
+        paymentId: 'pay_demo_ada',
+        purchasedAt: iso(-60 * DAY),
+      },
+    ],
     session: { userId: null },
     demo: {
       seededAt: now.toISOString(),

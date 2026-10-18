@@ -5,17 +5,15 @@ import { Button } from '../components/ui/primitives';
 import { Dialog } from '../components/ui/overlay';
 import { Alert } from '../components/ui/primitives';
 import type { AnalysisJob } from '../domain/schemas';
-import { formatRelative } from '../lib/format';
 import { uuid } from '../lib/ids';
-import { isServiceError, type AnalysisRequestResult, type ServiceErrorCode } from '../services/types';
+import { isServiceError, type ServiceErrorCode } from '../services/types';
 import { useServices } from './services';
 import { useToast } from './toast';
 
 type Phase =
   | { kind: 'idle' }
   | { kind: 'checking'; url: string }
-  | { kind: 'reused_stale'; result: Extract<AnalysisRequestResult, { outcome: 'reused' }> }
-  | { kind: 'job'; jobId: string; propertyId: string; joined: boolean; joinedOther: boolean }
+  | { kind: 'job'; jobId: string; propertyId: string }
   | { kind: 'error'; code: ServiceErrorCode | 'unknown'; message: string };
 
 interface FlowApi {
@@ -51,21 +49,16 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
       setPhase({ kind: 'checking', url });
       try {
         const r = await services.analysis.requestAnalysis({ url, idempotencyKey: uuid() });
+        // Brukeren skal se det samme enten analysen er ny eller allerede finnes: eldre grunnlag følges opp av
+        // varselet på objektsiden. Vi forteller ikke at en analyse «finnes fra før».
         if (r.outcome === 'reused') {
-          if (r.staleness.analysisStale || r.staleness.volatileStale) {
-            setPhase({ kind: 'reused_stale', result: r });
-          } else {
-            setPhase({ kind: 'idle' });
-            toast({
-              tone: 'success',
-              title: r.alreadyInList ? 'Objektet ligger allerede i listen din' : 'Eksisterende analyse hentet',
-              body: 'Ingen ny analyse er belastet kvoten din.',
-            });
-            open(r.propertyId);
-          }
+          setPhase({ kind: 'idle' });
+          if (r.alreadyInList) toast({ tone: 'info', title: 'Objektet ligger allerede i listen din' });
+          else toast({ tone: 'success', title: 'Analysen er klar' });
+          open(r.propertyId);
         } else {
           setJob(r.job);
-          setPhase({ kind: 'job', jobId: r.job.id, propertyId: r.propertyId, joined: r.outcome === 'job_joined', joinedOther: r.outcome === 'job_joined' && r.joinedOtherUser });
+          setPhase({ kind: 'job', jobId: r.job.id, propertyId: r.propertyId });
         }
         return { ok: true };
       } catch (e) {
@@ -95,7 +88,7 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
       if (j.status === 'succeeded') {
         alive = false;
         setPhase({ kind: 'idle' });
-        toast({ tone: 'success', title: 'Analysen er klar', body: phase.joined ? 'Felles analyse – du ble ikke belastet.' : 'Én ny analyse er registrert i forbruket ditt.' });
+        toast({ tone: 'success', title: j.type === 'light_refresh' ? 'Annonsen er oppfrisket' : 'Analysen er klar' });
         open(phase.propertyId);
       }
     };
@@ -124,25 +117,6 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const refresh = async (kind: 'light' | 'full') => {
-    if (phase.kind !== 'reused_stale') return;
-    const pid = phase.result.propertyId;
-    try {
-      const r = await services.analysis.requestRefresh(pid, kind, uuid());
-      if (r.outcome === 'already_fresh') {
-        toast({ tone: 'info', title: 'Annonseopplysningene er allerede ferske' });
-        close();
-        open(pid);
-      } else {
-        setJob(r.job);
-        setPhase({ kind: 'job', jobId: r.job.id, propertyId: pid, joined: r.outcome === 'job_joined', joinedOther: false });
-      }
-    } catch (e) {
-      setPhase({ kind: 'error', code: isServiceError(e) ? e.code : 'unknown', message: (e as Error).message });
-    }
-  };
-
-  const now = services.clock.now();
   const dialogOpen = phase.kind !== 'idle' && phase.kind !== 'checking';
 
   return (
@@ -155,12 +129,8 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
           phase.kind === 'job'
             ? job?.type === 'light_refresh'
               ? 'Oppfrisker annonseopplysninger'
-              : phase.joined
-                ? 'Analyse pågår allerede'
-                : 'Analyserer bolig'
-            : phase.kind === 'reused_stale'
-              ? 'Eksisterende analyse hentet'
-              : 'Kunne ikke starte analysen'
+              : 'Analyserer bolig'
+            : 'Kunne ikke starte analysen'
         }
         footer={
           phase.kind === 'job' ? (
@@ -174,21 +144,6 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
             ) : (
               <Button onClick={close}>Lukk – analysen fortsetter</Button>
             )
-          ) : phase.kind === 'reused_stale' ? (
-            <>
-              <Button onClick={() => refresh('light')}>Lett oppfrisking</Button>
-              <Button onClick={() => refresh('full')}>Full ny analyse</Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  const pid = phase.result.propertyId;
-                  close();
-                  open(pid);
-                }}
-              >
-                Åpne analysen
-              </Button>
-            </>
           ) : phase.kind === 'error' ? (
             <>
               <Button onClick={close}>Lukk</Button>
@@ -220,16 +175,9 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
       >
         {phase.kind === 'job' && job && (
           <div className="space-y-4">
-            {phase.joined && (
-              <Alert tone="info" title={phase.joinedOther ? 'Du er koblet til en felles analyse' : 'Du er koblet til samme jobb'}>
-                {phase.joinedOther
-                  ? 'En annen abonnent har allerede startet analyse av denne boligen. Du får samme grunnanalyse, men egne private scenarioer. Dette belastes ikke kvoten din.'
-                  : 'Analysen er allerede i gang. Det startes ingen ny jobb og belastes ikke på nytt.'}
-              </Alert>
-            )}
             <ol className="space-y-2" aria-label="Fremdrift">
-              {[...(job.type === 'full_analysis' ? PRE_STEPS : []), ...job.steps].map((label, i) => {
-                const offset = job.type === 'full_analysis' ? PRE_STEPS.length : 0;
+              {[...(job.type !== 'light_refresh' ? PRE_STEPS : []), ...job.steps].map((label, i) => {
+                const offset = job.type !== 'light_refresh' ? PRE_STEPS.length : 0;
                 const idx = i - offset;
                 const done = idx < 0 || idx < job.stepIndex || job.status === 'succeeded';
                 const failedHere = job.status === 'failed' && idx === job.stepIndex;
@@ -264,26 +212,6 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
               <p className="text-xs text-slate-600">
                 Objektet er lagt i listen din og vises som «Analyse pågår». Du kan lukke vinduet – analysen fortsetter i demoen. Ingen data hentes fra FINN; resultatet er demodata.
               </p>
-            )}
-          </div>
-        )}
-        {phase.kind === 'reused_stale' && (
-          <div className="space-y-3 text-sm">
-            <p>
-              Det finnes allerede en grunnanalyse for denne boligen (versjon {phase.result.analysis.version}, publisert{' '}
-              {formatRelative(phase.result.analysis.publishedAt, now)}). Den er lagt i listen din uten å belaste kvoten.
-            </p>
-            {phase.result.staleness.analysisStale && (
-              <Alert tone="warning" title={`Grunnanalysen er ${Math.floor(phase.result.staleness.analysisAgeDays)} dager gammel`}>
-                Oppussing, salgsverdi og risiko kan ha endret seg. En full ny analyse belastes som én ny analyse.
-              </Alert>
-            )}
-            {phase.result.staleness.volatileStale && (
-              <Alert tone="info" title="Pris, visninger og salgsstatus bør sjekkes">
-                Annonseopplysningene ble sist kontrollert{' '}
-                {phase.result.staleness.volatileAgeHours === null ? 'aldri' : `for ${Math.round(phase.result.staleness.volatileAgeHours)} timer siden`}. En lett oppfrisking
-                oppdaterer bare disse og endrer ikke dine lagrede forutsetninger.
-              </Alert>
             )}
           </div>
         )}

@@ -31,6 +31,9 @@ I demoen (lokal lagring) gjenopprettes en felles analyse som mangler for et demo
 ### subscriptions
 `id`, `user_id`, `plan_id`, `interval` (month/year), `status` (active, trialing, past_due, canceled, incomplete), `current_period_start`, `current_period_end`, `cancel_at_period_end`, `provider` (vipps), `provider_subscription_id` (Vipps `agreementId`), `created_at`, `updated_at`.
 
+### course_purchases
+`id`, `user_id`, `course_id`, `amount_paid` (hele kroner), `provider` (vipps), `payment_id` (Vipps-referanse, unik), `purchased_at`. Unik på (`user_id`, `course_id`) – ett kjøp gir varig tilgang. Tilgangen er uavhengig av `subscriptions`. Skrives bare av backend ved bekreftet Vipps-betaling (webhook). Brukeren kan bare lese egne rader.
+
 Tilgang beregnes av status **og** betalt periode, ikke av oppsigelsesmarkeringen alene. Se `computeEntitlements` i [src/services/mock/context.ts](../src/services/mock/context.ts):
 
 | Tilstand | Tilgang |
@@ -73,16 +76,18 @@ Sammenlignbare objekter har samme felt i grunnlaget og hos brukeren: `name`, `ur
 - `calendar_overrides`: privat overstyring av buddag med `derived_start_at_override` (kildeprognosen da overstyringen ble lagt inn) og `origin` (manual, import_v1).
 
 ### analysis_jobs
-`id`, `property_id`, `finn_id`, `type` (full_analysis, light_refresh), `schema_version`, `model_version`, `target_analysis_version`, `dedupe_key`, `status`, `steps`, `step_index`, `attempt`, `started_at`, `finished_at`, `error`, `created_by`, `requested_by` (uuid[]), `result_analysis_id`, `result_snapshot_id`.
+`id`, `property_id`, `finn_id`, `type` (full_analysis, light_refresh, linked_analysis), `schema_version`, `model_version`, `target_analysis_version`, `dedupe_key`, `status`, `steps`, `step_index`, `attempt`, `started_at`, `finished_at`, `error`, `created_by`, `requested_by` (uuid[]), `result_analysis_id`, `result_snapshot_id`.
 
 `dedupe_key = property_id:type:v<målversjon>:s<skjema>:m<modell>`. Nye forespørsler mens en jobb med samme nøkkel er aktiv kobles til jobben. Et nytt forsøk etter feil gjenbruker jobben (`attempt + 1`).
+
+`linked_analysis` er brukerens egen analyse av en bolig som allerede er analysert: samme trinn og tempo som en ny analyse, privat per bruker (nøkkelen får `:u<user>`), og den vises ikke for andre. Er annonseopplysningene over ett døgn gamle, eller har en visning vært siden de ble hentet, oppdateres pris, visninger og salgsstatus først (uten egen belastning). Brukerens analysedato (`user_properties.analyzed_at`) settes når jobben er ferdig. Er grunnlaget eldre enn 30 dager eller ikke kompatibelt, lages i stedet en ny full analyse.
 
 ### usage_events
 `id`, `user_id`, `kind` (new_analysis, refresh, reuse), `property_id`, `job_id`, `analysis_id`, `idempotency_key` (unik), `chargeable`, `created_at`.
 
 - Ny analyse belastes først ved vellykket publisering, med nøkkel `new_analysis:<dedupe_key>`. Mislykkede og dupliserte jobber gir derfor ikke dobbelt forbruk.
-- Gjenbruk registreres som `reuse:<user>:<analysis>` og er ikke belastende.
-- Kvoten for nye analyser telles som belastede hendelser i perioden pluss egne pågående jobber.
+- **Hver bruker som ber om en analyse belastes for en ny analyse**, uavhengig av om grunnlaget fantes fra før eller andre har analysert samme bolig (nøkkel `new_analysis:<dedupe_key>[:<user>]`). Åpner brukeren en bolig som allerede ligger i egen liste (eller er betalt tidligere), belastes ikke på nytt. `reuse`-hendelser registreres ikke lenger for nye forespørsler og vises ikke for brukeren.
+- Kvoten for nye analyser telles som belastede hendelser i perioden pluss egne pågående analysejobber (også de brukeren er koblet til).
 
 ## Forslag til Postgres/Supabase
 

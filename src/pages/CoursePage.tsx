@@ -2,10 +2,16 @@ import clsx from 'clsx';
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, ChevronDown, ClipboardList, Clock, GraduationCap, Layers, Lock, RotateCcw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { useLiveQuery } from '../app/hooks';
+import { useServices } from '../app/services';
 import { useSession } from '../app/session';
+import { CoursePurchaseDialog } from '../components/account/CoursePurchase';
+import { COURSES, type CourseOffer } from '../config/courses';
+import { formatNOK } from '../lib/format';
+import { CoursePaywall } from './CoursePaywall';
 import { TextInput } from '../components/ui/forms';
 import { Dialog } from '../components/ui/overlay';
-import { Badge, Button, buttonClass, Card } from '../components/ui/primitives';
+import { Badge, Button, buttonClass, Card, PageLoading } from '../components/ui/primitives';
 import { Blocks } from '../course/BlockView';
 import { RichText } from '../course/components';
 import { MINUTES_PER_PAGE, MODULE_COUNT, MODULES, PAGE_COUNT, TOTAL_MINUTES, TOTAL_UNITS, moduleById } from '../course/content';
@@ -258,7 +264,7 @@ function CourseInner() {
           <>
             <span aria-hidden>/</span>
             <button type="button" className="hover:underline" onClick={() => go(null)}>
-              Nivå 1
+              Flipping nivå 1
             </button>
           </>
         )}
@@ -493,6 +499,10 @@ function Landing({ onPick }: { onPick: (l: Loc) => void }) {
 }
 
 export function CourseLevel1Page() {
+  const services = useServices();
+  const access = useLiveQuery(() => services.courses.getAccess(COURSE_ID), []);
+  if (access.loading && !access.data) return <PageLoading />;
+  if (!access.data?.owned) return <CoursePaywall />;
   return (
     <CourseProvider>
       <CourseInner />
@@ -500,52 +510,75 @@ export function CourseLevel1Page() {
   );
 }
 
-const UPCOMING = ['Nivå 2: Flipping gjennom AS', 'Utleie som privatperson', 'Utleie gjennom AS'];
-
-/** /kurs – oversikt over kursserien. */
+/** /kurs – oversikt over kursene. Kurs kjøpes én gang og gir varig tilgang. */
 export function CoursesPage() {
+  const services = useServices();
   const { session } = useSession();
+  const purchases = useLiveQuery(() => services.courses.listPurchases(), []);
+  const [buying, setBuying] = useState<CourseOffer | null>(null);
   const progress = readProgress(session?.user.id ?? 'anon');
+  const owned = (id: string) => (purchases.data ?? []).some((p) => p.courseId === id);
+  const available = COURSES.filter((c) => c.status === 'available');
+  const upcoming = COURSES.filter((c) => c.status === 'soon');
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Kurs</h1>
-        <p className="text-sm text-slate-600">En kursserie for vanlige mennesker som vil lære eiendomsinvestering og boligflipping fra bunnen av.</p>
+        <p className="text-sm text-slate-600">En kursserie for vanlige mennesker som vil lære eiendomsinvestering og boligflipping fra bunnen av. Hvert kurs kjøpes én gang og gir varig tilgang.</p>
       </div>
-      <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
-            <Badge tone="green">Tilgjengelig</Badge>
-            <h2 className="mt-2 text-xl font-semibold">{COURSE_TITLE}</h2>
-            <p className="text-slate-700">{COURSE_SUBTITLE}</p>
-            <p className="mt-2 text-sm text-slate-600">
-              {MODULE_COUNT} moduler · {PAGE_COUNT} sider · ca. {hours(TOTAL_MINUTES)} · kalkulatorer, kontrollspørsmål, sluttcase og sluttquiz · regler og markedsdata faglig kontrollert {COURSE_CHECKED}
-            </p>
-            <div className="mt-3 max-w-sm">
-              <Progress percent={progress.percent} text={`${progress.modulesDone} av ${MODULE_COUNT} moduler fullført`} />
+      {available.map((c) => {
+        const mine = owned(c.id);
+        return (
+          <Card key={c.id} className="p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-2xl">
+                {mine ? <Badge tone="green">Kjøpt – du har tilgang</Badge> : <Badge tone="amber">{formatNOK(c.price)} · engangsbeløp</Badge>}
+                <h2 className="mt-2 text-xl font-semibold">{c.title}</h2>
+                <p className="text-slate-700">{c.subtitle}</p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {MODULE_COUNT} moduler · {PAGE_COUNT} sider · ca. {hours(TOTAL_MINUTES)} · kalkulatorer, kontrollspørsmål, sluttcase og sluttquiz · regler og markedsdata faglig kontrollert {COURSE_CHECKED}
+                </p>
+                {mine && (
+                  <div className="mt-3 max-w-sm">
+                    <Progress percent={progress.percent} text={`${progress.modulesDone} av ${MODULE_COUNT} moduler fullført`} />
+                  </div>
+                )}
+              </div>
+              {mine ? (
+                <Link to={`/kurs/${c.id}`} className={buttonClass('primary', 'lg')}>
+                  {progress.doneUnits > 0 || progress.lastLocation ? 'Fortsett kurset' : 'Åpne kurset'} <ArrowRight className="size-4" aria-hidden />
+                </Link>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Link to={`/kurs/${c.id}`} className={buttonClass('secondary', 'lg')}>
+                    Se innholdet
+                  </Link>
+                  <Button size="lg" variant="primary" icon={<Lock className="size-4" aria-hidden />} onClick={() => setBuying(c)}>
+                    Kjøp kurset
+                  </Button>
+                </div>
+              )}
             </div>
-          </div>
-          <Link to={`/kurs/${COURSE_ID}`} className={buttonClass('primary', 'lg')}>
-            {progress.doneUnits > 0 || progress.lastLocation ? 'Fortsett kurset' : 'Åpne kurset'} <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </div>
-      </Card>
+          </Card>
+        );
+      })}
       <section aria-labelledby="kommer">
         <h2 id="kommer" className="mb-2 text-lg font-semibold">
           Senere i serien
         </h2>
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {UPCOMING.map((t) => (
-            <li key={t} className="flex items-start gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-600">
+          {upcoming.map((c) => (
+            <li key={c.id} className="flex items-start gap-3 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-600">
               <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
               <div>
-                <p className="font-semibold text-slate-800">{t}</p>
+                <p className="font-semibold text-slate-800">{c.title}</p>
                 <p className="text-xs">Kommer senere</p>
               </div>
             </li>
           ))}
         </ul>
       </section>
+      {buying && <CoursePurchaseDialog course={buying} open onClose={() => setBuying(null)} />}
     </div>
   );
 }

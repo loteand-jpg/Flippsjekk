@@ -4,6 +4,7 @@ import { useSession } from '../app/session';
 import { PublicLayout } from '../components/marketing/PublicLayout';
 import { HeroVisual } from '../components/marketing/HeroVisual';
 import { Badge, buttonClass, Card } from '../components/ui/primitives';
+import { COURSES } from '../config/courses';
 import { PRIMARY_PLAN } from '../config/plans';
 import { formatNOK } from '../lib/format';
 
@@ -12,7 +13,7 @@ const HIGHLIGHTS = [
   { icon: Target, title: 'Finn maks budpris', text: 'Sett fortjenestemålet ditt, så regner Flippsjekk baklengs til hva du maksimalt bør by.' },
   { icon: Wallet, title: 'Oversiktlig budsjett', text: 'Alle poster samlet, merket som anslag eller dine egne tall – med reserve for det uventede.' },
   { icon: LayoutDashboard, title: 'Alle boliger og visninger', text: 'Alle aktuelle boliger i én oversikt, og en visningskalender med forventet buddag.' },
-  { icon: GraduationCap, title: 'Lær å flippe', text: 'Et kurs i 11 moduler som tar deg fra første annonse til ferdig salg.' },
+  { icon: GraduationCap, title: 'Lær å flippe', text: 'Flipping nivå 1 - Privat: 11 moduler fra første annonse til ferdig salg. Kjøpes én gang, du beholder tilgangen.' },
 ];
 
 const PROOF = [
@@ -26,13 +27,13 @@ const PROOF = [
 
 function Pricing({ cta }: { cta: string }) {
   const plan = PRIMARY_PLAN;
+  const kurs = COURSES[0];
   const perMonthYear = Math.round(plan.priceYearly / 12);
   const saving = plan.priceMonthly * 12 - plan.priceYearly;
   const included = [
     plan.features[0],
-    `${plan.limits.newAnalysesPerPeriod} nye analyser per periode – gjenbruk av eksisterende analyser teller ikke`,
+    `${plan.limits.newAnalysesPerPeriod} nye analyser per periode`,
     ...plan.features.slice(2),
-    'Flippekurs i 11 moduler',
   ];
   const options = [
     { id: 'month', name: 'Månedlig', price: plan.priceMonthly, unit: 'måned', note: 'Avslutt når du vil', best: false },
@@ -82,6 +83,20 @@ function Pricing({ cta }: { cta: string }) {
             </li>
           ))}
         </ul>
+        <div className="mx-auto mt-8 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-pine-50 text-pine-800">
+              <GraduationCap className="size-5" aria-hidden />
+            </span>
+            <div>
+              <p className="font-semibold">{kurs.title}</p>
+              <p className="text-sm text-slate-600">Kurs kjøpes separat – én gang, med varig tilgang. Uavhengig av abonnementet.</p>
+            </div>
+          </div>
+          <p className="num text-lg font-semibold">
+            {formatNOK(kurs.price)} <span className="text-sm font-normal text-slate-600">engangsbeløp</span>
+          </p>
+        </div>
         <p className="mt-6 text-center text-xs text-slate-600">Priser og kampanje er eksempelverdier i demoen – ingen betaling behandles, og ingen kommersiell pris er besluttet. Priser inkl. mva.</p>
       </div>
     </section>

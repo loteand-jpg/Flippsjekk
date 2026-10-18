@@ -401,7 +401,9 @@ export const UserPropertySchema = z.object({
   archivedAt: isoDateTime.nullable(),
   addedAt: isoDateTime,
   updatedAt: isoDateTime,
-  /** Siste felles analyseversjon brukeren har sett – brukes til «ny versjon»-varsel. */
+  /** Når brukerens analyse ble gjort (vises som analysedato). Mangler for eldre rader – da brukes analysens egen dato. */
+  analyzedAt: isoDateTime.nullable().optional(),
+  /** Siste analyseversjon brukeren har sett – brukes til varsel om oppdaterte data. */
   lastSeenAnalysisVersion: z.number().int().nullable(),
   /** Brukerens private avkrysninger. Endrer aldri kildestatus i den felles analysen. */
   checks: z.record(z.string(), z.object({ confirmedAt: isoDateTime, note: z.string() })),
@@ -487,6 +489,20 @@ export const SubscriptionSchema = z.object({
   updatedAt: isoDateTime,
 });
 export type Subscription = z.infer<typeof SubscriptionSchema>;
+
+/** Kjøp av kurs. Engangsbetaling som gir varig tilgang – uavhengig av abonnementet. */
+export const CoursePurchaseSchema = z.object({
+  id,
+  userId: id,
+  courseId: z.string(),
+  /** Beløp betalt i hele kroner. */
+  amountPaid: z.number().int().min(0),
+  provider: z.literal('vipps'),
+  /** Vipps' betalings-ID (reference). */
+  paymentId: z.string(),
+  purchasedAt: isoDateTime,
+});
+export type CoursePurchase = z.infer<typeof CoursePurchaseSchema>;
 
 export const AnalysisJobSchema = z.object({
   id,

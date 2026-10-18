@@ -43,7 +43,7 @@ Knappen **Testkontroller** i den lilla demostripen øverst åpner et panel for �
 - bytte mellom bruker A og B, og se at samme objekt har ulike private scenarioer mens grunnanalysen deles
 - sette abonnementstilstand: aktivt, prøveperiode, oppsagt ved periodeslutt, betalingsproblem, utløpt, ingen, og lav kvote (1 analyse per periode). Lagrede scenarioer slettes aldri.
 - kjøre ferdige FINN-lenker:
-  - **Cachetreff** `finn.no/900000113`: eksisterende analyse gjenbrukes uten belastning
+  - **Cachetreff** `finn.no/900000113`: grunnlaget finnes fra før, men brukeren ser og belastes som ved en ny analyse (fremdriftsdialog, «Analysen er klar», én ny analyse i kvoten)
   - **Samme objekt, annet format**: `…/ad.html?finnkode=900000113&utm_source=…` normaliseres til samme FINN-ID
   - **Cachemiss** `finn.no/478027403`: ny simulert analyse med fem steg. Ukjente FINN-ID-er gir et deterministisk syntetisk objekt merket «Demodata – ingen annonse hentet».
   - **Gammel analyse** `finn.no/900000110`: over 30 dager, med valg mellom lett oppfrisking og full reanalyse
@@ -102,9 +102,11 @@ Kalenderen åpner som vanlig månedskalender: uker nedover med ukenummer, og man
 - Du kan legge inn en privat overstyring; kildeverdien bevares.
 - Kalenderen eksporteres som `.ics` med stabile UID-er og VTIMEZONE for Oslo.
 
-## Kurs (Nivå 1 – Flipping som privatperson)
+## Kurs (Flipping nivå 1 - Privat)
 
-Siden **Kurs** (`#/kurs`) er første kurs i en serie. Kurset ligger på `#/kurs/flipping-privat` og har **11 moduler** (53 sider, hver modul avsluttes med kontrollspørsmål), deretter sluttcase, sluttquiz og en fullføringsside, ca. 3 t 40 min. «Flipping gjennom AS», «Utleie som privatperson» og «Utleie gjennom AS» vises som «Kommer senere» – uten innhold.
+Siden **Kurs** (`#/kurs`) er første kurs i en serie. Kurset ligger på `#/kurs/flipping-privat` og har **11 moduler** (53 sider, hver modul avsluttes med kontrollspørsmål), deretter sluttcase, sluttquiz og en fullføringsside, ca. 3 t 40 min. «Flipping nivå 2 - AS», «Utleie nivå 1 - Privat» og «Utleie nivå 2 - AS» vises som «Kommer senere» – uten innhold.
+
+- **Betalingsmur:** kurset koster **2 999 kr** (eksempelpris), kjøpes **én gang** med Vipps og gir **varig tilgang**. Uten kjøp vises bare en salgsside med kursoversikten (titler og formål) – selve innholdet er låst, også med direkte lenke til en side. Tilgangen er uavhengig av Flippsjekk-abonnementet, og kurskjøp gir ikke abonnement. Kurskatalog og pris ligger i `src/config/courses.ts`. Ada har kjøpt kurset i demoen, Bjørn har ikke (viser betalingsmuren). Kjøpene ligger i `coursePurchases` og vises under «Mine kurs» på Konto.
 
 - Innholdet ligger som data i `src/course/content/` (`m01-03.ts`, `m04-06.ts`, `m07-11.ts`, `finalQuiz.ts`) og rendres av `src/pages/CoursePage.tsx`, én side om gangen (`?modul=4&side=2`, `side=q` for kontrollspørsmål, `modul=sluttcase|sluttquiz|ferdig`). Ordlisten ligger i `src/course/glossary.ts`. Modulrekkefølgen er låst og testes i `src/course/course.test.ts`.
 - **Faglig kontrollert-dato** (17. oktober 2026) står i `src/course/types.ts` og vises på infosiden, under hver side og i utskrifter. Markedstall og 2026-planleggingstall står samlet i `src/course/marketData.ts`.

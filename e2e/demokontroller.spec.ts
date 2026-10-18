@@ -13,17 +13,23 @@ test('testkontroller: cachetreff, felles jobb, feil og nytt forsøk, gammel anal
     await card.getByRole('button', { name: 'Kjør' }).click();
   };
 
-  // Cachetreff: eksisterende analyse hentes uten belastning
+  // Cachetreff: brukeren ser det samme som ved en ny analyse (fremdrift, så «Analysen er klar») – ingen beskjed om at grunnlaget fantes
   await run('Cachetreff');
-  await expect(page).toHaveURL(/#\/objekter\//);
-  await expect(page.getByText('Eksisterende analyse hentet')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Analyserer bolig' })).toBeVisible();
+  await expect(page.getByText(/Eksisterende analyse|finnes allerede|ikke belastet|felles analyse|koblet til/i)).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/objekter\//, { timeout: 30_000 });
+  await expect(page.getByText('Analysen er klar')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Bakkegata 6' })).toBeVisible();
+  await expect(page.getByText(/Analyse fra \d/)).toBeVisible(); // dato, uten versjonsnummer
+  await expect(page.getByText(/Grunnanalyse v\d|versjon \d/)).toHaveCount(0);
 
-  // Pågående felles jobb: koblet til uten belastning
+  // Pågående felles jobb: samme fremdriftsvisning som en vanlig analyse, uten beskjed om at den deles
   await run('Pågående felles jobb');
-  await expect(page.getByText('Du er koblet til en felles analyse')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Analyserer bolig' })).toBeVisible();
+  await expect(page.getByText(/koblet til|felles analyse|annen abonnent/i)).toHaveCount(0);
   await expect(page).toHaveURL(/#\/objekter\//, { timeout: 40_000 });
-  await expect(page.getByText('Felles analyse – du ble ikke belastet.')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByText('Analysen er klar')).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByText(/ikke belastet|Felles analyse/)).toHaveCount(0);
 
   // Feil og nytt forsøk: første forsøk feiler, retry lykkes
   await run('Feil og nytt forsøk');
@@ -32,9 +38,11 @@ test('testkontroller: cachetreff, felles jobb, feil og nytt forsøk, gammel anal
   await page.getByRole('button', { name: 'Prøv igjen' }).click();
   await expect(page.getByText('Analysen er klar')).toBeVisible({ timeout: 20_000 });
 
-  // Gammel analyse: viser alder og valg for oppdatering
+  // Objekt i egen liste med gamle annonseopplysninger: annonsen oppfriskes først (samme dialog), deretter åpnes objektet
   await run('Gammel analyse');
-  await expect(page.getByRole('dialog').getByText(/Grunnanalysen er \d+ dager gammel/)).toBeVisible();
-  await page.getByRole('button', { name: 'Lett oppfrisking' }).click();
+  await expect(page.getByRole('dialog', { name: 'Oppfrisker annonseopplysninger' })).toBeVisible();
+  await expect(page.getByText(/Eksisterende analyse|finnes allerede|felles analyse/i)).toHaveCount(0);
   await expect(page).toHaveURL(/#\/objekter\//, { timeout: 15_000 });
+  await expect(page.getByText('Annonsen er oppfrisket')).toBeVisible();
+  await expect(page.getByText('Pris, visninger og salgsstatus bør kontrolleres')).toHaveCount(0); // annonsen er fersk etter oppfriskningen
 });

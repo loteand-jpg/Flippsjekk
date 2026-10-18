@@ -14,7 +14,8 @@ import { EMPTY_CALC } from '../caseData';
 import { EvidenceTag } from '../components';
 import { FINAL_QUIZ } from '../content/finalQuiz';
 import { finalQuizScore, useCourse, type Decision, type FinalCaseState } from '../progress';
-import { COURSE_CHECKED, PASS_MARK } from '../types';
+import { COURSES } from '../../config/courses';
+import { COURSE_CHECKED, COURSE_TITLE, PASS_MARK } from '../types';
 import { Quiz } from './Quiz';
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,9 @@ const OPTIONS: { id: string; label: string; correct: boolean }[] = [
   { id: 'o-fin', label: 'Finansiering', correct: true },
   { id: 'o-skatt', label: 'Skatteforutsetning', correct: true },
 ];
+
+/** Neste kurs i serien. */
+const NEXT_COURSE = COURSES[1].title;
 
 const DECISION_LABEL: Record<Decision, string> = { interessant: 'Interessant', folg_med: 'Følg med', avklar_forst: 'Avklar først', avsta: 'Avstå' };
 const ASKING = 2_650_000;
@@ -439,7 +443,7 @@ export function Completion() {
     <div className="space-y-5">
       <div className="rounded-2xl bg-gradient-to-br from-pine-900 to-pine-700 p-6 text-white">
         <CircleCheck className="size-8" aria-hidden />
-        <h2 className="mt-2 text-2xl font-semibold">Du har fullført Nivå 1</h2>
+        <h2 className="mt-2 text-2xl font-semibold">Du har fullført {COURSE_TITLE}</h2>
         <p className="mt-2 text-pine-50">
           Du skal nå kunne gå fra en boligannonse til en begrunnet beslutning om objektet er verdt å undersøke videre og hvor mye prosjektet maksimalt tåler at du betaler.
         </p>
@@ -463,7 +467,7 @@ export function Completion() {
       </div>
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4">
         <p className="text-xs font-semibold tracking-wide text-slate-600 uppercase">Neste kurs</p>
-        <p className="font-semibold">Nivå 2 – Flipping gjennom AS</p>
+        <p className="font-semibold">{NEXT_COURSE}</p>
         <p className="text-sm text-slate-600">Status: Kommer senere</p>
       </div>
       <p className="text-xs text-slate-600">Regler og markedsdata faglig kontrollert: {COURSE_CHECKED}. Kurset gir generell opplæring og ingen garanti for fortjeneste.</p>

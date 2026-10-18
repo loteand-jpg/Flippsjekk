@@ -2,6 +2,7 @@ import type { PlanConfig } from '../config/plans';
 import type {
   AnalysisJob,
   CalendarOverride,
+  CoursePurchase,
   PrivateEvent,
   Profile,
   ProfileDefaults,
@@ -167,6 +168,34 @@ export interface VippsPending {
   /** Avtalen utløper hvis den ikke godkjennes innen dette tidspunktet. */
   expiresAt: string;
 }
+/** Engangsbetaling med Vipps for et kurs. Tilgang gis først når Vipps har bekreftet betalingen. */
+export interface VippsCoursePending {
+  kind: 'vipps_pending';
+  paymentId: string;
+  phoneMasked: string;
+  courseId: string;
+  amount: number;
+  expiresAt: string;
+}
+export type CoursePurchaseResult = VippsCoursePending | { kind: 'redirect'; url: string };
+
+export interface CourseAccess {
+  courseId: string;
+  owned: boolean;
+  purchase: CoursePurchase | null;
+}
+
+/**
+ * Kurs kjøpes separat med engangsbetaling og gir varig tilgang. Tilgangen er uavhengig av abonnementet
+ * og faller aldri bort (heller ikke ved avsluttet abonnement).
+ */
+export interface CourseService {
+  getAccess(courseId: string): Promise<CourseAccess>;
+  listPurchases(): Promise<CoursePurchase[]>;
+  /** Oppretter en Vipps-betaling. Prisen hentes alltid fra kurskatalogen – aldri fra klienten. */
+  startPurchase(input: { courseId: string; phone: string }): Promise<CoursePurchaseResult>;
+}
+
 export type CheckoutResult = VippsPending | { kind: 'redirect'; url: string };
 export type PortalResult = { kind: 'simulated' } | { kind: 'redirect'; url: string };
 
@@ -399,7 +428,8 @@ export interface DemoService {
   googleAccounts(): SimulatedGoogleAccount[];
   /** Simulerer brukerens valg i Vipps-appen (og Vipps' bekreftelse til serveren). */
   vipps: {
-    decide(agreementId: string, outcome: 'approved' | 'rejected'): Promise<{ status: 'approved' | 'rejected'; subscription: Subscription | null }>;
+    /** Avgjør en ventende Vipps-avtale (abonnement) eller -betaling (kurs). */
+    decide(id: string, outcome: 'approved' | 'rejected'): Promise<{ status: 'approved' | 'rejected'; subscription: Subscription | null; purchase: CoursePurchase | null }>;
   };
   switchUser(userId: string): Promise<void>;
   setSubscriptionPreset(preset: SubscriptionPreset): Promise<void>;
@@ -434,6 +464,7 @@ export interface Services {
   scenarios: ScenarioRepository;
   comparables: ComparableRepository;
   risks: RiskRepository;
+  courses: CourseService;
   analysis: AnalysisService;
   calendar: CalendarService;
   imports: ImportService;

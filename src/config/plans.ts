@@ -37,7 +37,6 @@ export const PLANS: PlanConfig[] = [
     limits: { newAnalysesPerPeriod: 15, refreshesPerPeriod: 60, scenariosPerProperty: 10 },
     features: [
       'Analyse fra FINN-lenke med oppussing, salgsverdi og risiko',
-      'Gjenbruk av eksisterende analyser belastes ikke kvoten',
       'Private scenarioer, maksbud og stresstester',
       'Kalender med visninger og forventet buddag, eksport til .ics',
       'Sammenligning av inntil tre objekter',

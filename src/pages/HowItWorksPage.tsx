@@ -7,7 +7,7 @@ import { PublicLayout } from '../components/marketing/PublicLayout';
 import { Card } from '../components/ui/primitives';
 
 const STEPS = [
-  { icon: Link2, title: 'Lim inn FINN-lenken', text: 'Ingen skjemautfylling. Finnes det allerede en analyse av boligen, får du den med en gang.' },
+  { icon: Link2, title: 'Lim inn FINN-lenken', text: 'Ingen skjemautfylling. Du limer inn lenken, så lager vi analysen av boligen.' },
   { icon: ClipboardCheck, title: 'Få et begrunnet grunnlag', text: 'Oppussing per rom, salgsverdi i tre scenarioer, risikoer og hva som mangler av dokumentasjon.' },
   { icon: Calculator, title: 'Lag din egen kalkyle', text: 'Endre kjøpspris, rente, tid og tiltak. Alle tall oppdateres med en gang, og scenarioene er private.' },
   { icon: Gavel, title: 'Planlegg visning og bud', text: 'Kalender med alle visninger og forventet buddag, og et modellert maksbud for målet ditt.' },
@@ -17,7 +17,7 @@ const FEATURES = [
   { icon: Scale, title: 'Faktiske salg skilt fra prisantydning', text: 'Sammenligningsobjekter merkes som faktisk salg, prisantydning eller solgt uten dokumentert sum.' },
   { icon: ShieldAlert, title: 'Risiko og datakvalitet hver for seg', text: 'Manglende tilstandsrapport er en usikkerhet – aldri lav risiko. Ukjent vises som ukjent.' },
   { icon: Calculator, title: 'Én beregningsmotor', text: 'Fortjeneste før skatt, prosjektavkastning, nullpunkt, maksbud og stresstester – deterministisk og sporbart.' },
-  { icon: Users, title: 'Dine tall er dine', text: 'Felles analysegrunnlag kan gjenbrukes, men kjøpsplaner, notater, risikovurderinger og scenarioer deles aldri.' },
+  { icon: Users, title: 'Dine tall er dine', text: 'Kjøpsplaner, notater, risikovurderinger og scenarioer er private og deles aldri med andre.' },
   { icon: CalendarDays, title: 'Visninger og budplan', text: 'Alle annonserte visninger, private avtaler og eksport til kalenderen din (.ics).' },
   { icon: Columns3, title: 'Sammenlign inntil tre objekter', text: 'Samme nøkkeltall side om side, beregnet fra scenarioet du har valgt som primært.' },
 ];

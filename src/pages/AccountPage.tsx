@@ -9,6 +9,7 @@ import { Field, NumberInput, Select, TextInput } from '../components/ui/forms';
 import { VippsCheckout } from '../components/account/VippsCheckout';
 import { Dialog } from '../components/ui/overlay';
 import { Alert, Badge, Button, buttonClass, Card, SectionTitle } from '../components/ui/primitives';
+import { getCourse } from '../config/courses';
 import { PRIMARY_PLAN } from '../config/plans';
 import { BUYER_TYPE_LABEL, SUBSCRIPTION_STATUS_LABEL, USAGE_KIND_LABEL, type BuyerType } from '../domain/enums';
 import type { ProfileDefaults } from '../domain/schemas';
@@ -48,6 +49,9 @@ export function AccountPage() {
   const location = useLocation();
   const welcome = (location.state as { welcome?: boolean } | null)?.welcome;
   const usage = useLiveQuery(() => services.subscription.listUsage(), []);
+  // Gjenbruk av en eksisterende analyse vises ikke for brukeren – det ser likt ut som en ny analyse.
+  const usageShown = (usage.data ?? []).filter((u) => u.kind !== 'reuse');
+  const purchases = useLiveQuery(() => services.courses.listPurchases(), []);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [portalOpen, setPortalOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -127,7 +131,7 @@ export function AccountPage() {
                   <UsageBar label="Nye analyser" used={entitlements.used.newAnalyses + entitlements.used.pendingNewAnalyses} limit={entitlements.limits.newAnalyses} />
                   <UsageBar label="Oppfriskinger av annonse" used={entitlements.used.refreshes} limit={entitlements.limits.refreshes} />
                   <p className="text-xs text-slate-600">
-                    Gjenbruk av eksisterende analyser denne perioden: {entitlements.used.reuses} (belastes ikke). Endringer i egne scenarioer belastes aldri.
+                    Endringer i egne scenarioer belastes aldri.
                   </p>
                 </div>
               )}
@@ -167,7 +171,7 @@ export function AccountPage() {
               <li className="flex gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
                 <span>
-                  <strong>{PRIMARY_PLAN.limits.newAnalysesPerPeriod} nye analyser</strong> per periode. Gjenbruk av en eksisterende analyse belastes ikke.
+                  <strong>{PRIMARY_PLAN.limits.newAnalysesPerPeriod} nye analyser</strong> per periode.
                 </span>
               </li>
               <li className="flex gap-2">
@@ -267,8 +271,33 @@ export function AccountPage() {
       )}
 
       <Card className="p-5">
-        <SectionTitle sub="Separate hendelser for ny analyse, oppfrisking og gjenbruk. Hver hendelse har en idempotensnøkkel, så samme handling telles aldri to ganger.">Forbrukshistorikk</SectionTitle>
-        {(usage.data ?? []).length === 0 ? (
+        <SectionTitle sub="Kurs kjøpes én gang og gir varig tilgang – uavhengig av abonnementet.">Mine kurs</SectionTitle>
+        {(purchases.data ?? []).length === 0 ? (
+          <p className="text-sm text-slate-700">
+            Du har ikke kjøpt noen kurs ennå. <Link to="/kurs" className="font-medium text-pine-800 underline">Se kursene</Link>.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100 text-sm">
+            {purchases.data!.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span>
+                  <span className="font-medium">{getCourse(p.courseId)?.title ?? p.courseId}</span>
+                  <span className="block text-xs text-slate-600">
+                    Kjøpt {formatDate(p.purchasedAt)} · {formatNOK(p.amountPaid)} · Vipps · varig tilgang
+                  </span>
+                </span>
+                <Link to={`/kurs/${p.courseId}`} className={buttonClass('secondary', 'sm')}>
+                  Åpne kurset
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle sub="Nye analyser og oppfriskinger som er belastet kvoten. Hver hendelse har en idempotensnøkkel, så samme handling telles aldri to ganger.">Forbrukshistorikk</SectionTitle>
+        {usageShown.length === 0 ? (
           <p className="text-sm text-slate-600">Ingen registrert bruk.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -281,7 +310,7 @@ export function AccountPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {usage.data!.slice(0, 25).map((u) => (
+                {usageShown.slice(0, 25).map((u) => (
                   <tr key={u.id}>
                     <td className="py-1.5">{formatDateTime(u.createdAt)}</td>
                     <td className="py-1.5">{USAGE_KIND_LABEL[u.kind]}</td>

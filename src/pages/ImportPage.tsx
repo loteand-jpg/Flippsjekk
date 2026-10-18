@@ -73,7 +73,7 @@ export function ImportPage() {
         </p>
       </div>
       <Alert tone="info" title="Importen blir private data">
-        Importerte analyser lagres som dine private utkast og scenarioer. De publiseres ikke som felles analyse og påvirker ikke andre brukere. Importerte buddager og visninger merkes som ikke kildebekreftet.
+        Importerte analyser lagres som dine private utkast og scenarioer. Importerte buddager og visninger merkes som ikke kildebekreftet.
       </Alert>
       {entitlements?.access !== 'full' && <Alert tone="warning">Import krever aktivt abonnement. Du kan forhåndsvise filen, men ikke lagre.</Alert>}
 

@@ -25,7 +25,7 @@ import {
   type MockContext,
 } from './context';
 import { FRESHNESS } from '../../config/freshness';
-import { advanceJobs, createJob, dedupeKeyFor, hasActiveJobs, recordReuse } from './jobs';
+import { advanceJobs, createJob, dedupeKeyFor, hasActiveJobs } from './jobs';
 
 /** Oppretter eiendomsidentitet for en ukjent FINN-ID (i produksjon: kun autorisert backend). */
 export function createPropertyIdentity(d: DbState, finnId: string, now: Date): Property {
@@ -64,41 +64,75 @@ export class MockAnalysisService implements AnalysisService {
     return this.ctx.db.transaction((d): AnalysisRequestResult => {
       // 2. Slå opp eiendommen på FINN-ID
       let property = d.properties.find((p) => p.finnId === parsed.finnId) ?? null;
+      const quotaError = (ent: ReturnType<typeof computeEntitlements>) =>
+        new ServiceError(
+          'quota_exceeded',
+          `Du har nådd grensen på ${ent.limits.newAnalyses} nye analyser i denne perioden (${ent.used.newAnalyses} brukt${ent.used.pendingNewAnalyses ? `, ${ent.used.pendingNewAnalyses} pågår` : ''}). Ny kvote fra ${ent.periodEnd ? new Date(ent.periodEnd).toLocaleDateString('nb-NO') : 'neste periode'}.`,
+        );
       if (property) {
-        // 3. Kompatibel grunnanalyse finnes → gjenbruk (belastes ikke)
         const latest = latestSharedAnalysis(d, property.id);
-        if (latest && isModelCompatible(latest)) {
-          const alreadyInList = d.userProperties.some((l) => l.userId === uid && l.propertyId === property!.id && !l.archivedAt);
+        const compatible = latest !== null && isModelCompatible(latest);
+        const inList = d.userProperties.some((l) => l.userId === uid && l.propertyId === property!.id && !l.archivedAt);
+        // Pågår brukerens egen analyse allerede (dobbeltklikk, samme lenke på nytt), returneres den samme jobben.
+        const ownJobs = d.jobs
+          .filter((j) => j.type === 'linked_analysis' && j.createdBy === uid && j.propertyId === property!.id)
+          .sort((x, y) => y.startedAt.localeCompare(x.startedAt));
+        const running = ownJobs.find((j) => j.status === 'running' || j.status === 'queued');
+        if (running) return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job: running, charged: false };
+        // Har brukeren allerede analysert boligen (ligger i listen eller er betalt før), åpnes den uten ny belastning.
+        const paidBefore = d.usageEvents.some((u) => u.userId === uid && u.propertyId === property!.id && u.kind === 'new_analysis' && u.chargeable);
+        if (latest && compatible && (inList || paidBefore)) {
           ensureLink(d, uid, property.id, now);
           ensureDefaultScenario(d, uid, property.id, latest, now);
-          const ownedByUser = d.usageEvents.some((u) => u.userId === uid && u.analysisId === latest.id);
-          if (!ownedByUser) recordReuse(d, uid, latest, now);
-          return {
-            outcome: 'reused',
-            propertyId: property.id,
-            finnId: property.finnId,
-            analysis: latest,
-            staleness: staleness(d, latest, now),
-            alreadyInList,
-            charged: false,
-          };
+          // Har det gått over ett døgn siden forrige analyse/oppfriskning, oppfriskes annonsen først
+          // (pris, visninger og salgsstatus). Er oppfriskingskvoten brukt opp, åpnes objektet som det er.
+          const snap = latestSnapshot(d, property.id);
+          if (snap && now.getTime() - Date.parse(snap.observedAt) > FRESHNESS.volatileMaxAgeHours * 3_600_000) {
+            const activeRefresh = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'light_refresh' && (j.status === 'running' || j.status === 'queued'));
+            if (activeRefresh) {
+              if (!activeRefresh.requestedBy.includes(uid)) activeRefresh.requestedBy.push(uid);
+              return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: activeRefresh, joinedOtherUser: activeRefresh.createdBy !== uid, charged: false };
+            }
+            if (computeEntitlements(d, uid, now).canRefresh) {
+              const job = createJob(d, { property, type: 'light_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: null });
+              job.simulatedFailure = null;
+              return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
+            }
+          }
+          return { outcome: 'reused', propertyId: property.id, finnId: property.finnId, analysis: latest, staleness: staleness(d, latest, now), alreadyInList: true, charged: false };
         }
-        // 4. Aktiv jobb for samme objekt/versjon → koble brukeren til samme jobb
+        // Grunnlaget er ferskt nok: brukeren får sin egen analyse som ser ut og belastes som en ny analyse.
+        const ageDays = latest ? (now.getTime() - Date.parse(latest.publishedAt ?? latest.createdAt)) / 86_400_000 : Infinity;
+        if (latest && compatible && ageDays <= FRESHNESS.analysisMaxAgeDays) {
+          const ent = computeEntitlements(d, uid, now);
+          const mine = ownJobs[0];
+          if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+          let job: AnalysisJob;
+          if (mine && mine.status === 'failed') {
+            job = mine;
+            this.restart(job, now);
+          } else {
+            job = createJob(d, { property, type: 'linked_analysis', userId: uid, now, stepMs: this.ctx.jobTiming.stepMs, targetVersion: latest.version });
+            job.dedupeKey = `${job.dedupeKey}:u${uid}`;
+          }
+          ensureLink(d, uid, property.id, now);
+          return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
+        }
+        // 4. Aktiv jobb for samme objekt → koble brukeren til samme jobb (brukeren belastes når den er ferdig)
         const active = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'full_analysis' && (j.status === 'running' || j.status === 'queued'));
         if (active) {
-          if (!active.requestedBy.includes(uid)) active.requestedBy.push(uid);
+          if (!active.requestedBy.includes(uid)) {
+            const ent = computeEntitlements(d, uid, now);
+            if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+            active.requestedBy.push(uid);
+          }
           ensureLink(d, uid, property.id, now);
           return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: active, joinedOtherUser: active.createdBy !== uid, charged: false };
         }
       }
-      // 6. Ingen analyse → ny jobb (sjekk kvote først)
+      // 6. Ingen brukbar analyse (eller for gammel) → ny jobb (sjekk kvote først)
       const ent = computeEntitlements(d, uid, now);
-      if (!ent.canRequestNewAnalysis) {
-        throw new ServiceError(
-          'quota_exceeded',
-          `Du har nådd grensen på ${ent.limits.newAnalyses} nye analyser i denne perioden (${ent.used.newAnalyses} brukt${ent.used.pendingNewAnalyses ? `, ${ent.used.pendingNewAnalyses} pågår` : ''}). Gjenbruk av eksisterende analyser belastes ikke. Ny kvote fra ${ent.periodEnd ? new Date(ent.periodEnd).toLocaleDateString('nb-NO') : 'neste periode'}.`,
-        );
-      }
+      if (!ent.canRequestNewAnalysis) throw quotaError(ent);
       if (!property) property = createPropertyIdentity(d, parsed.finnId, now);
       const latest = latestSharedAnalysis(d, property.id);
       const target = (latest?.version ?? 0) + 1;
@@ -126,7 +160,7 @@ export class MockAnalysisService implements AnalysisService {
     job.updatedAt = now.toISOString();
     job.finishedAt = null;
     job.error = null;
-    job.stepDurationMs = job.type === 'full_analysis' ? this.ctx.jobTiming.stepMs : this.ctx.jobTiming.refreshStepMs;
+    job.stepDurationMs = job.type === 'light_refresh' ? this.ctx.jobTiming.refreshStepMs : this.ctx.jobTiming.stepMs;
   }
 
   async getJob(jobId: string): Promise<AnalysisJob | null> {
@@ -147,7 +181,7 @@ export class MockAnalysisService implements AnalysisService {
       if (job.status !== 'failed') return job;
       const ent = computeEntitlements(d, uid, now);
       requireFullAccess(ent, 'Å prøve analysen på nytt');
-      if (job.type === 'full_analysis' && !ent.canRequestNewAnalysis) {
+      if (job.type !== 'light_refresh' && !ent.canRequestNewAnalysis) {
         throw new ServiceError('quota_exceeded', 'Kvoten for nye analyser er brukt opp i denne perioden.');
       }
       this.restart(job, now);

@@ -279,7 +279,7 @@ export function RiskTab({ ctx }: { ctx: PropertyContext }) {
 
       <Panel
         title="Risikoer og mulige merkostnader"
-        sub="Risikoene fra grunnlaget kan endres, skjules og suppleres med dine egne. Endringene er private og påvirker ikke andre brukere eller grunnlaget."
+        sub="Risikoene i analysen kan du endre, skjule og supplere med dine egne. Kalkylene og endringene dine er private."
         action={
           <Button size="sm" variant="primary" icon={<Plus className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => setDialog({ initial: null })}>
             Legg til risiko
@@ -317,7 +317,7 @@ export function RiskTab({ ctx }: { ctx: PropertyContext }) {
                         </p>
                       )}
                       <p className="mt-1 text-xs text-slate-500">
-                        {r.origin === 'mine' ? 'Kilde: din egen vurdering' : r.origin === 'endret' ? `Grunnlaget sa: alvorlighet ${r.original?.level ?? 'ukjent'}. Kilde: ${src ? src.title : 'ingen kilde oppgitt'}` : `Kilde: ${src ? src.title : 'ingen kilde oppgitt'}`}
+                        {r.origin === 'mine' ? 'Kilde: din egen vurdering' : r.origin === 'endret' ? `Opprinnelig alvorlighet: ${r.original?.level ?? 'ukjent'}. Kilde: ${src ? src.title : 'ingen kilde oppgitt'}` : `Kilde: ${src ? src.title : 'ingen kilde oppgitt'}`}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-start gap-1 sm:flex-col">
@@ -325,7 +325,7 @@ export function RiskTab({ ctx }: { ctx: PropertyContext }) {
                         Rediger
                       </Button>
                       {r.origin === 'endret' && (
-                        <Button size="sm" variant="ghost" icon={<RotateCcw className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => run(() => services.risks.remove(r.editId as string), 'Tilbakestilt til grunnlaget')} aria-label={`Tilbakestill til grunnlaget: ${r.title}`}>
+                        <Button size="sm" variant="ghost" icon={<RotateCcw className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => run(() => services.risks.remove(r.editId as string), 'Tilbakestilt til opprinnelig verdi')} aria-label={`Tilbakestill til opprinnelig: ${r.title}`}>
                           Tilbakestill
                         </Button>
                       )}
@@ -434,15 +434,15 @@ export function ReportTab({ ctx }: { ctx: PropertyContext }) {
   const { analysis: a, item } = ctx;
   return (
     <div className="space-y-5">
-      <Panel title="Analyseversjon">
+      <Panel title="Om analysen">
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <dt className="text-slate-600">Grunnlag</dt>
-            <dd className="font-medium">{a.visibility === 'private' ? 'Privat importert utkast' : `Felles grunnanalyse versjon ${a.version}`}</dd>
+            <dd className="font-medium">{a.visibility === 'private' ? 'Privat importert utkast' : 'Din analyse'}</dd>
           </div>
           <div>
-            <dt className="text-slate-600">Publisert</dt>
-            <dd className="font-medium">{a.publishedAt ? formatDateTime(a.publishedAt) : 'Ikke publisert'}</dd>
+            <dt className="text-slate-600">Analysedato</dt>
+            <dd className="font-medium">{formatDate(item.link.analyzedAt ?? a.publishedAt ?? a.createdAt)}</dd>
           </div>
           <div>
             <dt className="text-slate-600">Annonseopplysninger kontrollert</dt>
@@ -465,19 +465,6 @@ export function ReportTab({ ctx }: { ctx: PropertyContext }) {
             </dd>
           </div>
         </dl>
-        {item.versions.length > 1 && (
-          <div className="mt-3">
-            <p className="text-sm font-medium">Versjonshistorikk</p>
-            <ul className="mt-1 text-sm text-slate-700">
-              {item.versions.map((v) => (
-                <li key={v.id}>
-                  v{v.version} · {formatDate(v.publishedAt)} · {v.status === 'published' ? 'gjeldende' : 'erstattet'}
-                  {v.id === a.id && <strong> · brukes av dette scenarioet</strong>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </Panel>
 
       <Panel title="Analyserapport">
@@ -608,7 +595,7 @@ function RiskDialog({ open, initial, onClose, onSave, busy }: { open: boolean; i
       title={initial ? 'Rediger risiko' : 'Legg til risiko'}
       description={
         initial?.origin === 'grunnlag' || initial?.origin === 'endret'
-          ? 'Du endrer din egen kopi. Grunnlaget og andre brukere berøres ikke, og du kan tilbakestille når som helst. Tomt kostnadsfelt betyr ukjent – ikke 0 kr.'
+          ? 'Du endrer din egen analyse, og du kan tilbakestille til opprinnelig verdi når som helst. Tomt kostnadsfelt betyr ukjent – ikke 0 kr.'
           : 'Dette er dine private opplysninger. Tomt kostnadsfelt betyr ukjent – ikke 0 kr.'
       }
       footer={

@@ -23,12 +23,13 @@ test('kurs: oversikt, info, sidenavigasjon, lest-markering, kontrollspørsmål o
 
   await page.getByRole('navigation', { name: isMobile ? 'Hovedmeny (mobil)' : 'Hovedmeny' }).getByRole('link', { name: 'Kurs' }).click();
   await expect(page.getByRole('heading', { name: 'Kurs', exact: true })).toBeVisible();
-  for (const t of ['Nivå 2: Flipping gjennom AS', 'Utleie som privatperson', 'Utleie gjennom AS']) await expect(page.getByText(t)).toBeVisible();
+  for (const t of ['Flipping nivå 2 - AS', 'Utleie nivå 1 - Privat', 'Utleie nivå 2 - AS']) await expect(page.getByText(t)).toBeVisible();
+  await expect(page.getByText('Kjøpt – du har tilgang')).toBeVisible();
   await expect(page.getByText('Kommer senere')).toHaveCount(3);
   await page.getByRole('link', { name: 'Åpne kurset' }).click();
 
   // Infosiden
-  await expect(page.getByRole('heading', { name: 'Nivå 1 – Flipping som privatperson' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Flipping nivå 1 - Privat' })).toBeVisible();
   await expect(page.getByText('Regler og markedsdata faglig kontrollert: 17. oktober 2026').first()).toBeVisible();
   await expect(page.getByText('Dagsaktuelle tall i kurset er derfor datostemplet.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'De 11 modulene' })).toBeVisible();
@@ -139,8 +140,60 @@ test('kurs: sluttcase, sluttquiz (bestått ≥ 12 av 15) og fullføringsside', a
   await noHorizontalScroll(page);
 
   await page.goto('/#/kurs/flipping-privat?modul=ferdig');
-  await expect(page.getByRole('heading', { name: 'Du har fullført Nivå 1' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Du har fullført Flipping nivå 1 - Privat' })).toBeVisible();
   await expect(page.getByText('Regn baklengs til maksbud.')).toBeVisible();
   await expect(page.getByText('Kommer senere')).toBeVisible();
   await noHorizontalScroll(page);
+});
+
+test('kurs: betalingsmur – kjøp med Vipps gir varig tilgang', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/#/logg-inn');
+  await page.getByRole('button', { name: /Bjørn Berg/ }).click(); // har abonnement, men har ikke kjøpt kurset
+  await expect(page).toHaveURL(/#\/oversikt/);
+
+  await page.goto('/#/kurs');
+  await expect(page.getByText(/2\s999\skr · engangsbeløp/)).toBeVisible();
+  await expect(page.getByText('Kjøpt – du har tilgang')).toHaveCount(0);
+  for (const t of ['Flipping nivå 2 - AS', 'Utleie nivå 1 - Privat', 'Utleie nivå 2 - AS']) await expect(page.getByText(t)).toBeVisible();
+
+  // Innholdet er låst, også med direkte lenke til en side
+  await page.goto('/#/kurs/flipping-privat?modul=4&side=1');
+  await expect(page.getByRole('heading', { level: 1, name: 'Flipping nivå 1 - Privat' })).toBeVisible();
+  await expect(page.getByText('Engangsbeløp. Du betaler med Vipps og beholder tilgangen.')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^4\.1 / })).toHaveCount(0);
+  await expect(page.getByText('Salgsverdien er én av de viktigste variablene')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Neste/ })).toHaveCount(0);
+  await expect(page.getByText('Finn realistisk salgsverdi')).toBeVisible(); // innholdsfortegnelsen er synlig
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+
+  // Kjøp: avvis først, så godkjenn
+  await page.getByRole('button', { name: /^Kjøp kurset – / }).click();
+  const dlg = page.getByRole('dialog', { name: 'Kjøp Flipping nivå 1 - Privat' });
+  await expect(dlg.getByText('Varig tilgang når du har kjøpt kurset')).toBeVisible();
+  await dlg.getByLabel('Mobilnummer i Vipps').fill('99');
+  await dlg.getByRole('button', { name: /Betal .* med Vipps/ }).click();
+  await expect(dlg.getByText(/norsk mobilnummer med 8 siffer/)).toBeVisible();
+  await dlg.getByLabel('Mobilnummer i Vipps').fill('412 34 567');
+  await dlg.getByRole('button', { name: /Betal .* med Vipps/ }).click();
+  const vipps = page.getByRole('dialog', { name: 'Godkjenn i Vipps' });
+  await expect(vipps.getByText('Flipping nivå 1 - Privat')).toBeVisible();
+  await vipps.getByRole('button', { name: 'Avvis' }).click();
+  await expect(page.getByText(/Betalingen ble avvist i Vipps/)).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^4\.1 / })).toHaveCount(0);
+
+  await dlg.getByLabel('Mobilnummer i Vipps').fill('412 34 567');
+  await dlg.getByRole('button', { name: /Betal .* med Vipps/ }).click();
+  await page.getByRole('dialog', { name: 'Godkjenn i Vipps' }).getByRole('button', { name: 'Godkjenn' }).click();
+  await expect(page.getByText('Kurset er ditt')).toBeVisible();
+
+  // Innholdet åpnes, og tilgangen består etter omlasting
+  await expect(page.getByRole('heading', { level: 1, name: /^4\.1 / })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: /^4\.1 / })).toBeVisible();
+  await page.goto('/#/konto');
+  await expect(page.getByRole('heading', { name: 'Mine kurs' })).toBeVisible();
+  await expect(page.getByText(/Kjøpt .* · 2\s999\skr · Vipps · varig tilgang/)).toBeVisible();
+  expect(errors).toEqual([]);
 });

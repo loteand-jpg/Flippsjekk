@@ -144,7 +144,8 @@ export function computeEntitlements(s: Readonly<DbState>, userId: string | null,
   const usedNew = events.filter((e) => e.kind === 'new_analysis' && e.chargeable).length;
   const usedRefresh = events.filter((e) => e.kind === 'refresh' && e.chargeable).length;
   const reuses = events.filter((e) => e.kind === 'reuse').length;
-  const pending = s.jobs.filter((j) => j.createdBy === userId && j.type === 'full_analysis' && (j.status === 'running' || j.status === 'queued')).length;
+  // Hver bruker som har bedt om en analyse (egen jobb eller koblet til en pågående) belastes når den er ferdig.
+  const pending = s.jobs.filter((j) => j.type !== 'light_refresh' && j.requestedBy.includes(userId) && (j.status === 'running' || j.status === 'queued')).length;
   const remainingNew = Math.max(0, plan.limits.newAnalysesPerPeriod - usedNew - pending);
   const remainingRefresh = Math.max(0, plan.limits.refreshesPerPeriod - usedRefresh);
   return {
@@ -252,8 +253,9 @@ export function buildBundle(s: Readonly<DbState>, propertyId: string): PropertyB
       .filter((a) => a.propertyId === propertyId && a.visibility === 'shared' && a.status !== 'draft')
       .sort((a, b) => b.version - a.version)
       .map(analysisMeta),
-    activeJob: jobs.find((j) => j.status === 'running' || j.status === 'queued') ?? null,
-    lastFailedJob: jobs[0]?.status === 'failed' ? jobs[0] : null,
+    // Brukerens egne «koblede» analysejobber er private og vises bare for brukeren selv (se buildMyItem).
+    activeJob: jobs.find((j) => j.type !== 'linked_analysis' && (j.status === 'running' || j.status === 'queued')) ?? null,
+    lastFailedJob: jobs.filter((j) => j.type !== 'linked_analysis')[0]?.status === 'failed' ? jobs.filter((j) => j.type !== 'linked_analysis')[0] : null,
   };
 }
 
@@ -263,13 +265,23 @@ export function buildMyItem(s: Readonly<DbState>, userId: string, link: UserProp
   const scenarios = s.scenarios.filter((x) => x.ownerId === userId && x.propertyId === link.propertyId);
   const primary = scenarios.find((x) => x.id === link.primaryScenarioId) ?? scenarios[0] ?? null;
   const baseAnalysis = primary ? s.analyses.find((a) => a.id === primary.analysisId && canReadAnalysis(a, userId)) ?? null : bundle.latestAnalysis;
+  // Brukerens egen analyse er «under arbeid» til jobben er ferdig – akkurat som for en bolig uten analyse.
+  const own = s.jobs
+    .filter((j) => j.type === 'linked_analysis' && j.createdBy === userId && j.propertyId === link.propertyId)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  const pendingOwn = own && (own.status === 'running' || own.status === 'queued') && !primary ? own : null;
+  const failedOwn = own && own.status === 'failed' && !primary ? own : null;
+  const masked = pendingOwn || failedOwn ? { latestAnalysis: null, snapshot: null, snapshots: [], viewings: [], versions: [] } : {};
   return {
     ...bundle,
+    ...masked,
+    activeJob: pendingOwn ?? bundle.activeJob,
+    lastFailedJob: failedOwn ?? bundle.lastFailedJob,
     link,
-    baseAnalysis,
+    baseAnalysis: pendingOwn || failedOwn ? null : baseAnalysis,
     primaryScenario: primary,
     scenarioCount: scenarios.length,
-    bidDay: deriveBidDay(link.propertyId, bundle.viewings),
+    bidDay: deriveBidDay(link.propertyId, pendingOwn || failedOwn ? [] : bundle.viewings),
     bidOverride: s.calendarOverrides.find((o) => o.userId === userId && o.propertyId === link.propertyId) ?? null,
     privateEvents: s.privateEvents.filter((e) => e.userId === userId && e.propertyId === link.propertyId),
     riskEdits: s.userRisks.filter((r) => r.userId === userId && r.propertyId === link.propertyId),

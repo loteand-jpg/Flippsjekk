@@ -174,7 +174,7 @@ export function RowFlags({ r }: { r: PropertyRow }) {
   if (r.scenarioSource === 'mitt_scenario') flags.push(<span key="m" className="rounded bg-violet-50 px-1.5 text-[11px] font-medium text-violet-900 ring-1 ring-violet-200">Mitt scenario</span>);
   if (r.scenarioSource === 'grunnanalyse') flags.push(<span key="g" className="rounded bg-slate-50 px-1.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">Grunnanalyse</span>);
   if (r.scenarioSource === 'importert') flags.push(<span key="i" className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">Importert utkast</span>);
-  if (r.hasNewVersion) flags.push(<span key="n" className="rounded bg-sky-50 px-1.5 text-[11px] font-medium text-sky-900 ring-1 ring-sky-200">Ny analyseversjon</span>);
+  if (r.hasNewVersion) flags.push(<span key="n" className="rounded bg-sky-50 px-1.5 text-[11px] font-medium text-sky-900 ring-1 ring-sky-200">Data kan være utdatert</span>);
   if (r.jobFailed) flags.push(<span key="f" className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 text-[11px] font-medium text-red-900 ring-1 ring-red-200"><TriangleAlert className="size-3" aria-hidden />Analyse feilet</span>);
   if (r.warnings.some((w) => w.includes('Påkrevd'))) flags.push(<span key="p" className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">Påkrevd tiltak utelatt</span>);
   return flags.length ? <div className="mt-1 flex flex-wrap gap-1">{flags}</div> : null;

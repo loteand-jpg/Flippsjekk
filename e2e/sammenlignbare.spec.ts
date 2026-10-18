@@ -10,7 +10,7 @@ test('sammenlignbare objekter: grunnlag med nye felt og egne objekter (legg til,
   await page.getByRole('tab', { name: 'Marked' }).click();
 
   // Grunnlaget har de nye kolonnene
-  const shared = page.getByRole('table', { name: 'Sammenlignbare objekter fra grunnlaget' });
+  const shared = page.getByRole('table', { name: 'Sammenlignbare objekter fra analysen' });
   for (const h of ['Prisantydning', 'Solgt pris', 'Felleskostn./mnd', 'Solgt totalpris', 'Areal', 'kr/m²', 'Dato', 'Merknad']) {
     await expect(shared.getByRole('columnheader', { name: h })).toBeVisible();
   }
@@ -80,7 +80,7 @@ test('analysen til et objekt forsvinner aldri: manglende analyse gjenopprettes a
   await page.reload();
   await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
   await expect(page.getByText('Grunnanalysen for objektet mangler')).toHaveCount(0);
-  await expect(page.getByText('Grunnanalyse v1')).toBeVisible();
+  await expect(page.getByText(/Analyse fra \d/)).toBeVisible();
   await page.getByRole('tab', { name: 'Min kalkyle' }).click();
   await expect(page.getByLabel('Kjøpspris (kontant)', { exact: true })).toHaveValue(/^2\s950\s000$/); // Adas lagrede verdi er beholdt
 });

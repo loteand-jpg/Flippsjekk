@@ -259,15 +259,15 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
       </Panel>
 
       <Panel
-        title="Sammenlignbare objekter fra grunnlaget"
-        sub="Felles for alle som analyserer samme bolig. Prisantydninger og salg uten dokumentert sum teller ikke som oppnådd pris."
+        title="Sammenlignbare objekter fra analysen"
+        sub="Sammenlignbare objekter i analysen din. Prisantydninger og salg uten dokumentert sum teller ikke som oppnådd pris."
       >
-        {shared.length === 0 ? <Alert tone="warning">Ingen sammenligningsobjekter i grunnlaget.</Alert> : <ComparablesTable rows={shared} caption="Sammenlignbare objekter fra grunnlaget" />}
+        {shared.length === 0 ? <Alert tone="warning">Ingen sammenligningsobjekter i analysen.</Alert> : <ComparablesTable rows={shared} caption="Sammenlignbare objekter fra analysen" />}
       </Panel>
 
       <Panel
         title="Mine sammenlignbare objekter"
-        sub="Dine egne funn. De er private og kommer i tillegg til grunnlaget."
+        sub="Dine egne funn. De kommer i tillegg til de som ligger i analysen."
         action={
           <Button size="sm" variant="primary" icon={<Plus className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => setDialog({ initial: null })}>
             Legg til objekt
@@ -330,7 +330,7 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
           </>
         }
       >
-        <p className="text-sm">Bare ditt eget sammenlignbare objekt slettes. Grunnlaget berøres ikke.</p>
+        <p className="text-sm">Bare det sammenlignbare objektet du la inn selv slettes. Objektene i analysen beholdes.</p>
       </Dialog>
     </div>
   );

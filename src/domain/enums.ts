@@ -198,7 +198,8 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
   incomplete: 'Ikke fullført',
 };
 
-export const JOB_TYPES = ['full_analysis', 'light_refresh'] as const;
+/** linked_analysis: brukerens egen analyse av en bolig som allerede er analysert – ser ut og belastes som en ny analyse. */
+export const JOB_TYPES = ['full_analysis', 'light_refresh', 'linked_analysis'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];

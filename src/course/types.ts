@@ -3,7 +3,7 @@
  * Tekstformat i alle tekstfelt: **fet** og {{ordliste-nøkkel}} / {{nøkkel|visningstekst}}.
  */
 export const COURSE_ID = 'flipping-privat';
-export const COURSE_TITLE = 'Nivå 1 – Flipping som privatperson';
+export const COURSE_TITLE = 'Flipping nivå 1 - Privat';
 export const COURSE_SUBTITLE = 'Fra boligannonse til gjennomtenkt kjøpsbeslutning';
 /** Dato for faglig kontroll av regler, satser og markedstall. Oppdateres når innholdet kontrolleres på nytt. */
 export const COURSE_CHECKED = '17. oktober 2026';

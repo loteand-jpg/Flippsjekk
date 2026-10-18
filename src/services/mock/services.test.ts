@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { evaluateScenario } from '../../calc/scenario';
-import { DB_FORMAT, DB_STORAGE_KEY } from '../../data/db';
+import { DB_FORMAT, DB_STORAGE_KEY, type DbState } from '../../data/db';
 import { DEMO_USERS } from '../../data/seed';
 import { DEMO_FINN } from '../../data/seedProperties';
 import { memoryStorage, type StorageLike } from '../../data/storage';
@@ -62,22 +62,98 @@ describe('FINN-lenke → gjenbruk og deduplisering', () => {
     expect(s.db.read((st) => st.jobs.length)).toBe(0);
   });
 
-  it('samme FINN-ID i ulike URL-formater gir samme objekt og gjenbruk uten belastning', async () => {
+  it('samme FINN-ID i ulike URL-formater gir samme objekt og én analyse, som belastes som en ny analyse', async () => {
     const before = usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length;
     const r1 = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'a' });
     const r2 = await s.analysis.requestAnalysis({
       url: `https://www.finn.no/realestate/homes/ad.html?finnkode=${DEMO_FINN.cacheHit}&utm_source=x`,
       idempotencyKey: 'b',
     });
-    expect(r1.outcome).toBe('reused');
-    expect(r2.outcome).toBe('reused');
+    // Brukeren ser det samme som ved en ny analyse: en jobb med samme trinn – selv om grunnlaget finnes fra før.
+    expect(r1.outcome).toBe('job_started');
+    expect(r2.outcome).toBe('job_started');
+    if (r1.outcome !== 'job_started' || r2.outcome !== 'job_started') return;
+    expect(r2.job.id).toBe(r1.job.id);
+    expect(r1.job.type).toBe('linked_analysis');
+    expect(r1.job.steps).toEqual(['Henter annonse', 'Kontrollerer grunnlag', 'Vurderer oppussing', 'Vurderer salgsverdi', 'Klargjør analyse']);
     expect(r1.propertyId).toBe(r2.propertyId);
-    if (r2.outcome === 'reused') expect(r2.alreadyInList).toBe(true);
     expect(s.db.read((st) => st.properties.filter((p) => p.finnId === DEMO_FINN.cacheHit).length)).toBe(1);
-    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(before);
-    expect(usageOf(s, DEMO_USERS.ada.id, 'reuse').filter((u) => u.propertyId === r1.propertyId).length).toBe(1);
-    // Privat standardscenario er opprettet
+    // Mens jobben pågår ser brukeren objektet som «analyse pågår», uten ferdig grunnlag
+    const during = (await s.properties.getMine(r1.propertyId))!;
+    expect(during.activeJob?.id).toBe(r1.job.id);
+    expect(during.latestAnalysis).toBeNull();
+    expect(during.snapshot).toBeNull();
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(before); // belastes først når analysen er ferdig
+
+    await runJob(s, clock);
+    expect((await s.analysis.getJob(r1.job.id))?.status).toBe('succeeded');
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').filter((u) => u.propertyId === r1.propertyId && u.chargeable).length).toBe(1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'reuse').filter((u) => u.propertyId === r1.propertyId).length).toBe(0); // gjenbruk registreres ikke lenger som noe annet
     expect((await s.scenarios.list(r1.propertyId)).length).toBe(1);
+    const after = (await s.properties.getMine(r1.propertyId))!;
+    expect(after.latestAnalysis).not.toBeNull();
+    expect(Date.parse(after.link.analyzedAt!)).toBeGreaterThan(Date.parse(START)); // brukerens analysedato er satt
+    expect(Date.parse(after.link.analyzedAt!)).toBeLessThanOrEqual(clock.now().getTime());
+    // Ny forespørsel etterpå åpner den uten ny belastning
+    const again = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'c' });
+    expect(again.outcome).toBe('reused');
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').filter((u) => u.propertyId === r1.propertyId).length).toBe(1);
+  });
+
+  it('en annen brukers pågående analyse er privat og vises ikke for andre', async () => {
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'a' });
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    await signIn(s, 'bjorn');
+    const bundle = await s.properties.getById(r.propertyId);
+    expect(bundle?.activeJob).toBeNull();
+    expect(bundle?.latestAnalysis).not.toBeNull(); // Bjørn ser det delte grunnlaget som før
+  });
+
+  it('oppfriskes når opplysningene er over ett døgn gamle eller en visning har vært – uten egen belastning', async () => {
+    const run = async (mutate: (d: DbState, propertyId: string) => void) => {
+      const { services: x, clock: c } = setup();
+      await signIn(x, 'ada');
+      const pid = x.db.read((st) => st.properties.find((p) => p.finnId === DEMO_FINN.cacheHit)!.id);
+      x.db.transaction((d) => mutate(d, pid));
+      const snapsBefore = x.db.read((st) => st.snapshots.filter((p) => p.propertyId === pid).length);
+      const refreshBefore = x.db.read((st) => st.usageEvents.filter((u) => u.kind === 'refresh').length);
+      const r = await x.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'a' });
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      await runJob(x, c);
+      return {
+        snapshotsAdded: x.db.read((st) => st.snapshots.filter((p) => p.propertyId === pid).length) - snapsBefore,
+        refreshCharges: x.db.read((st) => st.usageEvents.filter((u) => u.kind === 'refresh').length) - refreshBefore,
+        newAnalysisCharges: x.db.read((st) => st.usageEvents.filter((u) => u.userId === DEMO_USERS.ada.id && u.propertyId === pid && u.kind === 'new_analysis').length),
+      };
+    };
+    const hoursAgo = (h: number) => new Date(Date.parse(START) - h * 3_600_000).toISOString();
+    const setObserved = (iso: string) => (d: DbState, pid: string) => {
+      for (const sn of d.snapshots) if (sn.propertyId === pid) sn.observedAt = iso;
+      for (const v of d.viewings) if (v.propertyId === pid) v.start = new Date(Date.parse(START) + 5 * 86_400_000).toISOString();
+    };
+    // Ferskt (2 timer) og ingen visning siden: ingen oppfriskning
+    const fresh = await run(setObserved(hoursAgo(2)));
+    expect(fresh).toEqual({ snapshotsAdded: 0, refreshCharges: 0, newAnalysisCharges: 1 });
+    // Over ett døgn: oppfriskes, men belastes bare som én ny analyse
+    expect(await run(setObserved(hoursAgo(30)))).toEqual({ snapshotsAdded: 1, refreshCharges: 0, newAnalysisCharges: 1 });
+    // En visning har vært siden sist: oppfriskes selv om opplysningene er under ett døgn gamle
+    expect(
+      await run((d, pid) => {
+        for (const sn of d.snapshots) if (sn.propertyId === pid) sn.observedAt = hoursAgo(5);
+        for (const v of d.viewings) if (v.propertyId === pid) v.start = hoursAgo(2);
+      }),
+    ).toEqual({ snapshotsAdded: 1, refreshCharges: 0, newAnalysisCharges: 1 });
+  });
+
+  it('kvoten teller analysen som ny også når grunnlaget finnes fra før', async () => {
+    await s.demo.setSubscriptionPreset('low_quota'); // 1 ny analyse per periode
+    const used = (await s.subscription.getEntitlements()).used.newAnalyses;
+    const e = await s.subscription.getEntitlements();
+    expect(e.limits.newAnalyses).toBe(1);
+    if (used >= 1) {
+      await expectError(s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'q' }), 'quota_exceeded');
+      expect(s.db.read((st) => st.jobs.length)).toBe(0);
+    }
   });
 
   it('cachemiss gir én jobb med fem steg, publiserer og belaster én gang', async () => {
@@ -112,25 +188,53 @@ describe('FINN-lenke → gjenbruk og deduplisering', () => {
     expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').filter((u) => u.jobId !== null).length).toBe(1);
   });
 
-  it('en annen bruker kobles til samme felles jobb og belastes ikke', async () => {
+  it('en annen bruker som ber om samme analyse mens den pågår, får den og belastes uavhengig av den første', async () => {
     const r = await s.analysis.requestAnalysis({ url: 'finn.no/555555555', idempotencyKey: '1' });
     await signIn(s, 'bjorn');
     const rb = await s.analysis.requestAnalysis({ url: 'finn.no/555555555', idempotencyKey: '2' });
     expect(rb.outcome).toBe('job_joined');
     if (rb.outcome === 'job_joined') expect(rb.joinedOtherUser).toBe(true);
     await runJob(s, clock);
-    expect(usageOf(s, DEMO_USERS.bjorn.id, 'new_analysis').filter((u) => u.propertyId === r.propertyId).length).toBe(0);
-    expect(usageOf(s, DEMO_USERS.bjorn.id, 'reuse').filter((u) => u.propertyId === r.propertyId).length).toBe(1);
+    expect(usageOf(s, DEMO_USERS.bjorn.id, 'new_analysis').filter((u) => u.propertyId === r.propertyId && u.chargeable).length).toBe(1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').filter((u) => u.propertyId === r.propertyId && u.chargeable).length).toBe(1);
+    expect(usageOf(s, DEMO_USERS.bjorn.id, 'reuse').filter((u) => u.propertyId === r.propertyId).length).toBe(0);
     expect((await s.scenarios.list(r.propertyId)).length).toBe(1);
   });
 
-  it('gammel analyse gjenbrukes, men merkes som utdatert', async () => {
+  it('objekt i egen liste: annonsen oppfriskes hvis det har gått over ett døgn siden forrige analyse/oppfriskning', async () => {
+    const pid = s.db.read((st) => st.properties.find((p) => p.finnId === DEMO_FINN.stale)!.id);
+    const before = (await s.properties.getMine(pid))!;
+    const snapsBefore = before.versions.length;
+    const askingBefore = before.snapshot!.askingPrice;
+    const newAnalysesBefore = usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length;
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 's' });
+    expect(r.outcome).toBe('job_started');
+    if (r.outcome !== 'job_started') return;
+    expect(r.job.type).toBe('light_refresh');
+    // Samtidige forespørsler kobles til samme oppfriskning
+    const again = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 's2' });
+    expect(again.outcome === 'job_joined' && again.job.id === r.job.id).toBe(true);
+    await runJob(s, clock, 3);
+    const after = (await s.properties.getMine(pid))!;
+    expect(after.snapshot!.version).toBe(before.snapshot!.version + 1);
+    expect(after.snapshot!.askingPrice).not.toBe(askingBefore); // demoens oppfriskingsskript endrer prisen
+    expect(after.versions.length).toBe(snapsBefore); // ingen ny grunnanalyse
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(newAnalysesBefore); // belastes som oppfriskning, ikke ny analyse
+    // Rett etterpå er annonsen fersk: objektet åpnes uten ny oppfriskning
+    const fresh = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 's3' });
+    expect(fresh.outcome).toBe('reused');
+  });
+
+  it('objekt i egen liste: er oppfriskingskvoten brukt opp, åpnes objektet uten oppfriskning', async () => {
+    await s.demo.setSubscriptionPreset('low_quota');
+    const e = await s.subscription.getEntitlements();
+    s.db.transaction((d) => {
+      d.usageEvents.push(...Array.from({ length: e.limits.refreshes }, (_, i) => ({ id: `u-${i}`, userId: DEMO_USERS.ada.id, kind: 'refresh' as const, propertyId: 'x', jobId: null, analysisId: null, idempotencyKey: `x-${i}`, chargeable: true, createdAt: clock.now().toISOString() })));
+    });
     const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 's' });
     expect(r.outcome).toBe('reused');
-    if (r.outcome === 'reused') {
-      expect(r.staleness.analysisStale).toBe(true);
-      expect(r.staleness.volatileStale).toBe(true);
-    }
   });
 
   it('lett oppfrisking oppdaterer pris og visninger uten ny grunnanalyse eller endring i scenario', async () => {
@@ -355,14 +459,15 @@ describe('abonnementstilstander', () => {
     expect(canceling.access).toBe('full');
     expect(canceling.reason).toBe('canceling');
 
-    // Lav kvote (1 per periode, Ada har allerede brukt flere): ny analyse blokkeres, gjenbruk fungerer
+    // Lav kvote (1 per periode, Ada har allerede brukt flere): nye analyser blokkeres, men objekter hun allerede har kan åpnes
     await s.demo.setSubscriptionPreset('low_quota');
     const e = await expectError(s.analysis.requestAnalysis({ url: 'finn.no/333333333', idempotencyKey: 'q2' }), 'quota_exceeded');
-    expect(e.message).toContain('Gjenbruk');
+    expect(e.message).not.toMatch(/gjenbruk|felles/i);
     expect(s.db.read((st) => st.jobs.length)).toBe(0);
-    const reuse = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'q3' });
+    const mine = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.stale)!;
+    const reuse = await s.analysis.requestAnalysis({ url: `finn.no/${mine.property.finnId}`, idempotencyKey: 'q3' });
     expect(reuse.outcome).toBe('reused');
-    expect(countScenarios()).toBe(n + 1);
+    expect(countScenarios()).toBe(n); // har allerede scenario for objektet
   });
 });
 
@@ -894,5 +999,72 @@ describe('abonnement med Vipps', () => {
     expect(p.firstChargeAt).toBe(s.clock.now().toISOString()); // ingen gratisperiode
     await s.demo.vipps.decide(p.agreementId, 'approved');
     expect((await s.subscription.getSubscription())!.status).toBe('active');
+  });
+});
+
+describe('kurskjøp: betalingsmur, engangsbetaling og varig tilgang', () => {
+  it('Ada har kjøpt kurset, Bjørn har ikke', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    expect(await s.courses.getAccess('flipping-privat')).toMatchObject({ owned: true, purchase: { amountPaid: 2999, provider: 'vipps' } });
+    await signIn(s, 'bjorn');
+    expect(await s.courses.getAccess('flipping-privat')).toMatchObject({ owned: false, purchase: null });
+    expect(await s.courses.listPurchases()).toEqual([]);
+  });
+
+  it('kjøp med Vipps: ingen tilgang før godkjenning, deretter varig tilgang til fast pris', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'bjorn');
+    await expectError(s.courses.startPurchase({ courseId: 'finnes-ikke', phone: '41234567' }), 'not_found');
+    await expectError(s.courses.startPurchase({ courseId: 'flipping-as', phone: '41234567' }), 'conflict'); // kommer senere
+    await expectError(s.courses.startPurchase({ courseId: 'flipping-privat', phone: '123' }), 'validation');
+    const p = await s.courses.startPurchase({ courseId: 'flipping-privat', phone: '+47 412 34 567' });
+    if (p.kind !== 'vipps_pending') throw new Error('forventet pending');
+    expect(p.amount).toBe(2999);
+    expect(p.phoneMasked).toBe('+47 4•• •• 567');
+    expect((await s.courses.getAccess('flipping-privat')).owned).toBe(false); // ikke før Vipps har bekreftet
+
+    const r = await s.demo.vipps.decide(p.paymentId, 'approved');
+    expect(r.status).toBe('approved');
+    expect(r.purchase).toMatchObject({ courseId: 'flipping-privat', amountPaid: 2999, paymentId: p.paymentId });
+    expect((await s.courses.getAccess('flipping-privat')).owned).toBe(true);
+    await expectError(s.demo.vipps.decide(p.paymentId, 'approved'), 'not_found'); // betalingen kan bare avgjøres én gang
+    await expectError(s.courses.startPurchase({ courseId: 'flipping-privat', phone: '41234567' }), 'conflict'); // ingen dobbeltkjøp
+    expect(await s.courses.listPurchases()).toHaveLength(1);
+  });
+
+  it('tilgangen er uavhengig av abonnementet og faller aldri bort', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    for (const preset of ['expired', 'past_due', 'none'] as const) {
+      await s.demo.setSubscriptionPreset(preset);
+      expect((await s.courses.getAccess('flipping-privat')).owned).toBe(true);
+    }
+  });
+
+  it('abonnement gir ikke kurstilgang, og kurskjøp gir ikke abonnement', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'bjorn'); // aktivt årsabonnement
+    expect((await s.subscription.getEntitlements()).access).toBe('full');
+    expect((await s.courses.getAccess('flipping-privat')).owned).toBe(false);
+    await s.demo.setSubscriptionPreset('none');
+    const p = await s.courses.startPurchase({ courseId: 'flipping-privat', phone: '41234567' });
+    if (p.kind !== 'vipps_pending') throw new Error('forventet pending');
+    await s.demo.vipps.decide(p.paymentId, 'approved');
+    expect((await s.subscription.getEntitlements()).access).toBe('read_only');
+    expect(await s.subscription.getSubscription()).toBeNull();
+  });
+
+  it('avvist eller utløpt betaling gir ingen tilgang', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'bjorn');
+    const a = await s.courses.startPurchase({ courseId: 'flipping-privat', phone: '41234567' });
+    if (a.kind !== 'vipps_pending') throw new Error('forventet pending');
+    expect((await s.demo.vipps.decide(a.paymentId, 'rejected')).purchase).toBeNull();
+    const b = await s.courses.startPurchase({ courseId: 'flipping-privat', phone: '41234567' });
+    if (b.kind !== 'vipps_pending') throw new Error('forventet pending');
+    clock.advance(6 * 60_000);
+    await expectError(s.demo.vipps.decide(b.paymentId, 'approved'), 'conflict');
+    expect((await s.courses.getAccess('flipping-privat')).owned).toBe(false);
   });
 });
