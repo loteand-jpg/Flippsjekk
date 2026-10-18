@@ -26,7 +26,7 @@ export const EXAMPLE_PROFILE_DEFAULTS: ProfileDefaults = {
   minProfitPerOwnHour: 500,
   laborModes: { ...DEFAULT_LABOR_MODES },
   maxOwnWork: false,
-  regulatedSelfWorkConfirmed: false,
+  regulatedCompetence: { ror: false, elektro: false, bad_vatrom: false },
   reservePct: 20,
   profitTarget: 400_000,
   saleFixedCost: 120_000,

@@ -1,5 +1,5 @@
 import { findAnalysisScenario } from '../domain/analysisScenarios';
-import { LABOR_CATEGORIES, propertyCategory, REGULATED_LABOR, type LaborCategory, type Tenure, type WorkMode } from '../domain/enums';
+import { isRegulatedLabor, LABOR_CATEGORIES, propertyCategory, type LaborCategory, type Tenure, type WorkMode } from '../domain/enums';
 import { migrateScenarioValuesRaw } from '../domain/migrate';
 import type {
   DutyRule,
@@ -11,6 +11,7 @@ import type {
   SharedAnalysis,
 } from '../domain/schemas';
 import { evaluate, type EngineInput, type Evaluation, type Issue, type MissingInput } from './engine';
+import { resolveScenarioSale, type SaleResolution } from './saleValue';
 
 // ---------------------------------------------------------------------------
 // Oppussing
@@ -32,13 +33,32 @@ export interface RenovationTotals {
   downgradedRegulated: RenovationItem[];
 }
 
-type LaborContext = Pick<ScenarioValues, 'laborModes' | 'maxOwnWork' | 'regulatedSelfWorkConfirmed'>;
+type LaborContext = Pick<ScenarioValues, 'laborModes' | 'maxOwnWork' | 'regulatedCompetence'>;
 
 /** Eldre kostnad uten arbeidsmodell: summen av materialer og fag. */
 function legacyBuckets(item: RenovationItem): number | null {
   const parts = [item.materials, item.electrician, item.plumber, item.other];
   if (parts.some((p) => p === null)) return null;
   return (parts as number[]).reduce((sum, p) => sum + Math.round(p * 100), 0) / 100;
+}
+
+/**
+ * Regel mot dobbelttelling: et tiltak med `laborCategory` bruker ny arbeidsmodell (materialer + innleid arbeid), og de
+ * eldre fagfeltene (elektriker, rørlegger, andre fag) teller IKKE med. Tiltak uten kategori følger den eldre modellen.
+ */
+export function usesLaborModel(item: Pick<RenovationItem, 'laborCategory'>): boolean {
+  return Boolean(item.laborCategory);
+}
+
+/** Eldre fagbeløp som ligger på et tiltak med ny arbeidsmodell og derfor ignoreres (for advarsel). */
+export function ignoredLegacyTrades(item: RenovationItem): number {
+  if (!usesLaborModel(item)) return 0;
+  return [item.electrician, item.plumber, item.other].reduce<number>((s, x) => s + (typeof x === 'number' ? x : 0), 0);
+}
+
+/** Materialer for tiltak med ny arbeidsmodell. Ukjent = null. */
+function materialsOnly(item: RenovationItem): number | null {
+  return item.materials;
 }
 
 export interface ItemEconomics {
@@ -66,17 +86,19 @@ export function itemEconomics(item: RenovationItem, ctx?: LaborContext): ItemEco
   }
   const modes = ctx?.laborModes;
   let mode: WorkMode = item.workMode ?? modes?.[cat] ?? 'innleid';
-  if (ctx?.maxOwnWork && !REGULATED_LABOR.includes(cat) && !item.workMode) mode = 'selv';
+  // «Maks egeninnsats» gjør bare ikke-regulert arbeid til «selv». Regulert arbeid oppgraderes aldri automatisk.
+  if (ctx?.maxOwnWork && !isRegulatedLabor(cat) && !item.workMode) mode = 'selv';
   let downgraded = false;
-  if (REGULATED_LABOR.includes(cat) && mode !== 'innleid' && !ctx?.regulatedSelfWorkConfirmed) {
+  // Regulert arbeid utføres bare «selv»/«delvis» når kompetanse og ansvar er bekreftet for akkurat dette området.
+  if (isRegulatedLabor(cat) && mode !== 'innleid' && !ctx?.regulatedCompetence?.[cat]) {
     mode = 'innleid';
     downgraded = true;
   }
   const share = mode === 'selv' ? 1 : mode === 'innleid' ? 0 : (item.selfShare ?? 0.5);
   const hired = share >= 1 ? 0 : item.laborCostHired == null ? null : Math.round(item.laborCostHired * 100 * (1 - share)) / 100;
   const ownHours = share <= 0 ? 0 : item.laborHours == null ? null : Math.round(item.laborHours * share * 100) / 100;
-  const buckets = legacyBuckets(item);
-  const cost = buckets === null || hired === null ? null : Math.round(buckets * 100 + hired * 100) / 100;
+  const materials = materialsOnly(item);
+  const cost = materials === null || hired === null ? null : Math.round(materials * 100 + hired * 100) / 100;
   return { cost, ownHours, hiredLabor: hired, mode, downgraded };
 }
 
@@ -106,7 +128,7 @@ export function renovationTotals(
   const ctx: LaborContext = {
     laborModes: v.laborModes ?? ({} as LaborContext['laborModes']),
     maxOwnWork: v.maxOwnWork ?? false,
-    regulatedSelfWorkConfirmed: v.regulatedSelfWorkConfirmed ?? false,
+    regulatedCompetence: v.regulatedCompetence ?? { ror: false, elektro: false, bad_vatrom: false },
   };
   const included = v.renovationItems.filter((i) => i.included);
   const econ = included.map((i) => ({ item: i, e: itemEconomics(i, ctx) }));
@@ -116,12 +138,14 @@ export function renovationTotals(
   const byLaborOre: Partial<Record<LaborCategory, { ownHours: number; hiredOre: number }>> = {};
   let totalOre = 0;
   for (const { item: i, e } of econ) {
+    // Ny arbeidsmodell: eldre fagfelt ignoreres (ingen dobbelttelling). Eldre modell: fagene er innleide kostnader.
+    const legacy = usesLaborModel(i) ? { electrician: 0, plumber: 0, other: 0 } : { electrician: ore(i.electrician), plumber: ore(i.plumber), other: ore(i.other) };
     byCatOre.materials += ore(i.materials);
-    byCatOre.electrician += ore(i.electrician);
-    byCatOre.plumber += ore(i.plumber);
-    byCatOre.other += ore(i.other);
+    byCatOre.electrician += legacy.electrician;
+    byCatOre.plumber += legacy.plumber;
+    byCatOre.other += legacy.other;
     byCatOre.hiredLabor += ore(e.hiredLabor);
-    totalOre += ore(i.materials) + ore(i.electrician) + ore(i.plumber) + ore(i.other) + ore(e.hiredLabor);
+    totalOre += ore(i.materials) + legacy.electrician + legacy.plumber + legacy.other + ore(e.hiredLabor);
     if (i.laborCategory) {
       const slot = (byLaborOre[i.laborCategory] ??= { ownHours: 0, hiredOre: 0 });
       slot.ownHours += e.ownHours ?? 0;
@@ -159,8 +183,9 @@ export function renovationTotals(
 
 const pct = (v: number | null): number | null => (v === null ? null : v / 100);
 
-export function toEngineInput(v: ScenarioValues, reno: RenovationTotals = renovationTotals(v)): EngineInput {
+export function toEngineInput(v: ScenarioValues, reno: RenovationTotals = renovationTotals(v), purchaseLoanBasis?: EngineInput['purchaseLoanBasis']): EngineInput {
   return {
+    ...(purchaseLoanBasis ? { purchaseLoanBasis } : {}),
     purchasePrice: v.purchasePrice,
     debtAtPurchase: v.debtAtPurchase,
     debtAtSale: v.debtAtSale,
@@ -203,11 +228,11 @@ export function normalizeScenarioValues(v: ScenarioValues): ScenarioValues {
 
 const WEEKS_PER_MONTH = 4.345;
 
-export function evaluateScenario(raw: ScenarioValues, options: { detailed?: boolean } = {}): ScenarioEvaluation {
+export function evaluateScenario(raw: ScenarioValues, options: { detailed?: boolean; purchaseLoanBasis?: EngineInput['purchaseLoanBasis'] } = {}): ScenarioEvaluation {
   const v = normalizeScenarioValues(raw);
   const renovation = renovationTotals(v);
-  const input = toEngineInput(v, renovation);
-  const evaluation = evaluate(input, options);
+  const input = toEngineInput(v, renovation, options.purchaseLoanBasis);
+  const evaluation = evaluate(input, { detailed: options.detailed });
   const missing = evaluation.missing.map((m) => {
     if (m.field === 'renovation' && renovation.mode === 'tiltak' && renovation.unknownItems.length > 0) {
       return {
@@ -241,10 +266,19 @@ export function evaluateScenario(raw: ScenarioValues, options: { detailed?: bool
   if (renovation.downgradedRegulated.length > 0) {
     warnings.push({
       field: 'laborModes',
-      message: `Regulert arbeid er regnet som innleid fordi kompetanse og ansvar ikke er bekreftet: ${renovation.downgradedRegulated
+      message: `Regulert arbeid er regnet som innleid fordi relevant kompetanse/ansvar ikke er bekreftet for arbeidsområdet: ${renovation.downgradedRegulated
         .map((i) => `«${i.title}»`)
-        .join(', ')}. Egeninnsats på rør, elektro og våtrom regnes aldri som gratis automatisk.`,
+        .join(', ')}. Egeninnsats på rør, elektro og bad/våtrom regnes aldri som gratis automatisk.`,
     });
+  }
+  if (renovation.mode === 'tiltak') {
+    const doubled = v.renovationItems.filter((i) => i.included && ignoredLegacyTrades(i) > 0);
+    if (doubled.length > 0) {
+      warnings.push({
+        field: 'renovationItems',
+        message: `Tiltak med arbeidsmodell bruker bare materialer og innleid arbeid. Eldre fagbeløp er ikke regnet med, for å unngå at arbeidet telles to ganger: ${doubled.map((i) => `«${i.title}»`).join(', ')}.`,
+      });
+    }
   }
   // Kapasitet: rekker egeninnsatsen innen oppussingstiden med oppgitt ukentlig innsats?
   if (renovation.hours !== null && renovation.hours > 0 && v.weeklyOwnHours && v.weeklyOwnHours > 0 && v.months) {
@@ -295,11 +329,12 @@ export function defaultDutyRule(tenure: Tenure): DutyRule {
   }
 }
 
-export type ValueOrigin = 'annonse' | 'analyse' | 'scenario' | 'profil' | 'modellregel' | 'standard';
+export type ValueOrigin = 'annonse' | 'analyse' | 'scenario' | 'markedsmotor' | 'profil' | 'modellregel' | 'standard';
 export const VALUE_ORIGIN_LABEL: Record<ValueOrigin, string> = {
   annonse: 'Fra annonsen',
   analyse: 'Analyseanslag',
-  scenario: 'Fra scenarioet i analysen',
+  scenario: 'Agentens estimat for scenarioet (fallback)',
+  markedsmotor: 'Beregnet av markedsmotoren',
   profil: 'Din profilforutsetning',
   modellregel: 'Modellregel',
   standard: 'Standardvalg',
@@ -308,6 +343,8 @@ export const VALUE_ORIGIN_LABEL: Record<ValueOrigin, string> = {
 export interface BaseValues {
   values: ScenarioValues;
   origins: Partial<Record<keyof ScenarioValues, ValueOrigin>>;
+  /** Hvordan salgsverdien i grunnverdiene er fastsatt (markedsmotor, agent-fallback eller eldre global verdi). */
+  saleResolution: SaleResolution;
 }
 
 function cloneItems(items: RenovationItem[]): RenovationItem[] {
@@ -330,6 +367,10 @@ export function buildBaseValues(args: {
   // Eldre analyser: oppussingsnivå styres av gamle alternativer. Nye scenarioer har egne tiltak.
   const option = isLegacy ? (est.renovationOptions.find((o) => o.id === est.defaultRenovationOptionId) ?? est.renovationOptions[0] ?? null) : null;
   const category = propertyCategory(property.propertyType);
+  const debtAtSale = est.debtAtSale ?? snapshot.sharedDebt;
+  // Én autoritativ salgsverdiflyt: markedsmotoren fastsetter low/base/high. Agentens estimat er bare fallback.
+  const saleResolution = resolveScenarioSale({ analysis, scenario, property, snapshot, debtAtSale });
+  const resolvedSale = saleResolution.sale;
 
   // Varighet: eldre analyser oppgir total varighet. Scenarioer oppgir oppussingstid, og tid til oppgjør legges til fra profilen.
   let months: number;
@@ -370,10 +411,10 @@ export function buildBaseValues(args: {
     renovationFinancingPct: defaults.renovationFinancingPct,
     financeRunningCosts: defaults.financeRunningCosts,
     availableEquity: defaults.availableEquity,
-    saleBasis: scenario.sale.basis,
-    saleLow: scenario.sale.low,
-    saleBase: scenario.sale.base,
-    saleHigh: scenario.sale.high,
+    saleBasis: resolvedSale.basis,
+    saleLow: resolvedSale.low,
+    saleBase: resolvedSale.base,
+    saleHigh: resolvedSale.high,
     saleFixedCost: defaults.saleFixedCost,
     saleCommissionPct: defaults.saleCommissionPct,
     hourValue: null,
@@ -381,7 +422,7 @@ export function buildBaseValues(args: {
     weeklyOwnHours: defaults.weeklyOwnHours,
     laborModes: { ...defaults.laborModes },
     maxOwnWork: defaults.maxOwnWork,
-    regulatedSelfWorkConfirmed: defaults.regulatedSelfWorkConfirmed,
+    regulatedCompetence: { ...defaults.regulatedCompetence },
     analysisScenarioId: scenario.id,
     profitTarget: defaults.profitTarget,
     taxMode: 'uavklart',
@@ -390,7 +431,7 @@ export function buildBaseValues(args: {
     walkAway: null,
     notes: '',
   };
-  const saleOrigin: ValueOrigin = scenario.saleSource === 'scenario' ? 'scenario' : 'analyse';
+  const saleOrigin: ValueOrigin = saleResolution.source === 'markedsmotor' ? 'markedsmotor' : saleResolution.source === 'agent_fallback' ? 'scenario' : 'analyse';
   const origins: BaseValues['origins'] = {
     buyerType: 'profil',
     purchasePrice: est.suggestedPurchasePrice !== null ? 'analyse' : 'annonse',
@@ -419,13 +460,13 @@ export function buildBaseValues(args: {
     weeklyOwnHours: 'profil',
     laborModes: 'profil',
     maxOwnWork: 'profil',
-    regulatedSelfWorkConfirmed: 'profil',
+    regulatedCompetence: 'profil',
     analysisScenarioId: 'standard',
     profitTarget: 'profil',
     taxMode: 'standard',
     vatIncluded: 'standard',
   };
-  return { values, origins };
+  return { values, origins, saleResolution };
 }
 
 // ---------------------------------------------------------------------------
@@ -467,7 +508,7 @@ export const SCENARIO_FIELDS: { key: keyof ScenarioValues; label: string; kind: 
   { key: 'weeklyOwnHours', label: 'Egeninnsats per uke', kind: 'hours' },
   { key: 'laborModes', label: 'Hvem utfører arbeidet', kind: 'text' },
   { key: 'maxOwnWork', label: 'Maks egeninnsats', kind: 'bool' },
-  { key: 'regulatedSelfWorkConfirmed', label: 'Kompetanse for regulert arbeid bekreftet', kind: 'bool' },
+  { key: 'regulatedCompetence', label: 'Kompetanse/ansvar for regulert arbeid (per område)', kind: 'text' },
   { key: 'analysisScenarioId', label: 'Scenario i analysen', kind: 'enum' },
   { key: 'profitTarget', label: 'Fortjenestemål', kind: 'money' },
   { key: 'buyerType', label: 'Kjøpertype', kind: 'enum' },

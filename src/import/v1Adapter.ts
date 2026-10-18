@@ -629,7 +629,7 @@ function mapObject(raw: unknown, index: number, defaults: ProfileDefaults): Adap
     minProfitPerOwnHour: defaults.minProfitPerOwnHour,
     laborModes: { ...defaults.laborModes },
     maxOwnWork: defaults.maxOwnWork,
-    regulatedSelfWorkConfirmed: defaults.regulatedSelfWorkConfirmed,
+    regulatedCompetence: { ...defaults.regulatedCompetence },
     buyerType: propertyType && propertyCategory(propertyType) === 'hus' ? defaults.buyerTypeHouse : defaults.buyerTypeApartment,
     purchasePrice: purchase,
     debtAtPurchase: debt,

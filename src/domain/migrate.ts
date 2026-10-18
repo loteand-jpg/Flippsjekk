@@ -1,14 +1,19 @@
 import { DEFAULT_LABOR_MODES } from '../config/defaultLabor';
 
 /**
- * Eksplisitt, ren migrering av eldre lagrede rader til modell 1.1.
- * Brukes både av databasemigreringen (v3 → v4) og som forbehandling i Zod-skjemaene,
+ * Eksplisitt, ren migrering av eldre lagrede rader til gjeldende modell (1.2).
+ * Brukes både av databasemigreringen (v3 → v4 → v5) og som forbehandling i Zod-skjemaene,
  * slik at gamle rader (også fra localStorage-kurs, import og eksport) alltid kan leses.
  *
  * Prinsipper:
- *  - Ingen data droppes. Eldre `financingPct` blir både kjøps- og oppussingslån, så eldre kalkyler gir
- *    nøyaktig samme resultat som før.
+ *  - Ingen rader droppes, og ingen brukerverdier slettes. Eldre `financingPct` blir både kjøps- og oppussingslån.
+ *    Merk: fra modell 1.2 gjelder kjøpslånet kun kjøpesummen P, så eldre kalkyler gir IKKE lenger bit-for-bit samme
+ *    renter/egenkapitalbehov når kjøpskostnadene er > 0. Det er en bevisst produktendring, ikke en migreringsfeil.
  *  - Nye felt som ikke kan utledes får `null` (ukjent) – aldri 0.
+ *  - Eldre `regulatedSelfWorkConfirmed` (én samlet bekreftelse) kan ikke fortelle hvilket arbeidsområde bekreftelsen
+ *    gjaldt. Den nullstilles konservativt til «ikke bekreftet» for alle tre områdene; brukeren bekrefter på nytt per område.
+ *  - Tiltak med `laborCategory` bruker bare ny arbeidsmodell (materialer + innleid arbeid). Fylte eldre fagfelt
+ *    (elektriker/rørlegger/andre) flyttes til `laborCostHired` når den er ukjent, ellers beholdes `laborCostHired` – aldri begge.
  */
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -34,8 +39,40 @@ export function scenarioModelDefaults() {
     minProfitPerOwnHour: null as number | null,
     laborModes: { ...DEFAULT_LABOR_MODES },
     maxOwnWork: false,
-    regulatedSelfWorkConfirmed: false,
+    regulatedCompetence: { ...NO_REGULATED_COMPETENCE },
   };
+}
+
+/** Ingen bekreftet kompetanse for regulert arbeid. */
+export const NO_REGULATED_COMPETENCE = { ror: false, elektro: false, bad_vatrom: false } as const;
+
+/** Migrerer det gamle samlede flagget til kategoribasert kompetanse (konservativt: ikke bekreftet). */
+function migrateCompetence(v: Record<string, unknown>): void {
+  if ('regulatedSelfWorkConfirmed' in v) delete v.regulatedSelfWorkConfirmed;
+  if (!isObj(v.regulatedCompetence)) v.regulatedCompetence = { ...NO_REGULATED_COMPETENCE };
+  else v.regulatedCompetence = { ...NO_REGULATED_COMPETENCE, ...v.regulatedCompetence };
+}
+
+const trade = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) ? x : 0);
+
+/**
+ * Ett tiltak med arbeidskategori har kun ny arbeidsmodell. Eldre fagfelt flyttes til `laborCostHired` (hvis den er ukjent)
+ * og nullstilles – slik at arbeid aldri telles to ganger. Tiltak uten arbeidskategori er uendret.
+ */
+export function migrateRenovationItemRaw(raw: unknown): unknown {
+  if (!isObj(raw) || typeof raw.laborCategory !== 'string') return raw;
+  const legacy = trade(raw.electrician) + trade(raw.plumber) + trade(raw.other);
+  if (legacy === 0 && raw.electrician !== null && raw.plumber !== null && raw.other !== null) return raw;
+  const item: Record<string, unknown> = { ...raw };
+  if (legacy > 0 && (item.laborCostHired === null || item.laborCostHired === undefined)) item.laborCostHired = legacy;
+  item.electrician = 0;
+  item.plumber = 0;
+  item.other = 0;
+  return item;
+}
+
+function migrateItems(v: Record<string, unknown>, key: string): void {
+  if (Array.isArray(v[key])) v[key] = (v[key] as unknown[]).map(migrateRenovationItemRaw);
 }
 
 /** Migrerer en scenarioverdi-rad (rå JSON) til modell 1.1. Rader som allerede er migrert returneres uendret. */
@@ -62,7 +99,8 @@ export function migrateScenarioValuesRaw(raw: unknown, hints: ProfileMigrationHi
   fill('minProfitPerOwnHour', hints.minProfitPerOwnHour ?? null);
   fill('laborModes', (isObj(hints.laborModes) ? { ...DEFAULT_LABOR_MODES, ...hints.laborModes } : d.laborModes) as typeof d.laborModes);
   fill('maxOwnWork', false);
-  fill('regulatedSelfWorkConfirmed', false);
+  migrateCompetence(v);
+  migrateItems(v, 'renovationItems');
   return v;
 }
 
@@ -84,6 +122,6 @@ export function migrateProfileDefaultsRaw(raw: unknown): unknown {
   set('saleSettlementMonths', 3.5);
   set('laborModes', { ...DEFAULT_LABOR_MODES });
   set('maxOwnWork', false);
-  set('regulatedSelfWorkConfirmed', false);
+  migrateCompetence(v);
   return v;
 }

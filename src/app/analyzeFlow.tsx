@@ -88,7 +88,7 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
       if (j.status === 'succeeded') {
         alive = false;
         setPhase({ kind: 'idle' });
-        toast({ tone: 'success', title: j.type === 'light_refresh' ? 'Annonsen er oppfrisket' : 'Analysen er klar' });
+        toast({ tone: 'success', title: j.type === 'light_refresh' ? 'Annonsen er oppfrisket' : j.type === 'market_refresh' && j.charges?.[j.createdBy] === 'refresh' ? 'Markedsdataene er oppdatert' : 'Analysen er klar' });
         open(phase.propertyId);
       }
     };

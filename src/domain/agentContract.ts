@@ -9,6 +9,7 @@ import {
   DutyRuleSchema,
   PublishableAnalysisSchema,
   RenovationOptionSchema,
+  ScenarioSearchSchema,
   ReportSectionSchema,
   RiskSchema,
   SourceSchema,
@@ -121,6 +122,8 @@ export const AgentAnalysisSchema = z
       /** Valgfritt: basis + inntil to alternative planløsninger med egne tiltak og egen salgsverdi. */
       scenarios: z.array(AnalysisScenarioSchema).max(3).optional(),
       defaultScenarioId: z.string().nullable().optional(),
+      /** Valgfritt: hva scenariojakten vurderte, valgte og avviste (inkl. at jakten ble stoppet uten treff). */
+      scenarioSearch: ScenarioSearchSchema.optional(),
     }),
     risks: z.array(RiskSchema),
     checklist: z.array(ChecklistItemSchema).length(12),
@@ -143,7 +146,7 @@ export const AgentAnalysisSchema = z
     o.risks.forEach((r, i) => check(r.sourceId, ['risks', i, 'sourceId']));
     o.checklist.forEach((c, i) => check(c.sourceId, ['checklist', i, 'sourceId']));
     o.comparables.forEach((c, i) => check(c.sourceId, ['comparables', i, 'sourceId']));
-    for (const issue of validateScenarioSet(o.estimates.scenarios, new Set(o.comparables.map((c) => c.id)))) {
+    for (const issue of validateScenarioSet(o.estimates.scenarios, new Set(o.comparables.map((c) => c.id)), o.estimates.scenarioSearch)) {
       ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
     }
     if (o.estimates.defaultScenarioId && !o.estimates.scenarios?.some((x) => x.id === o.estimates.defaultScenarioId)) {

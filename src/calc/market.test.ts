@@ -10,6 +10,7 @@ const target: MarketTarget = {
   propertyType: 'leilighet',
   tenure: 'selveier',
   standardClass: 'nyoppusset',
+  standardDocumented: true,
   floor: 2,
   elevator: false,
   balcony: false,
@@ -43,6 +44,7 @@ function cmp(over: Partial<MarketComparable> = {}): MarketComparable {
     parking: false,
     dataQuality: 'hoy',
     marketAdjustment: null,
+    originalAskingPrice: null,
     ...over,
   };
 }
@@ -78,13 +80,13 @@ describe('fysisk likhet 0–100', () => {
     expect(physicalMatch(target, cmp({ area: 75.4 })).match.area).toBe(3);
   });
 
-  it('ukjente egenskaper gir moderate poeng, ikke full score og ikke 0', () => {
+  it('ukjente egenskaper gir svake poeng (ikke 0, ikke middels, aldri mer enn laveste kjente nivå)', () => {
     const { match } = physicalMatch(target, cmp({ bedrooms: null, layoutMatch: null, locationLevel: null, standardClass: null, floor: null, elevator: null, balcony: null, parking: null, propertyType: null, tenure: null }));
     expect(match.location).toBeGreaterThan(0);
-    expect(match.location).toBeLessThan(25);
+    expect(match.location).toBeLessThanOrEqual(MARKET_PARAMS.location.region);
     expect(match.standard).toBeGreaterThan(0);
-    expect(match.standard).toBeLessThan(25);
-    expect(match.total).toBeLessThan(70);
+    expect(match.standard).toBeLessThanOrEqual(25 * MARKET_PARAMS.standardShare[3] + 0.05); // som en referanse tre trinn unna (avrundet)
+    expect(match.total).toBeLessThan(50);
   });
 });
 
@@ -308,6 +310,204 @@ describe('salgsestimat', () => {
     const a = weighMarket(target, refs, { today: TODAY });
     const b = weighMarket(target, refs, { today: TODAY });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
-    expect(a.modelVersion).toBe('1.0.0');
+    expect(a.modelVersion).toBe('1.1.0');
+  });
+});
+
+
+describe('ukjent er ikke middels (konservativ behandling)', () => {
+  const known = () => cmp({ locationLevel: 'mikroomrade' });
+  const weight = (c: MarketComparable) => {
+    const e = weighMarket(target, [c], { today: TODAY });
+    return byId(e, c.id);
+  };
+
+  it('ukjent lokasjon gir ikke mer enn laveste kjente nivå, lavere pålitelighet og ingen primærstatus', () => {
+    const k = weight(known());
+    const u = weight(cmp({ locationLevel: null }));
+    expect(u.physical.location).toBeLessThanOrEqual(MARKET_PARAMS.location.region);
+    expect(u.physical.location).toBeLessThan(k.physical.location);
+    expect(u.reliabilityFactor).toBeLessThan(k.reliabilityFactor);
+    expect(u.unknownFields).toContain('lokasjon');
+    expect(u.role).toBe('sekundaer');
+    expect(k.role).toBe('primaer');
+    // Ukjent lokasjon er svakere enn en faktisk kjent kommune-referanse (middels kjent nivå)
+    const kommune = weight(cmp({ locationLevel: 'kommune' }));
+    expect(u.physical.location).toBeLessThan(kommune.physical.location);
+    expect(u.effectiveWeight).toBeLessThan(kommune.effectiveWeight);
+  });
+
+  it('ukjent standard gir like lite som tre trinn unna, lavere pålitelighet og vekttak', () => {
+    const k = weight(known());
+    const u = weight(cmp({ standardClass: null }));
+    const threeAway = weight(cmp({ standardClass: 'dagens_standard' })); // 3 trinn fra nyoppusset
+    expect(u.physical.standard).toBe(threeAway.physical.standard);
+    expect(u.reliabilityFactor).toBeLessThan(k.reliabilityFactor);
+    expect(u.effectiveWeight).toBeLessThan(k.effectiveWeight * 0.5);
+    expect(u.role).toBe('sekundaer');
+    expect(u.unknownFields).toContain('standard');
+  });
+
+  it('ukjent BRA gir 0 poeng, ingen pris per m², null vekt og kan ikke brukes i ankeret', () => {
+    const u = weight(cmp({ area: null }));
+    expect(u.physical.area).toBe(0);
+    expect(u.adjustedTotalPerM2).toBeNull();
+    expect(u.effectiveWeight).toBe(0);
+    expect(u.usedInAnchor).toBe(false);
+    expect(u.unknownFields).toContain('areal');
+    expect(u.role).toBe('sekundaer');
+  });
+
+  it('ukjent soverom gir mindre enn ett avvikende soverom og hindrer primærstatus', () => {
+    const k = weight(known());
+    const u = weight(cmp({ bedrooms: null }));
+    const off = weight(cmp({ bedrooms: 3 }));
+    expect(u.unknownFields).toContain('soverom');
+    expect(u.reliabilityFactor).toBeLessThan(k.reliabilityFactor);
+    expect(u.role).toBe('sekundaer');
+    // Et kjent avvik på ett soverom gir 4 poeng, ukjent gir mindre
+    expect(u.physical.rooms).toBeLessThan(off.physical.rooms);
+  });
+
+  it('kombinasjon av flere ukjente felt gjør referansen svak – aldri kunstig sterk', () => {
+    const k = weight(known());
+    const u = weight(cmp({ locationLevel: null, standardClass: null, bedrooms: null, layoutMatch: null, dataQuality: null }));
+    expect(u.unknownFields).toEqual(expect.arrayContaining(['lokasjon', 'standard', 'soverom', 'planlosning']));
+    expect(u.strength).toBe('svak');
+    expect(u.role).toBe('sekundaer');
+    expect(u.effectiveWeight).toBeLessThan(k.effectiveWeight * 0.25);
+    expect(u.physical.total).toBeLessThan(k.physical.total * 0.7);
+    expect(u.reasons.join(' ')).toContain('Ukjent er ikke middels');
+    // Tre svakt dokumenterte referanser gir ikke «svært godt» grunnlag
+    const weak = weighMarket(target, [1, 2, 3].map(() => cmp({ locationLevel: null, standardClass: null, bedrooms: null })), { today: TODAY });
+    expect(weak.quality.tier).not.toBe('svaert_godt');
+  });
+
+  it('en referanse med annet antall soverom enn sluttproduktet kan aldri være primær', () => {
+    expect(weight(cmp({ bedrooms: 3 })).role).toBe('sekundaer');
+    expect(weight(cmp({ bedrooms: 2 })).role).toBe('primaer');
+  });
+});
+
+describe('aktive annonser: ukjent fellesgjeld er aldri 0', () => {
+  const sold = () => [cmp({ locationLevel: 'samme_bygg' }), cmp({ locationLevel: 'mikroomrade' }), cmp({ locationLevel: 'mikroomrade', date: '2026-09-16' })];
+  const ad = (over: Partial<MarketComparable> = {}) => cmp({ kind: 'prisantydning', askingPrice: 3_800_000, soldPrice: null, soldTotalPrice: null, sharedDebt: null, tenure: 'borettslag', area: 58, date: '2026-10-01', ...over });
+
+  it('ukjent fellesgjeld (borettslag) gir ikke totalpris per m² og senker påliteligheten', () => {
+    const a = ad();
+    const e = weighMarket({ ...target, tenure: 'borettslag' }, [...sold(), a], { today: TODAY });
+    const r = byId(e, a.id);
+    expect(r.askingPerM2).toBeNull(); // ikke 3 800 000 / 58 (som ville forutsatt gjeld 0)
+    expect(r.flags).toContain('fellesgjeld_ukjent');
+    const withDebtKnown = weighMarket({ ...target, tenure: 'borettslag' }, [ad({ sharedDebt: 0 })], { today: TODAY }).references[0];
+    expect(r.reliabilityFactor).toBeLessThan(withDebtKnown.reliabilityFactor);
+    // Annonsen beholdes som referanse (markedssignal), men gir ikke prissignal
+    expect(r.role).toBe('markedsreferanse');
+    expect(e.activeSignals.count).toBe(1);
+    expect(e.activeSignals.priced).toBe(0);
+    expect(e.activeSignals.medianAskingPerM2).toBeNull();
+    expect(e.quality.notes.join(' ')).toContain('uten kjent fellesgjeld');
+  });
+
+  it('kjent fellesgjeld normaliseres til totalpris per m²; selveier uten oppgitt gjeld regnes gjeldfri', () => {
+    const withDebt = ad({ sharedDebt: 500_000 });
+    const e = weighMarket({ ...target, tenure: 'borettslag' }, [withDebt], { today: TODAY });
+    expect(e.references[0].askingPerM2).toBe(Math.round((3_800_000 + 500_000) / 58));
+    const selveier = ad({ tenure: 'selveier', sharedDebt: null });
+    expect(weighMarket(target, [selveier], { today: TODAY }).references[0].askingPerM2).toBe(Math.round(3_800_000 / 58));
+    // Ukjent eierform: gjelden kan ikke antas
+    const unknownTenure = ad({ tenure: null, sharedDebt: null });
+    expect(weighMarket(target, [unknownTenure], { today: TODAY }).references[0].askingPerM2).toBeNull();
+  });
+});
+
+describe('aktive annonser som begrenset markedssignal', () => {
+  const sold = () => [
+    cmp({ locationLevel: 'samme_bygg', soldPrice: 4_000_000, soldTotalPrice: 4_000_000 }),
+    cmp({ locationLevel: 'mikroomrade', soldPrice: 4_000_000, soldTotalPrice: 4_000_000, date: '2026-09-16' }),
+    cmp({ locationLevel: 'mikroomrade', soldPrice: 4_000_000, soldTotalPrice: 4_000_000, date: '2026-08-16' }),
+  ];
+  const ad = (price: number, over: Partial<MarketComparable> = {}) => cmp({ kind: 'prisantydning', askingPrice: price, soldPrice: null, soldTotalPrice: null, sharedDebt: 0, locationLevel: 'samme_bygg', date: '2026-10-05', ...over });
+  const base = () => weighMarket(target, sold(), { today: TODAY });
+
+  it('ingen aktive annonser: ingen forskyvning, og aktive annonser er aldri faktiske salg', () => {
+    const e = base();
+    expect(e.positioning.activeSignalPct).toBe(0);
+    expect(e.estimate!.base).toBe(e.positioning.anchorBase);
+  });
+
+  it('én aktiv annonse under ankeret flytter ikke normalverdien (krever minst to svært relevante)', () => {
+    const e = weighMarket(target, [...sold(), ad(3_300_000)], { today: TODAY });
+    expect(e.positioning.activeSignalPct).toBe(0);
+  });
+
+  it('flere svært relevante aktive annonser vesentlig under ankeret flytter normalverdien moderat ned, innenfor intervallet', () => {
+    const b = base();
+    const e = weighMarket(target, [...sold(), ad(3_500_000), ad(3_550_000)], { today: TODAY });
+    expect(e.positioning.activeSignalPct).toBeLessThan(0);
+    expect(e.positioning.activeSignalPct).toBeGreaterThanOrEqual(-MARKET_PARAMS.activeSignal.maxDownPct);
+    expect(e.estimate!.base).toBeLessThan(b.estimate!.base);
+    // Fortsatt innenfor det statistiske intervallet (low/high er uendret av annonsene)
+    expect(e.estimate!.base).toBeGreaterThanOrEqual(e.estimate!.low);
+    expect(e.estimate!.low).toBe(b.estimate!.low);
+    expect(e.estimate!.high).toBe(b.estimate!.high);
+    // Ankeret (basert på faktiske salg) er uendret – annonsene er ikke ny fasit
+    expect(e.anchor.weightedMedianPerM2).toBe(b.anchor.weightedMedianPerM2);
+    expect(e.positioning.notes.join(' ')).toContain('Aktive annonser flytter normalverdien');
+  });
+
+  it('prisnedsettelse og lang tid ute forsterker signalet, men aldri utover dokumentert maksimum', () => {
+    const e = weighMarket(
+      target,
+      [...sold(), ad(3_400_000, { originalAskingPrice: 3_900_000, date: '2026-06-01' }), ad(3_450_000, { originalAskingPrice: 3_800_000, date: '2026-05-01' }), ad(3_300_000, { originalAskingPrice: 3_900_000, date: '2026-04-01' })],
+      { today: TODAY },
+    );
+    expect(e.positioning.activeSignalPct).toBe(-MARKET_PARAMS.activeSignal.maxDownPct);
+    expect(e.activeSignals.pointsDown).toBeGreaterThan(4);
+    const refs = e.references.filter((r) => r.role === 'markedsreferanse');
+    expect(refs.every((r) => r.priceReduced === true)).toBe(true);
+    expect(refs.every((r) => (r.daysListed ?? 0) >= 90)).toBe(true);
+  });
+
+  it('annonser over ankeret kan flytte normalverdien opp, men mindre enn ned', () => {
+    const e = weighMarket(target, [...sold(), ad(4_700_000), ad(4_650_000), ad(4_800_000)], { today: TODAY });
+    expect(e.positioning.activeSignalPct).toBeGreaterThan(0);
+    expect(e.positioning.activeSignalPct).toBeLessThanOrEqual(MARKET_PARAMS.activeSignal.maxUpPct);
+    expect(MARKET_PARAMS.activeSignal.maxUpPct).toBeLessThan(MARKET_PARAMS.activeSignal.maxDownPct);
+  });
+
+  it('annonser med annen standard eller svak likhet teller ikke i signalet', () => {
+    const e = weighMarket(target, [...sold(), ad(3_300_000, { standardClass: 'oppussingsobjekt' }), ad(3_300_000, { standardClass: null })], { today: TODAY });
+    expect(e.positioning.activeSignalPct).toBe(0);
+    expect(e.activeSignals.relevant).toBe(0);
+  });
+
+  it('annonser uten kjent fellesgjeld gir ikke prissignal', () => {
+    const e = weighMarket({ ...target, tenure: 'borettslag' }, [...sold().map((c) => ({ ...c, tenure: 'borettslag' as const })), ad(3_300_000, { tenure: 'borettslag', sharedDebt: null }), ad(3_300_000, { tenure: 'borettslag', sharedDebt: null })], { today: TODAY });
+    expect(e.positioning.activeSignalPct).toBe(0);
+  });
+});
+
+describe('agentens begrensede ankerjustering og udokumentert sluttstandard', () => {
+  const three = () => [cmp({ locationLevel: 'samme_bygg' }), cmp({ locationLevel: 'mikroomrade' }), cmp({ locationLevel: 'mikroomrade', date: '2026-09-16' })];
+
+  it('begrunnet justering brukes av koden på ankeret og kappes ved ±5 %', () => {
+    const base = weighMarket(target, three(), { today: TODAY });
+    const plus2 = weighMarket(target, three(), { today: TODAY, anchorAdjustmentPct: 2 });
+    expect(plus2.estimate!.base / base.estimate!.base).toBeCloseTo(1.02, 2);
+    expect(plus2.positioning.anchorAdjustmentPct).toBe(2);
+    const huge = weighMarket(target, three(), { today: TODAY, anchorAdjustmentPct: 40 });
+    expect(huge.positioning.anchorAdjustmentPct).toBe(5);
+    expect(huge.estimate!.base / base.estimate!.base).toBeCloseTo(1.05, 2);
+    const neg = weighMarket(target, three(), { today: TODAY, anchorAdjustmentPct: -40 });
+    expect(neg.positioning.anchorAdjustmentPct).toBe(-5);
+  });
+
+  it('udokumentert sluttstandard utvider intervallet og forklares', () => {
+    const doc = weighMarket(target, three(), { today: TODAY });
+    const undoc = weighMarket({ ...target, standardDocumented: false }, three(), { today: TODAY });
+    expect(undoc.halfWidthPct!).toBeGreaterThan(doc.halfWidthPct!);
+    expect(undoc.standardDocumented).toBe(false);
+    expect(undoc.quality.notes.join(' ')).toContain('ikke dokumentert');
   });
 });

@@ -24,6 +24,11 @@ export function createJob(
     now: Date;
     stepMs: number;
     targetVersion: number | null;
+    /**
+     * Markedsoppfriskning: hvordan skaperen belastes. «new_analysis» når brukeren ba om en analyse (da ser dialogen ut som en
+     * ny analyse); «refresh» når brukeren ba om å oppfriske en analyse han/hun allerede har.
+     */
+    charge?: 'new_analysis' | 'refresh';
   },
 ): AnalysisJob {
   const { property, type, userId, now, stepMs, targetVersion } = args;
@@ -47,7 +52,8 @@ export function createJob(
     dedupeKey: dedupeKeyFor(property.id, type, targetVersion),
     status: 'running',
     // En «koblet» analyse har samme trinn og tempo som en ny analyse, så brukeren ser det samme.
-    steps: type === 'light_refresh' ? [...DEMO_JOB.refreshSteps] : [...DEMO_JOB.fullSteps],
+    steps:
+      type === 'light_refresh' ? [...DEMO_JOB.refreshSteps] : type === 'market_refresh' && args.charge === 'refresh' ? [...DEMO_JOB.marketRefreshSteps] : [...DEMO_JOB.fullSteps],
     stepIndex: 0,
     stepDurationMs: stepMs,
     attempt: 1,
@@ -60,6 +66,7 @@ export function createJob(
     resultAnalysisId: null,
     resultSnapshotId: null,
     simulatedFailure,
+    ...(type === 'market_refresh' ? { charges: { [userId]: args.charge ?? 'new_analysis' } } : {}),
   };
   draft.jobs.push(job);
   return job;
@@ -160,6 +167,8 @@ function publishFull(draft: DbState, job: AnalysisJob, now: Date): void {
   job.finishedAt = now.toISOString();
   job.updatedAt = now.toISOString();
   job.error = null;
+  // Signalene om endret teknisk grunnlag er behandlet av den nye tekniske analysen.
+  if (draft.demo.technicalChangeSignals) delete draft.demo.technicalChangeSignals[job.finnId];
 
   // Scenarioer som peker på en analyse som ikke finnes lenger (f.eks. etter skadet lokal lagring)
   // flyttes til den nye analysen. Verdiene beholdes.
@@ -310,6 +319,71 @@ function publishRefresh(draft: DbState, job: AnalysisJob, now: Date): void {
   });
 }
 
+/**
+ * Grundig markedsoppfriskning av en analyse som er eldre enn grensen. Teknisk grunnlag (dokumenter, juridisk, oppussingsbehov,
+ * risiko, scenarioer og tiltak) tas over uendret fra forrige versjon – det leses ikke på nytt og det lages ikke nye scenarioer.
+ * Annonseopplysninger (pris, visninger, salgsstatus) oppdateres, og en ny analyseversjon med ny analysedato publiseres. Fordi
+ * salgsverdien per scenario regnes av koden ut fra referansene per analysedato, gir den nye datoen nye vekter (alder), og
+ * økonomimotoren regner på nytt når brukeren åpner scenarioet.
+ *
+ * Demoen har ingen ekte markedskilde: referanser og områdeprofil er uendret, og det sies tydelig i analysen.
+ */
+function publishMarketRefresh(draft: DbState, job: AnalysisJob, now: Date): void {
+  const prev = latestSharedAnalysis(draft, job.propertyId);
+  if (!prev) {
+    failJob(job, now, 'no_analysis', 'Fant ikke analysegrunnlaget som skulle oppfriskes.');
+    return;
+  }
+  const snapshot = applyRefresh(draft, job, now);
+  if (!snapshot) return;
+  const nowIso = now.toISOString();
+  const next: SharedAnalysis = structuredClone(prev);
+  next.id = uuid();
+  next.version = prev.version + 1;
+  next.snapshotId = snapshot.id;
+  next.status = 'published';
+  next.analysisKind = 'market_refresh';
+  next.derivedFromVersion = prev.version;
+  next.modelVersion = CALC_MODEL_VERSION;
+  next.createdAt = nowIso;
+  next.publishedAt = nowIso;
+  next.assumptions = [
+    `Markedsoppfriskning ${localDateKey(now)} (v${next.version}): pris, visninger og salgsstatus er oppdatert, og salgsverdi per scenario er regnet på nytt per ny dato. Det tekniske grunnlaget er uendret fra v${prev.version} og er ikke lest på nytt.`,
+    ...next.assumptions.filter((a) => !a.startsWith('Markedsoppfriskning ')),
+  ];
+  const check = validateForPublish(next);
+  if (!check.ok) {
+    failJob(job, now, 'validation_failed', `Markedsoppfriskningen besto ikke kvalitetskontrollen (${check.fields.slice(0, 4).join(', ')}) og ble ikke publisert. Tidligere analyse er uendret.`);
+    return;
+  }
+
+  // ---- fra her: ingen kast, bare skriving ----
+  prev.status = 'superseded';
+  draft.analyses.push(next);
+  job.status = 'succeeded';
+  job.stepIndex = job.steps.length;
+  job.resultAnalysisId = next.id;
+  job.finishedAt = nowIso;
+  job.updatedAt = nowIso;
+  job.error = null;
+  for (const userId of job.requestedBy) {
+    const link = ensureLink(draft, userId, job.propertyId, now);
+    link.analyzedAt = nowIso;
+    ensureDefaultScenario(draft, userId, job.propertyId, next, now);
+    const kind = job.charges?.[userId] ?? 'new_analysis';
+    addUsage(draft, {
+      userId,
+      kind,
+      propertyId: job.propertyId,
+      jobId: job.id,
+      analysisId: next.id,
+      idempotencyKey: userId === job.createdBy ? `${kind}:${job.dedupeKey}` : `${kind}:${job.dedupeKey}:${userId}`,
+      chargeable: true,
+      createdAt: nowIso,
+    });
+  }
+}
+
 /** Flytter alle aktive jobber frem basert på tid. Returnerer true hvis noe endret seg. */
 export function advanceJobs(draft: DbState, now: Date): boolean {
   let changed = false;
@@ -339,6 +413,7 @@ export function advanceJobs(draft: DbState, now: Date): boolean {
     if (step >= job.steps.length) {
       if (job.type === 'full_analysis') publishFull(draft, job, now);
       else if (job.type === 'linked_analysis') publishLinked(draft, job, now);
+      else if (job.type === 'market_refresh') publishMarketRefresh(draft, job, now);
       else publishRefresh(draft, job, now);
       changed = true;
     }

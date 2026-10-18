@@ -11,7 +11,7 @@ import { Dialog } from '../components/ui/overlay';
 import { Alert, Badge, Button, buttonClass, Card, SectionTitle } from '../components/ui/primitives';
 import { getCourse } from '../config/courses';
 import { PRIMARY_PLAN } from '../config/plans';
-import { BUYER_TYPE_LABEL, LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, REGULATED_LABOR, SUBSCRIPTION_STATUS_LABEL, WORK_MODE_LABEL, WORK_MODES, type BuyerType, type WorkMode } from '../domain/enums';
+import { BUYER_TYPE_LABEL, isRegulatedLabor, LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, SUBSCRIPTION_STATUS_LABEL, WORK_MODE_LABEL, WORK_MODES, type BuyerType, type WorkMode } from '../domain/enums';
 import type { ProfileDefaults } from '../domain/schemas';
 import { formatDate, formatNOK } from '../lib/format';
 
@@ -318,10 +318,7 @@ export function AccountPage() {
               </Field>
               <div className="sm:col-span-2">
                 <Switch checked={defaults.maxOwnWork} onChange={(v) => setD('maxOwnWork', v)} label="Maks egeninnsats" />
-                <p className="mt-1 text-xs text-slate-600">Regner alt ikke-regulert arbeid som utført selv. Rør, elektro og bad/våtrom regnes aldri som gratis automatisk.</p>
-                <div className="mt-2">
-                  <Switch checked={defaults.regulatedSelfWorkConfirmed} onChange={(v) => setD('regulatedSelfWorkConfirmed', v)} label="Jeg har bekreftet kompetanse og ansvar for regulert arbeid" />
-                </div>
+                <p className="mt-1 text-xs text-slate-600">Regner alt ikke-regulert arbeid som utført selv. Rør, elektro og bad/våtrom regnes aldri som gratis automatisk – heller ikke med maks egeninnsats.</p>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -330,7 +327,8 @@ export function AccountPage() {
                 <thead className="text-left text-xs text-slate-600">
                   <tr>
                     <th className="py-1 pr-3 font-medium">Arbeidskategori</th>
-                    <th className="py-1 font-medium">Utføres</th>
+                    <th className="py-1 pr-3 font-medium">Utføres</th>
+                    <th className="py-1 font-medium">Kompetanse og ansvar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -338,9 +336,9 @@ export function AccountPage() {
                     <tr key={c}>
                       <th scope="row" className="py-1.5 pr-3 text-left font-normal">
                         {LABOR_CATEGORY_LABEL[c]}
-                        {REGULATED_LABOR.includes(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
+                        {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
                       </th>
-                      <td className="py-1.5">
+                      <td className="py-1.5 pr-3">
                         <Select aria-label={`Hvem utfører ${LABOR_CATEGORY_LABEL[c].toLowerCase()}`} className="max-w-40" value={defaults.laborModes[c]} onChange={(e) => setD('laborModes', { ...defaults.laborModes, [c]: e.target.value as WorkMode })}>
                           {WORK_MODES.map((m) => (
                             <option key={m} value={m}>
@@ -348,6 +346,17 @@ export function AccountPage() {
                             </option>
                           ))}
                         </Select>
+                      </td>
+                      <td className="py-1.5">
+                        {isRegulatedLabor(c) ? (
+                          <Switch
+                            checked={defaults.regulatedCompetence[c]}
+                            onChange={(v) => setD('regulatedCompetence', { ...defaults.regulatedCompetence, [c]: v })}
+                            label={<span className="text-xs">Relevant kompetanse/ansvar bekreftet for {LABOR_CATEGORY_LABEL[c].toLowerCase()}</span>}
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-500">Ikke påkrevd</span>
+                        )}
                       </td>
                     </tr>
                   ))}

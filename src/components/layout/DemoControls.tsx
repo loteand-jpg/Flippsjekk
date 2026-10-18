@@ -27,7 +27,7 @@ const TRY_LINKS: { label: string; url: string; note: string }[] = [
   { label: 'Cachetreff', url: `finn.no/${DEMO_FINN.cacheHit}`, note: 'Analyse finnes – gjenbrukes uten belastning' },
   { label: 'Samme objekt, annet format', url: `https://www.finn.no/realestate/homes/ad.html?finnkode=${DEMO_FINN.cacheHit}&utm_source=delt`, note: 'Normaliseres til samme FINN-ID' },
   { label: 'Cachemiss', url: `finn.no/${DEMO_FINN.synthetic}`, note: 'Ny simulert analyse (syntetisk demodata)' },
-  { label: 'Gammel analyse', url: `finn.no/${DEMO_FINN.stale}`, note: 'Over 30 dager – viser oppdateringsvalg' },
+  { label: 'Gammel analyse', url: `finn.no/${DEMO_FINN.stale}`, note: 'Over 30 dager – tilbyr grundig markedsoppfriskning' },
   { label: 'Feil og nytt forsøk', url: `finn.no/${DEMO_FINN.failing}`, note: 'Første forsøk feiler, retry lykkes' },
   { label: 'Ugyldig lenke', url: 'https://www.hjem.no/bolig/123456', note: 'Forståelig feilmelding' },
 ];

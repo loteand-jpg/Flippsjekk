@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { solveMaxBid } from '../calc/engine';
-import { evaluateScenario } from '../calc/scenario';
+import { evaluateCourseScenario as evaluateScenario } from './evaluate';
 import { termKeysIn } from './components';
 import { MODULES, MODULE_COUNT, PAGE_COUNT, TOTAL_UNITS, allPages, pageKey } from './content';
 import { FINAL_QUIZ } from './content/finalQuiz';

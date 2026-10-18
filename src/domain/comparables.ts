@@ -34,10 +34,12 @@ export interface ComparableFields {
   dataQuality?: DataQualityLevel | null;
   /** Manuell markedsjusteringsfaktor (1 = ingen). */
   marketAdjustment?: number | null;
+  /** Aktive annonser: opprinnelig prisantydning (kontant). Lavere nåværende pris betyr prisnedsatt. */
+  originalAskingPrice?: number | null;
 }
 
 /** Nøkler for de valgfrie markedsvektingsfeltene. */
-export const COMPARABLE_EXTRA_KEYS = ['bedrooms', 'propertyType', 'tenure', 'sharedDebt', 'locationLevel', 'standardClass', 'layoutMatch', 'floor', 'elevator', 'balcony', 'parking', 'viewNote', 'dataQuality', 'marketAdjustment'] as const;
+export const COMPARABLE_EXTRA_KEYS = ['bedrooms', 'propertyType', 'tenure', 'sharedDebt', 'locationLevel', 'standardClass', 'layoutMatch', 'floor', 'elevator', 'balcony', 'parking', 'viewNote', 'dataQuality', 'marketAdjustment', 'originalAskingPrice'] as const;
 
 export interface LegacyPrice {
   kind: ComparableKind;
@@ -121,6 +123,7 @@ export function validateComparable(c: ComparableInput): ComparableIssue[] {
   if (c.area !== null && (!Number.isFinite(c.area) || c.area <= 0)) out.push({ field: 'area', message: 'Areal må være større enn 0.' });
   if (c.bedrooms != null && (!Number.isInteger(c.bedrooms) || c.bedrooms < 0 || c.bedrooms > 20)) out.push({ field: 'bedrooms', message: 'Antall soverom må være et helt tall fra 0 til 20.' });
   if (c.marketAdjustment != null && (!Number.isFinite(c.marketAdjustment) || c.marketAdjustment <= 0 || c.marketAdjustment > 3)) out.push({ field: 'marketAdjustment', message: 'Markedsjustering må være en faktor over 0 (f.eks. 1,05 for +5 %).' });
+  if (c.originalAskingPrice != null && (!Number.isFinite(c.originalAskingPrice) || c.originalAskingPrice < 0)) out.push({ field: 'originalAskingPrice', message: 'Opprinnelig prisantydning kan ikke være negativ.' });
   if (c.sharedDebt != null && (!Number.isFinite(c.sharedDebt) || c.sharedDebt < 0)) out.push({ field: 'sharedDebt', message: 'Fellesgjeld kan ikke være negativ.' });
   if (c.date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(c.date)) out.push({ field: 'date', message: 'Dato må være på formatet ÅÅÅÅ-MM-DD.' });
   const hasSold = c.soldPrice !== null || c.soldTotalPrice !== null;

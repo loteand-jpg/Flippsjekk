@@ -60,6 +60,17 @@ test('scenarioer: basis og to alternativer med egen salgsverdi, privat overstyri
   await expect(page.getByText(/Anbefalt scenario: Standardheving/)).toBeVisible();
   await expect(page.getByText('Betinget – styrer ikke anbefalt maksbud').first()).toBeVisible();
   await expect(page.getByTestId('rank-row')).toHaveCount(3);
+  // Scenariorisiko er med i sammenligningen, og hvert kort viser den
+  await expect(cards.nth(2)).toContainText('Scenariorisiko');
+  await expect(cards.nth(2)).toContainText('myndighets-/godkjenningsrisiko høy');
+  await expect(page.getByText('Risiko (objekt + scenario)').first()).toBeVisible();
+  // Salgsverdien er fastsatt av markedsmotoren, og agentens estimat er historisk referanse
+  await expect(cards.nth(0).getByTestId('sale-source')).toContainText('Beregnet av markedsmotoren');
+  await expect(cards.nth(0)).toContainText('Sluttstandard: nyoppusset');
+  // Maksbudgrenser vises hver for seg, og det vises hva som begrenser anbefalt maksbud
+  await expect(page.getByTestId('recommended-maxbid')).toContainText('Begrenset av');
+  await expect(page.getByText(/Grense: fortjenestemål/)).toBeVisible();
+  await expect(page.getByText(/Grense: minimum .* per egeninnsatstime/)).toBeVisible();
 
   // Egeninnsats og finansiering: egen tid er ikke en kostnad
   await expect(page.getByText(/Fortjeneste per egeninnsatstime:/)).toBeVisible();
@@ -74,7 +85,8 @@ test('scenarioer: basis og to alternativer med egen salgsverdi, privat overstyri
   await expect(cards.nth(1)).toContainText('Brukt i dette scenarioet');
   const salesAfter = await page.getByLabel('Normal', { exact: true }).inputValue();
   expect(salesAfter).not.toBe(salesBefore);
-  expect(salesAfter).toMatch(/^4\s290\s000$/);
+  // Alternativets salgsverdi fastsettes av markedsmotoren (ikke agentens historiske 4 290 000)
+  expect(salesAfter).toMatch(/^4\s131\s000$/);
 
   // Privat overstyring: grunnverdi og tilbakestilling per felt
   const reno = page.getByRole('textbox', { name: 'Låneandel oppussing' });
@@ -117,9 +129,62 @@ test('marked: verdivurdering vekter referanser, aktive annonser er ikke salg, og
   await expect(page.getByText('Salgsverdi etter oppussing – Standardheving')).toBeVisible();
   await noHorizontalScroll(page);
 
-  // Bruk estimatet i scenarioet
+  // Én autoritativ flyt: markedsmotoren er fasit, agentens estimat er historisk referanse, og din kalkyle er privat
+  await expect(page.getByTestId('sale-source').first()).toContainText('Beregnet av markedsmotoren');
+  const values = page.getByTestId('sale-values');
+  await expect(values).toContainText('Markedsmotoren (fasit i kalkylen)');
+  await expect(values).toContainText('Agentens historiske estimat');
+  await expect(values).toContainText('Din kalkyle (privat)');
+  await expect(values).toContainText('Ikke endret av deg');
+  // Aktive annonser er markedssignal med dokumentert maksimum – ikke faktiske salg
+  await expect(page.getByTestId('market-positioning').first()).toContainText(/aktiv/i);
+
+  // Overstyr salgsverdien privat i kalkylen, og hent markedsmotorens verdi tilbake derfra
+  await page.getByRole('tab', { name: 'Min kalkyle' }).click();
+  const normal = page.getByLabel('Normal', { exact: true });
+  const engineValue = await normal.inputValue();
+  await normal.fill('5000000');
+  await normal.blur();
+  await expect(page.getByText('Ulagrede endringer')).toBeVisible();
+  await page.getByRole('tab', { name: 'Marked' }).click();
+  await expect(page.getByTestId('sale-values')).toContainText('Endret av deg');
   await page.getByRole('button', { name: 'Bruk som salgsverdi i scenarioet' }).click();
   await expect(page.getByText('Salgsverdien er lagt inn i scenarioet')).toBeVisible();
   await page.getByRole('tab', { name: 'Min kalkyle' }).click();
-  await expect(page.getByText('Ulagrede endringer')).toBeVisible();
+  await expect(page.getByLabel('Normal', { exact: true })).toHaveValue(engineValue);
+});
+
+test('konto: relevant kompetanse for regulert arbeid bekreftes per arbeidsområde', async ({ page }) => {
+  await page.goto('/#/logg-inn');
+  await page.getByRole('button', { name: /Ada Aksnes/ }).click();
+  await page.goto('/#/konto');
+  const elektro = page.getByRole('switch', { name: /Relevant kompetanse\/ansvar bekreftet for elektro/ });
+  const ror = page.getByRole('switch', { name: /Relevant kompetanse\/ansvar bekreftet for rør/ });
+  const bad = page.getByRole('switch', { name: /Relevant kompetanse\/ansvar bekreftet for bad og våtrom/ });
+  for (const sw of [elektro, ror, bad]) await expect(sw).toHaveAttribute('aria-checked', 'false');
+  await elektro.click();
+  await expect(elektro).toHaveAttribute('aria-checked', 'true');
+  await expect(ror).toHaveAttribute('aria-checked', 'false'); // kompetanse på ett område gjelder ikke de andre
+  await expect(bad).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('button', { name: 'Lagre forutsetninger' }).click();
+  await expect(page.getByText('Forutsetningene er lagret')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('switch', { name: /Relevant kompetanse\/ansvar bekreftet for elektro/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('switch', { name: /Relevant kompetanse\/ansvar bekreftet for rør/ })).toHaveAttribute('aria-checked', 'false');
+  await noHorizontalScroll(page);
+});
+
+test('30 dager: gammel analyse tilbyr grundig markedsoppfriskning – ikke full ny analyse', async ({ page }) => {
+  await page.goto('/#/logg-inn');
+  await page.getByRole('button', { name: /Ada Aksnes/ }).click();
+  await page.getByRole('link', { name: /Elgeseter gate 51/ }).first().click();
+  await expect(page.getByText(/Markedsdataene er \d+ dager gamle/)).toBeVisible();
+  await expect(page.getByText('Det tekniske grunnlaget (dokumenter, risiko, oppussingsbehov og scenarioer) leses ikke på nytt.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Bestill full ny analyse' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Bestill ny teknisk analyse' })).toHaveCount(0);
+  await noHorizontalScroll(page);
+  await page.getByRole('button', { name: 'Oppdater markedsdata' }).click();
+  await expect(page.getByText('Markedsoppfriskning pågår')).toBeVisible();
+  await expect(page.getByText(/Markedsdataene er \d+ dager gamle/)).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByText('Markedsoppfriskning pågår')).toHaveCount(0, { timeout: 15_000 });
 });

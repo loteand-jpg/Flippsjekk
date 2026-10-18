@@ -22,9 +22,11 @@ import {
   latestSnapshot,
   requireFullAccess,
   staleness,
+  technicalSignals,
   type MockContext,
 } from './context';
 import { FRESHNESS } from '../../config/freshness';
+import { decideAnalysisAction } from '../../domain/refreshPolicy';
 import { advanceJobs, createJob, dedupeKeyFor, hasActiveJobs } from './jobs';
 
 /** Oppretter eiendomsidentitet for en ukjent FINN-ID (i produksjon: kun autorisert backend). */
@@ -101,9 +103,37 @@ export class MockAnalysisService implements AnalysisService {
           }
           return { outcome: 'reused', propertyId: property.id, finnId: property.finnId, analysis: latest, staleness: staleness(d, latest, now), alreadyInList: true, charged: false };
         }
-        // Grunnlaget er ferskt nok: brukeren får sin egen analyse som ser ut og belastes som en ny analyse.
+        // Hva trengs? Analyse eldre enn 30 dager gir normalt en grundig MARKEDSOPPFRISKNING – ikke full teknisk analyse.
+        // Full teknisk analyse bare ved nye/endrede dokumenter, endrede kritiske fakta eller inkompatibel modell.
         const ageDays = latest ? (now.getTime() - Date.parse(latest.publishedAt ?? latest.createdAt)) / 86_400_000 : Infinity;
-        if (latest && compatible && ageDays <= FRESHNESS.analysisMaxAgeDays) {
+        const action = decideAnalysisAction({ latest, compatible, ageDays, maxAgeDays: FRESHNESS.marketRefreshAfterDays, signals: technicalSignals(d, property.id) });
+        if (latest && action.kind === 'market_refresh') {
+          const activeMarket = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'market_refresh' && (j.status === 'running' || j.status === 'queued'));
+          if (activeMarket) {
+            if (!activeMarket.requestedBy.includes(uid)) {
+              const ent = computeEntitlements(d, uid, now);
+              if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+              activeMarket.requestedBy.push(uid);
+              activeMarket.charges = { ...activeMarket.charges, [uid]: 'new_analysis' };
+            }
+            ensureLink(d, uid, property.id, now);
+            return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: activeMarket, joinedOtherUser: activeMarket.createdBy !== uid, charged: false };
+          }
+          const ent = computeEntitlements(d, uid, now);
+          if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+          const failedMarket = d.jobs.find((j) => j.dedupeKey === dedupeKeyFor(property!.id, 'market_refresh', latest.version + 1) && j.status === 'failed' && j.createdBy === uid);
+          let job: AnalysisJob;
+          if (failedMarket) {
+            job = failedMarket;
+            this.restart(job, now);
+          } else {
+            job = createJob(d, { property, type: 'market_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.stepMs, targetVersion: latest.version + 1, charge: 'new_analysis' });
+          }
+          ensureLink(d, uid, property.id, now);
+          return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
+        }
+        // Grunnlaget er ferskt nok: brukeren får sin egen analyse som ser ut og belastes som en ny analyse.
+        if (latest && action.kind === 'reuse') {
           const ent = computeEntitlements(d, uid, now);
           const mine = ownJobs[0];
           if (!ent.canRequestNewAnalysis) throw quotaError(ent);
@@ -216,7 +246,7 @@ export class MockAnalysisService implements AnalysisService {
     );
   }
 
-  async requestRefresh(propertyId: string, kind: 'light' | 'full', idempotencyKey: string): Promise<RefreshResult> {
+  async requestRefresh(propertyId: string, kind: 'light' | 'market' | 'full', idempotencyKey: string): Promise<RefreshResult> {
     void idempotencyKey;
     await this.ctx.delay();
     const uid = this.ctx.uid();
@@ -224,16 +254,19 @@ export class MockAnalysisService implements AnalysisService {
     this.tick();
     return this.ctx.db.transaction((d): RefreshResult => {
       const ent = computeEntitlements(d, uid, now);
-      requireFullAccess(ent, kind === 'light' ? 'Oppfrisking av annonsen' : 'Ny analyse');
+      requireFullAccess(ent, kind === 'light' ? 'Oppfrisking av annonsen' : kind === 'market' ? 'Markedsoppfriskning' : 'Ny analyse');
       const property = d.properties.find((p) => p.id === propertyId);
       if (!property) throw new ServiceError('not_found', 'Fant ikke eiendommen.');
       if (!d.userProperties.some((l) => l.userId === uid && l.propertyId === propertyId)) {
         throw new ServiceError('forbidden', 'Objektet må være i din liste.');
       }
-      const type = kind === 'light' ? 'light_refresh' : 'full_analysis';
+      const type = kind === 'light' ? 'light_refresh' : kind === 'market' ? 'market_refresh' : 'full_analysis';
       const active = d.jobs.find((j) => j.propertyId === propertyId && j.type === type && (j.status === 'running' || j.status === 'queued'));
       if (active) {
-        if (!active.requestedBy.includes(uid)) active.requestedBy.push(uid);
+        if (!active.requestedBy.includes(uid)) {
+          active.requestedBy.push(uid);
+          if (type === 'market_refresh') active.charges = { ...active.charges, [uid]: 'refresh' };
+        }
         return { outcome: 'job_joined', propertyId, job: active };
       }
       if (kind === 'light') {
@@ -245,6 +278,31 @@ export class MockAnalysisService implements AnalysisService {
         const job = createJob(d, { property, type: 'light_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: null });
         job.simulatedFailure = null;
         return { outcome: 'job_started', propertyId, job };
+      }
+      if (kind === 'market') {
+        const latestForMarket = latestSharedAnalysis(d, propertyId);
+        if (!latestForMarket) throw new ServiceError('conflict', 'Objektet har ingen analyse å oppfriske markedsdata for.');
+        const age = (now.getTime() - Date.parse(latestForMarket.publishedAt ?? latestForMarket.createdAt)) / 86_400_000;
+        if (age <= FRESHNESS.marketRefreshAfterDays) return { outcome: 'already_fresh', propertyId, observedAt: latestForMarket.publishedAt ?? latestForMarket.createdAt };
+        if (!ent.canRefresh) throw new ServiceError('quota_exceeded', `Du har brukt alle ${ent.limits.refreshes} oppfriskingene i denne perioden.`);
+        const job = createJob(d, { property, type: 'market_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: latestForMarket.version + 1, charge: 'refresh' });
+        job.simulatedFailure = null;
+        return { outcome: 'job_started', propertyId, job };
+      }
+      // Full teknisk reanalyse er forbeholdt: manglende/inkompatibel analyse, nye/endrede dokumenter eller endrede kritiske fakta.
+      const latestFull = latestSharedAnalysis(d, propertyId);
+      const technical = decideAnalysisAction({
+        latest: latestFull,
+        compatible: latestFull !== null && isModelCompatible(latestFull),
+        ageDays: latestFull ? (now.getTime() - Date.parse(latestFull.publishedAt ?? latestFull.createdAt)) / 86_400_000 : Infinity,
+        maxAgeDays: FRESHNESS.marketRefreshAfterDays,
+        signals: technicalSignals(d, propertyId),
+      });
+      if (technical.kind !== 'full_analysis') {
+        throw new ServiceError(
+          'conflict',
+          'En ny teknisk analyse er ikke nødvendig. Er markedsdataene gamle, bruk markedsoppfriskning. Full analyse gjøres bare ved nye eller endrede dokumenter, endrede kritiske fakta eller en inkompatibel modell.',
+        );
       }
       if (!ent.canRequestNewAnalysis) throw new ServiceError('quota_exceeded', `Du har brukt alle ${ent.limits.newAnalyses} nye analyser i denne perioden.`);
       const latest = latestSharedAnalysis(d, propertyId);

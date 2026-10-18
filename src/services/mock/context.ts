@@ -3,6 +3,7 @@ import { FRESHNESS } from '../../config/freshness';
 import { getPlan } from '../../config/plans';
 import { NEW_ACCOUNT_DEFAULTS } from '../../config/defaults';
 import type { MockDatabase, DbState } from '../../data/db';
+import { technicalReasons } from '../../domain/refreshPolicy';
 import type { Scenario, SharedAnalysis, UserProperty } from '../../domain/schemas';
 import { deriveBidDay } from '../../lib/bidDay';
 import type { Clock } from '../../lib/clock';
@@ -88,13 +89,21 @@ export function isModelCompatible(a: SharedAnalysis): boolean {
   return FRESHNESS.compatibleSchemaVersions.includes(a.schemaVersion) && major === FRESHNESS.compatibleModelMajor;
 }
 
+/** Signaler om endret teknisk grunnlag for et objekt (demo: satt eksplisitt; produksjon: fra kildehentingen). */
+export function technicalSignals(s: Readonly<DbState>, propertyId: string) {
+  const finnId = s.properties.find((p) => p.id === propertyId)?.finnId;
+  return finnId ? s.demo.technicalChangeSignals?.[finnId] ?? null : null;
+}
+
 export function staleness(s: Readonly<DbState>, a: SharedAnalysis, now: Date): Staleness {
   const analysisAgeDays = (now.getTime() - Date.parse(a.publishedAt ?? a.createdAt)) / 86_400_000;
   const snap = latestSnapshot(s, a.propertyId);
   const volatileAgeHours = snap ? (now.getTime() - Date.parse(snap.observedAt)) / 3_600_000 : null;
+  const reasons = technicalReasons({ latest: a, compatible: isModelCompatible(a), signals: technicalSignals(s, a.propertyId) });
   return {
     analysisAgeDays,
-    analysisStale: analysisAgeDays > FRESHNESS.analysisMaxAgeDays || !isModelCompatible(a),
+    marketRefreshDue: analysisAgeDays > FRESHNESS.marketRefreshAfterDays,
+    technicalReanalysis: { needed: reasons.length > 0, reasons },
     volatileAgeHours,
     volatileStale: volatileAgeHours === null || volatileAgeHours > FRESHNESS.volatileMaxAgeHours,
   };
@@ -145,7 +154,10 @@ export function computeEntitlements(s: Readonly<DbState>, userId: string | null,
   const usedRefresh = events.filter((e) => e.kind === 'refresh' && e.chargeable).length;
   const reuses = events.filter((e) => e.kind === 'reuse').length;
   // Hver bruker som har bedt om en analyse (egen jobb eller koblet til en pågående) belastes når den er ferdig.
-  const pending = s.jobs.filter((j) => j.type !== 'light_refresh' && j.requestedBy.includes(userId) && (j.status === 'running' || j.status === 'queued')).length;
+  // En markedsoppfriskning som brukeren har bedt om som oppfriskning (ikke som ny analyse) teller mot oppfriskingskvoten, ikke analysekvoten.
+  const pending = s.jobs.filter(
+    (j) => j.type !== 'light_refresh' && j.requestedBy.includes(userId) && (j.status === 'running' || j.status === 'queued') && !(j.type === 'market_refresh' && j.charges?.[userId] === 'refresh'),
+  ).length;
   const remainingNew = Math.max(0, plan.limits.newAnalysesPerPeriod - usedNew - pending);
   const remainingRefresh = Math.max(0, plan.limits.refreshesPerPeriod - usedRefresh);
   return {
@@ -285,5 +297,9 @@ export function buildMyItem(s: Readonly<DbState>, userId: string, link: UserProp
     bidOverride: s.calendarOverrides.find((o) => o.userId === userId && o.propertyId === link.propertyId) ?? null,
     privateEvents: s.privateEvents.filter((e) => e.userId === userId && e.propertyId === link.propertyId),
     riskEdits: s.userRisks.filter((r) => r.userId === userId && r.propertyId === link.propertyId),
+    technicalReanalysis: (() => {
+      const reasons = technicalReasons({ latest: bundle.latestAnalysis, compatible: bundle.latestAnalysis !== null && isModelCompatible(bundle.latestAnalysis), signals: technicalSignals(s, link.propertyId) });
+      return { needed: reasons.length > 0 && bundle.latestAnalysis !== null, reasons };
+    })(),
   };
 }

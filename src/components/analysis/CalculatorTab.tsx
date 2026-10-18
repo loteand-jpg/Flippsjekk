@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CALC_MODEL_LABEL, CASE_LABEL, sensitivity, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
+import { CALC_MODEL_LABEL, CASE_LABEL, MAX_BID_LIMIT_LABEL, recommendedBidOf, sensitivity, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
 import { VALUE_ORIGIN_LABEL } from '../../calc/scenario';
 import {
   BUYER_TYPE_LABEL,
@@ -8,7 +8,7 @@ import {
   LABOR_CATEGORIES,
   LABOR_CATEGORY_LABEL,
   PRICE_BASIS_LABEL,
-  REGULATED_LABOR,
+  isRegulatedLabor,
   WORK_MODE_LABEL,
   WORK_MODES,
   type DutyBasis,
@@ -216,13 +216,9 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
           <ScenarioNumberField label="Minimum fortjeneste per egeninnsatstime" unit="kr/t" formatBase={money} {...f('minProfitPerOwnHour')} hint="Lønnsomhetskrav – ikke en kostnad i kalkylen." />
           <div className="space-y-2">
             <Switch checked={d.maxOwnWork} disabled={!ctx.editable} onChange={(v) => ctx.setDraft((x) => ({ ...x, maxOwnWork: v }))} label="Maks egeninnsats" />
-            <Switch
-              checked={d.regulatedSelfWorkConfirmed}
-              disabled={!ctx.editable}
-              onChange={(v) => ctx.setDraft((x) => ({ ...x, regulatedSelfWorkConfirmed: v }))}
-              label="Kompetanse og ansvar for regulert arbeid er bekreftet"
-            />
-            <p className="text-xs text-slate-600">Rør, elektro og bad/våtrom regnes som innleid til kompetanse og ansvar er bekreftet. Maks egeninnsats oppgraderer aldri regulert arbeid.</p>
+            <p className="text-xs text-slate-600">
+              Rør, elektro og bad/våtrom regnes som innleid til relevant kompetanse/ansvar er bekreftet for det aktuelle arbeidsområdet (se tabellen under). Kompetanse alene betyr ikke at arbeidet lovlig kan gjøres på alle objekter. Maks egeninnsats oppgraderer aldri regulert arbeid.
+            </p>
           </div>
         </div>
         <details className="mt-4 rounded-lg border border-slate-200 p-3">
@@ -237,7 +233,7 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
                   <tr key={c}>
                     <th scope="row" className="py-1.5 pr-3 text-left font-normal">
                       {LABOR_CATEGORY_LABEL[c]}
-                      {REGULATED_LABOR.includes(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
+                      {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
                       {changed && <span className="block text-[11px] font-medium text-violet-800">Endret av deg · grunnverdi {WORK_MODE_LABEL[baseMode!]}</span>}
                     </th>
                     <td className="py-1.5">
@@ -254,6 +250,19 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
                           </option>
                         ))}
                       </Select>
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {isRegulatedLabor(c) ? (
+                        <Switch
+                          checked={d.regulatedCompetence[c]}
+                          disabled={!ctx.editable}
+                          onChange={(v) => ctx.setDraft((x) => ({ ...x, regulatedCompetence: { ...x.regulatedCompetence, [c]: v } }))}
+                          label={<span className="text-xs">Relevant kompetanse/ansvar bekreftet for {LABOR_CATEGORY_LABEL[c].toLowerCase()}</span>}
+                        />
+                      ) : null}
+                      {isRegulatedLabor(c) && ctx.base && ctx.base.values.regulatedCompetence?.[c] !== d.regulatedCompetence[c] && (
+                        <span className="block text-[11px] font-medium text-violet-800">Endret av deg</span>
+                      )}
                     </td>
                     <td className="w-24 py-1.5 text-right">
                       {changed && ctx.editable && (
@@ -438,7 +447,7 @@ function Results({ ctx }: { ctx: PropertyContext }) {
     { label: 'Kontantsalg', mine: b.S, base: bb?.S ?? null },
     { label: 'Samlede kostnader', mine: b.C, base: bb?.C ?? null },
     { label: 'Resultat før skatt', mine: b.profit, base: bb?.profit ?? null },
-    { label: 'Maksbud', mine: ev.maxBid?.price ?? null, base: ctx.baseResult?.evaluation.maxBid?.price ?? null },
+    { label: 'Maksbud', mine: recommendedBidOf(ev).price, base: ctx.baseResult ? recommendedBidOf(ctx.baseResult.evaluation).price : null },
   ];
 
   return (
@@ -532,13 +541,32 @@ function Results({ ctx }: { ctx: PropertyContext }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {ev.maxBid && (
-              <tr className="bg-pine-50/60 font-semibold">
+            {ev.recommendedMaxBid && ev.recommendedMaxBid.limits.length > 0 && (
+              <tr className="bg-pine-50/60 font-semibold" data-testid="recommended-maxbid">
                 <th scope="row" className="py-1.5 text-left">
-                  Ditt mål: {formatNOK(ev.maxBid.target)}
+                  Anbefalt maksbud (laveste grense)
+                  {ev.recommendedMaxBid.limitedBy && <span className="block text-[11px] font-normal text-slate-700">Begrenset av: {MAX_BID_LIMIT_LABEL[ev.recommendedMaxBid.limitedBy].toLowerCase()}</span>}
+                </th>
+                <td className="py-1.5 text-right">{ev.recommendedMaxBid.price === null ? 'Ingen gjennomførbar pris innen søkeområdet' : formatNOK(ev.recommendedMaxBid.price)}</td>
+                <td className="py-1.5 text-right">{ev.recommendedMaxBid.price === null ? '–' : formatNOKSigned(ev.recommendedMaxBid.price - b.P)}</td>
+              </tr>
+            )}
+            {ev.maxBid && (
+              <tr>
+                <th scope="row" className="py-1.5 text-left font-normal">
+                  Grense: fortjenestemål {formatNOK(ev.maxBid.target)}
                 </th>
                 <td className="py-1.5 text-right">{ev.maxBid.price === null ? 'Ingen gjennomførbar pris innen søkeområdet' : formatNOK(ev.maxBid.price)}</td>
                 <td className="py-1.5 text-right">{ev.maxBid.price === null ? '–' : formatNOKSigned(ev.maxBid.price - b.P)}</td>
+              </tr>
+            )}
+            {ev.maxBidHourly && (
+              <tr>
+                <th scope="row" className="py-1.5 text-left font-normal">
+                  Grense: minimum {formatNOK(ev.maxBidHourly.target)} per egeninnsatstime ({formatHours(b.ownHours)})
+                </th>
+                <td className="py-1.5 text-right">{ev.maxBidHourly.price === null ? 'Ingen gjennomførbar pris' : formatNOK(ev.maxBidHourly.price)}</td>
+                <td className="py-1.5 text-right">{ev.maxBidHourly.price === null ? '–' : formatNOKSigned(ev.maxBidHourly.price - b.P)}</td>
               </tr>
             )}
             {ev.maxBidLow && (
@@ -561,6 +589,10 @@ function Results({ ctx }: { ctx: PropertyContext }) {
             ))}
           </tbody>
         </table>
+        <p className="mt-2 text-xs text-slate-600">
+          Grensene er regnet hver for seg og blandes ikke. Timekravet er et mål for kjøpsprisen og en faktor i scenariorangeringen – ikke en kostnad, og ikke en grense for om et scenario kan velges.
+          {ev.recommendedMaxBid?.notApplicable.map((n) => ` ${n.reason}`).join('')}
+        </p>
         <p className="mt-3 text-sm">
           <strong>Nullpunkt for salg:</strong>{' '}
           {ev.breakEven?.salePrice != null ? (

@@ -2,6 +2,7 @@ import { effectiveRisks } from '../../domain/risks';
 import { aggregateRisk, dataQuality, preliminaryReasons, type QualityGrade, type RiskBand } from '../../domain/assessment';
 import type { BuyerType, PriceBasis, PropertyType, Recommendation, SaleStatus, Tenure, WorkStatus } from '../../domain/enums';
 import type { ProfileDefaults, PropertySnapshot, ScenarioValues, SharedAnalysis } from '../../domain/schemas';
+import { recommendedBidOf } from '../../calc/engine';
 import { buildBaseValues, diffValues, evaluateScenario, type ScenarioEvaluation } from '../../calc/scenario';
 import type { MyPropertyItem } from '../../services/types';
 
@@ -123,8 +124,9 @@ export function buildRow(item: MyPropertyItem, defaults: ProfileDefaults, now: D
     sharedDebt: snap?.sharedDebt ?? null,
     askingInclDebt,
     purchase: values?.purchasePrice ?? null,
-    maxBid: ev?.evaluation.maxBid?.price ?? null,
-    maxBidStatus: ev?.evaluation.maxBid?.status ?? null,
+    // Anbefalt maksbud = laveste av grensene (fortjenestemål og timekrav). Samme tall som på objektsiden.
+    maxBid: ev ? recommendedBidOf(ev.evaluation).price : null,
+    maxBidStatus: ev ? recommendedBidOf(ev.evaluation).status : null,
     renovationWithReserve: b?.RB ?? null,
     saleBase: values?.saleBase ?? null,
     saleBasis: values?.saleBasis ?? null,

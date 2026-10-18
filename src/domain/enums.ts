@@ -198,8 +198,13 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
   incomplete: 'Ikke fullført',
 };
 
-/** linked_analysis: brukerens egen analyse av en bolig som allerede er analysert – ser ut og belastes som en ny analyse. */
-export const JOB_TYPES = ['full_analysis', 'light_refresh', 'linked_analysis'] as const;
+/**
+ * linked_analysis: brukerens egen analyse av en bolig som allerede er analysert – ser ut og belastes som en ny analyse.
+ * market_refresh: grundig markedsoppfriskning av en analyse som er eldre enn 30 dager. Henter pris, visninger og
+ * salgsstatus, oppdaterer markedsreferanser og områdeprofil, og regner salgsverdi per eksisterende scenario og
+ * økonomimotoren på nytt. Den leser IKKE tekniske dokumenter på nytt og lager IKKE nye scenarioer.
+ */
+export const JOB_TYPES = ['full_analysis', 'light_refresh', 'linked_analysis', 'market_refresh'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
@@ -266,8 +271,14 @@ export const LABOR_CATEGORY_LABEL: Record<LaborCategory, string> = {
   bad_vatrom: 'Bad og våtrom',
   annet: 'Annet',
 };
-/** Regulert arbeid: kan ikke regnes som gratis egeninnsats uten bekreftet kompetanse og ansvar. */
-export const REGULATED_LABOR: readonly LaborCategory[] = ['ror', 'elektro', 'bad_vatrom'];
+/**
+ * Regulert arbeid: kan ikke regnes som gratis egeninnsats uten bekreftet kompetanse og ansvar for DET arbeidsområdet.
+ * Bekreftelsen gis per område (elektro, rør, bad/våtrom) – kompetanse på ett område gjelder ikke de andre.
+ */
+export const REGULATED_LABOR_CATEGORIES = ['ror', 'elektro', 'bad_vatrom'] as const;
+export type RegulatedLabor = (typeof REGULATED_LABOR_CATEGORIES)[number];
+export const REGULATED_LABOR: readonly LaborCategory[] = REGULATED_LABOR_CATEGORIES;
+export const isRegulatedLabor = (c: LaborCategory): c is RegulatedLabor => (REGULATED_LABOR_CATEGORIES as readonly string[]).includes(c);
 
 export const WORK_MODES = ['selv', 'delvis', 'innleid'] as const;
 export type WorkMode = (typeof WORK_MODES)[number];
@@ -290,6 +301,60 @@ export const SCENARIO_KIND_LABEL: Record<ScenarioKind, string> = { basis: 'Basis
 export const UNCERTAINTY_LEVELS = ['lav', 'middels', 'hoy', 'uavklart'] as const;
 export type UncertaintyLevel = (typeof UNCERTAINTY_LEVELS)[number];
 export const UNCERTAINTY_LABEL: Record<UncertaintyLevel, string> = { lav: 'Lav', middels: 'Middels', hoy: 'Høy', uavklart: 'Uavklart' };
+
+/** Dimensjoner i scenarioets egen risiko. Kommer i tillegg til objektets generelle risiko. */
+export const SCENARIO_RISK_DIMENSIONS = ['technical', 'cost', 'time', 'approval'] as const;
+export type ScenarioRiskDimension = (typeof SCENARIO_RISK_DIMENSIONS)[number];
+export const SCENARIO_RISK_LABEL: Record<ScenarioRiskDimension, string> = {
+  technical: 'Teknisk risiko',
+  cost: 'Kostnadsusikkerhet',
+  time: 'Tidsusikkerhet',
+  approval: 'Myndighets-/godkjenningsrisiko',
+};
+
+/** Typer alternative verdiskapingsgrep agenten skal lete etter (maks to alternativer). */
+export const SCREENING_CONCEPTS = ['dele_rom', 'flytte_kjokken_nytt_soverom', 'ekstra_soverom_annet', 'flytte_bad', 'annet'] as const;
+export type ScreeningConcept = (typeof SCREENING_CONCEPTS)[number];
+export const SCREENING_CONCEPT_LABEL: Record<ScreeningConcept, string> = {
+  dele_rom: 'Dele rom',
+  flytte_kjokken_nytt_soverom: 'Flytte kjøkken og gjøre gammelt kjøkken til soverom',
+  ekstra_soverom_annet: 'Annet grep for ekstra soverom',
+  flytte_bad: 'Flytte bad',
+  annet: 'Annet grep',
+};
+
+/** Hva et alternativ må vurderes mot i screeningen. */
+export const SCREENING_ASPECTS = ['dagslys_vindu', 'romgeometri', 'teknisk', 'vann_avlop', 'ventilasjon', 'myndighet', 'okonomi'] as const;
+export type ScreeningAspect = (typeof SCREENING_ASPECTS)[number];
+export const SCREENING_ASPECT_LABEL: Record<ScreeningAspect, string> = {
+  dagslys_vindu: 'Vindu og dagslys',
+  romgeometri: 'Romgeometri',
+  teknisk: 'Teknisk gjennomførbarhet',
+  vann_avlop: 'Vann og avløp',
+  ventilasjon: 'Ventilasjon',
+  myndighet: 'Myndighetsavklaringer',
+  okonomi: 'Økonomisk plausibilitet',
+};
+export const SCREENING_RESULTS = ['ok', 'tvil', 'ikke_ok', 'uavklart'] as const;
+export type ScreeningResult = (typeof SCREENING_RESULTS)[number];
+export const SCREENING_RESULT_LABEL: Record<ScreeningResult, string> = { ok: 'OK', tvil: 'Tvil', ikke_ok: 'Ikke OK', uavklart: 'Uavklart' };
+
+/** Utfall for et vurdert grep i scenariojakten. */
+export const SCENARIO_SEARCH_STATUSES = ['ferdig', 'stoppet_ingen_bestod', 'ikke_gjort'] as const;
+export type ScenarioSearchStatus = (typeof SCENARIO_SEARCH_STATUSES)[number];
+
+/** Hvilke kvalitative forhold agenten kan begrunne en (begrenset) justering av markedsankeret med. */
+export const ANCHOR_ADJUSTMENT_CATEGORIES = ['utsikt_lys', 'planlosning_kvalitet', 'beliggenhet_detalj', 'utforelse_kvalitet', 'annet'] as const;
+export type AnchorAdjustmentCategory = (typeof ANCHOR_ADJUSTMENT_CATEGORIES)[number];
+export const ANCHOR_ADJUSTMENT_LABEL: Record<AnchorAdjustmentCategory, string> = {
+  utsikt_lys: 'Utsikt og lysforhold',
+  planlosning_kvalitet: 'Planløsningens kvalitet',
+  beliggenhet_detalj: 'Beliggenhet i detalj',
+  utforelse_kvalitet: 'Utførelse og kvalitet',
+  annet: 'Annet',
+};
+/** Absolutt grense (prosent) for agentens justering av markedsankeret. Håndheves i skjema og i koden som bruker den. */
+export const ANCHOR_ADJUSTMENT_MAX_PCT = 5;
 
 export const CHANGE_LEVELS = ['ingen', 'oppgradering', 'nytt', 'uavklart'] as const;
 export type ChangeLevel = (typeof CHANGE_LEVELS)[number];

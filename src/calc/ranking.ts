@@ -1,6 +1,7 @@
 import type { RiskBand } from '../domain/assessment';
-import type { FeasibilityStatus, ScenarioKind, UncertaintyLevel } from '../domain/enums';
-import type { Evaluation } from './engine';
+import { SCENARIO_RISK_DIMENSIONS, type FeasibilityStatus, type ScenarioKind, type ScenarioRiskDimension, type UncertaintyLevel } from '../domain/enums';
+import type { ScenarioRisk } from '../domain/schemas';
+import { MAX_BID_LIMIT_LABEL, type Evaluation, type MaxBidLimitId } from './engine';
 import type { QualityTier } from './market';
 
 /**
@@ -12,8 +13,11 @@ import type { QualityTier } from './market';
  *  - Bare scenarioer som er gjennomførbare («klar») og har komplett kalkyle kan anbefales.
  *  - Betingede og uavklarte scenarioer vises og rangeres for sammenligning, men styrer aldri anbefalt scenario eller anbefalt maksbud.
  *  - Scenarioer som ikke er gjennomførbare, eller har ufullstendig kalkyle, rangeres ikke.
+ *  - Timekravet (minimum fortjeneste per egeninnsatstime) er en MÅL-/maksbudparameter og en rangeringsfaktor – ikke en port.
+ *    Et scenario under kravet kan fortsatt anbefales; det gir da et lavere maksbud (egen maksbudgrense), ikke utestengelse.
+ *  - Risiko er objektets generelle risiko PLUSS scenarioets egen risiko (teknisk, kostnad, tid, myndighet). Ikke vurdert = uavklart.
  */
-export const RANKING_VERSION = '1.0.0';
+export const RANKING_VERSION = '1.1.0';
 
 export type CriterionKey = 'profit' | 'projectReturn' | 'profitPerHour' | 'risk' | 'saleCertainty' | 'stress' | 'equityGap' | 'months';
 
@@ -21,10 +25,10 @@ export const CRITERIA: { key: CriterionKey; label: string; weight: number; bette
   { key: 'profit', label: 'Forventet fortjeneste', weight: 0.25, better: 'high' },
   { key: 'projectReturn', label: 'Prosjektavkastning', weight: 0.15, better: 'high' },
   { key: 'profitPerHour', label: 'Fortjeneste per egeninnsatstime', weight: 0.15, better: 'high' },
-  { key: 'risk', label: 'Risiko', weight: 0.1, better: 'low' },
+  { key: 'risk', label: 'Risiko (objekt + scenario)', weight: 0.15, better: 'low' },
   { key: 'saleCertainty', label: 'Salgsverdiens sikkerhet', weight: 0.1, better: 'high' },
   { key: 'stress', label: 'Stresstest (kombinert)', weight: 0.1, better: 'high' },
-  { key: 'equityGap', label: 'Finansieringsgap', weight: 0.1, better: 'low' },
+  { key: 'equityGap', label: 'Finansieringsgap', weight: 0.05, better: 'low' },
   { key: 'months', label: 'Prosjektvarighet', weight: 0.05, better: 'low' },
 ];
 
@@ -36,13 +40,27 @@ export interface RankInput {
   evaluation: Evaluation;
   /** Risikonivå for objektet (samlet risiko, ev. med brukerens endringer). */
   riskBand: RiskBand | null;
+  /** Scenarioets egen risiko. null = ikke vurdert (regnes som uavklart på alle dimensjoner). */
+  scenarioRisk?: ScenarioRisk | null;
   /** Hvor sikker salgsverdien er: fra markedsvekting hvis tilgjengelig, ellers fra scenarioets egen usikkerhetsvurdering. */
   saleCertainty: { tier: QualityTier | null; uncertainty: UncertaintyLevel | null };
 }
 
-export type RankFlag = 'under_timekrav' | 'finansieringsgap' | 'betinget' | 'uavklart_gjennomforbarhet' | 'ufullstendig_kalkyle' | 'ikke_gjennomforbart' | 'usikker_salgsverdi' | 'negativt_resultat';
+export type RankFlag =
+  | 'under_timekrav'
+  | 'finansieringsgap'
+  | 'betinget'
+  | 'uavklart_gjennomforbarhet'
+  | 'ufullstendig_kalkyle'
+  | 'ikke_gjennomforbart'
+  | 'usikker_salgsverdi'
+  | 'negativt_resultat'
+  | 'hoy_scenariorisiko'
+  | 'scenariorisiko_ikke_vurdert';
 export const RANK_FLAG_LABEL: Record<RankFlag, string> = {
-  under_timekrav: 'Under kravet til fortjeneste per egeninnsatstime',
+  under_timekrav: 'Under timekravet ved dette kjøpsbudet – påvirker rangering og maksbud, ikke anbefalbarhet',
+  hoy_scenariorisiko: 'Høy scenariorisiko',
+  scenariorisiko_ikke_vurdert: 'Scenariorisiko er ikke vurdert (regnes som uavklart)',
   finansieringsgap: 'Egenkapitalen dekker ikke behovet',
   betinget: 'Betinget – styrer ikke anbefalt maksbud',
   uavklart_gjennomforbarhet: 'Gjennomførbarhet er uavklart – styrer ikke anbefalt maksbud',
@@ -60,14 +78,27 @@ export interface RankMetrics {
   ownHours: number | null;
   months: number | null;
   riskBand: RiskBand | null;
+  /** Sum: objektrisiko (1–3, +1 når scenarioet ikke er gjennomførbart) + scenariorisiko (0–4). */
   riskPoints: number;
+  objectRiskPoints: number;
+  scenarioRiskPoints: number;
+  /** Nivå per dimensjon i scenariorisikoen (uavklart når ikke vurdert). */
+  scenarioRiskLevels: Record<ScenarioRiskDimension, UncertaintyLevel>;
+  scenarioRiskAssessed: boolean;
   feasibility: FeasibilityStatus;
   saleCertainty: number;
   saleCertaintyLabel: string;
   stressProfit: number | null;
   equityNeed: number | null;
   equityGap: number | null;
+  /** Anbefalt maksbud = laveste av grensene (fortjenestemål, timekrav). */
   maxBid: number | null;
+  /** Grensen som begrenser anbefalt maksbud. */
+  maxBidLimitedBy: MaxBidLimitId | null;
+  maxBidLimitedByLabel: string | null;
+  /** Maksbud for fortjenestemålet alene og for timekravet alene (vises adskilt, aldri blandet). */
+  maxBidProfit: number | null;
+  maxBidHourly: number | null;
 }
 
 export interface RankRow {
@@ -105,6 +136,8 @@ const TIER_CERTAINTY: Record<QualityTier, { v: number; label: string }> = {
   svakt: { v: 0.4, label: 'Svakt grunnlag' },
   utilstrekkelig: { v: 0.1, label: 'For usikkert' },
 };
+/** Poeng per nivå i scenariorisikoen. Ukjent er ikke middels: uavklart teller som høy. */
+const SCENARIO_RISK_POINTS: Record<UncertaintyLevel, number> = { lav: 0, middels: 0.5, hoy: 1, uavklart: 1 };
 const UNC_CERTAINTY: Record<UncertaintyLevel, { v: number; label: string }> = {
   lav: { v: 0.9, label: 'Lav usikkerhet' },
   middels: { v: 0.6, label: 'Middels usikkerhet' },
@@ -118,7 +151,12 @@ function metricsOf(i: RankInput): RankMetrics {
   const combined = ev.stress.find((s) => s.id === 'combined');
   const cert = i.saleCertainty.tier ? TIER_CERTAINTY[i.saleCertainty.tier] : i.saleCertainty.uncertainty ? UNC_CERTAINTY[i.saleCertainty.uncertainty] : { v: 0.3, label: 'Uavklart' };
   // Betingelser gjør scenarioet mer usikkert å regne med, også når salgsverdien i seg selv er godt belagt.
-  const riskPoints = (i.riskBand ? RISK_POINTS[i.riskBand] : 3) + (i.feasibility === 'klar' ? 0 : 1);
+  const objectRiskPoints = (i.riskBand ? RISK_POINTS[i.riskBand] : 3) + (i.feasibility === 'klar' ? 0 : 1);
+  const risk = i.scenarioRisk ?? null;
+  const scenarioRiskLevels = Object.fromEntries(SCENARIO_RISK_DIMENSIONS.map((d) => [d, risk ? risk[d] : 'uavklart'])) as Record<ScenarioRiskDimension, UncertaintyLevel>;
+  const scenarioRiskPoints = SCENARIO_RISK_DIMENSIONS.reduce((s, d) => s + SCENARIO_RISK_POINTS[scenarioRiskLevels[d]], 0);
+  const riskPoints = objectRiskPoints + scenarioRiskPoints;
+  const rec = ev.recommendedMaxBid;
   return {
     profit: b?.profit ?? null,
     projectReturn: b?.projectReturn ?? null,
@@ -128,13 +166,21 @@ function metricsOf(i: RankInput): RankMetrics {
     months: b?.months ?? null,
     riskBand: i.riskBand,
     riskPoints,
+    objectRiskPoints,
+    scenarioRiskPoints,
+    scenarioRiskLevels,
+    scenarioRiskAssessed: risk !== null,
     feasibility: i.feasibility,
     saleCertainty: cert.v,
     saleCertaintyLabel: cert.label,
     stressProfit: combined?.result.profit ?? null,
     equityNeed: b?.equityNeed ?? null,
     equityGap: b?.equityGap ?? null,
-    maxBid: ev.maxBid?.price ?? null,
+    maxBid: rec?.price ?? null,
+    maxBidLimitedBy: rec?.limitedBy ?? null,
+    maxBidLimitedByLabel: rec?.limitedBy ? MAX_BID_LIMIT_LABEL[rec.limitedBy] : null,
+    maxBidProfit: ev.maxBid?.price ?? null,
+    maxBidHourly: ev.maxBidHourly?.price ?? null,
   };
 }
 
@@ -179,6 +225,8 @@ export function rankScenarios(inputs: readonly RankInput[]): RankingResult {
     if (i.feasibility === 'betinget') flags.push('betinget');
     if (i.feasibility === 'uavklart') flags.push('uavklart_gjennomforbarhet');
     if (m.meetsHourlyRequirement === false) flags.push('under_timekrav');
+    if (SCENARIO_RISK_DIMENSIONS.some((d) => m.scenarioRiskLevels[d] === 'hoy')) flags.push('hoy_scenariorisiko');
+    if (!m.scenarioRiskAssessed) flags.push('scenariorisiko_ikke_vurdert');
     if (m.equityGap !== null && m.equityGap > 0) flags.push('finansieringsgap');
     if (m.saleCertainty < 0.4) flags.push('usikker_salgsverdi');
     if (m.profit !== null && m.profit < 0) flags.push('negativt_resultat');

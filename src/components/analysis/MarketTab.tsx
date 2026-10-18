@@ -6,6 +6,7 @@ import { useSession } from '../../app/session';
 import { useToast } from '../../app/toast';
 import { CASE_LABEL } from '../../calc/engine';
 import { MARKET_MODEL_VERSION, QUALITY_TIER_LABEL, type WeightedReference } from '../../calc/market';
+import { SALE_SOURCE_LABEL } from '../../calc/saleValue';
 import { findAnalysisScenario, resolveAnalysisScenarios } from '../../domain/analysisScenarios';
 import { PER_M2_BASIS_LABEL, pricePerM2, soldMedians, validateComparable, type ComparableFields, type ComparableIssue } from '../../domain/comparables';
 import {
@@ -36,7 +37,8 @@ import { formatArea, formatDateKey, formatNOK, NO_BASIS, UNKNOWN } from '../../l
 import { Field, NumberInput, Select, TextInput, Textarea } from '../ui/forms';
 import { Dialog } from '../ui/overlay';
 import { Alert, Badge, Button } from '../ui/primitives';
-import { scenarioFor, useMarketComparables, weighForScenario } from './useMarket';
+import { resolveForScenario, scenarioFor, useMarketComparables } from './useMarket';
+import { scenarioFields } from './ScenarioPanel';
 import { BasisNote, Panel, type PropertyContext } from './shared';
 
 type Row = ComparableFields & { id: string; source: 'grunnlag' | 'mine'; isDemo?: boolean };
@@ -401,21 +403,25 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
   const comps = useMarketComparables(ctx);
   const defs = useMemo(() => resolveAnalysisScenarios(ctx.analysis), [ctx.analysis]);
   const [scenarioId, setScenarioId] = useState<string | null>(null);
-  const [standard, setStandard] = useState<StandardClass>('nyoppusset');
+  // Privat overstyring av sluttstandard (gjelder bare din visning). Tom = bruk scenarioets egen sluttstandard.
+  const [standard, setStandard] = useState<StandardClass | ''>('');
   const def = scenarioFor(ctx, scenarioId ?? ctx.draft.analysisScenarioId);
-  const est = useMemo(() => weighForScenario({ ctx, comparables: comps.all, scenario: def, values: ctx.draft, standardClass: standard }), [ctx, comps.all, def, standard]);
+  // Samme flyt som grunnverdiene bruker (markedsmotoren). Dine egne referanser og din standardoverstyring gir en privat vurdering.
+  const res = useMemo(() => resolveForScenario({ ctx, scenario: def, values: ctx.draft, own: comps.own, standardOverride: standard || null }), [ctx, comps.own, def, standard]);
+  const est = res.market!;
   const [applied, setApplied] = useState(false);
   const E = est.estimate;
+  const hasOwn = comps.own.length > 0 || standard !== '';
   const tierTone = est.quality.tier === 'svaert_godt' ? 'green' : est.quality.tier === 'normalt' ? 'pine' : est.quality.tier === 'svakt' ? 'amber' : 'red';
   const apply = () => {
-    if (!E) return;
-    ctx.setDraft((d) => ({ ...d, saleBasis: E.basis, saleLow: E.low, saleBase: E.base, saleHigh: E.high }));
+    if (res.source !== 'markedsmotor') return;
+    ctx.setDraft((d) => ({ ...d, saleBasis: res.sale.basis, saleLow: res.sale.low, saleBase: res.sale.base, saleHigh: res.sale.high }));
     setApplied(true);
   };
   return (
     <Panel
       title="Verdivurdering fra sammenlignbare objekter"
-      sub={`Markedsvekting V1 (modell ${MARKET_MODEL_VERSION}). Hver referanse vektes etter fysisk likhet, pålitelighet og alder. Aktive annonser brukes bare som markedssignal.`}
+      sub={`Markedsvekting (modell ${MARKET_MODEL_VERSION}). Hver referanse vektes etter fysisk likhet, pålitelighet og alder. Ukjente opplysninger er ikke «middels»: de gir lav likhet og lavere pålitelighet. Aktive annonser brukes bare som begrenset markedssignal.`}
     >
       <div className="mb-3 flex flex-wrap items-end gap-3">
         {defs.length > 1 && (
@@ -432,7 +438,11 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
         )}
         <label className="block text-xs">
           <span className="mb-1 block font-medium text-slate-800">Standard etter oppussing</span>
-          <Select aria-label="Standard etter oppussing" value={standard} onChange={(e) => { setStandard(e.target.value as StandardClass); setApplied(false); }}>
+          <Select aria-label="Standard etter oppussing" value={standard} onChange={(e) => { setStandard(e.target.value as StandardClass | ''); setApplied(false); }}>
+            <option value="">
+              Fra scenarioet: {STANDARD_CLASS_LABEL[res.standardClass].toLowerCase()}
+              {res.standardDocumented ? '' : ' (antatt)'}
+            </option>
             {STANDARD_CLASSES.map((c) => (
               <option key={c} value={c}>
                 {STANDARD_CLASS_LABEL[c]}
@@ -459,10 +469,11 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
             ))}
           </div>
           <p className="num mt-2 text-xs text-slate-600">
-            Dine nåværende tall: {formatNOK(ctx.draft.saleLow, NO_BASIS)} / {formatNOK(ctx.draft.saleBase, NO_BASIS)} / {formatNOK(ctx.draft.saleHigh, NO_BASIS)}. Agentens vurdering for dette sluttproduktet: {formatNOK(def.sale.low, NO_BASIS)} / {formatNOK(def.sale.base, NO_BASIS)} / {formatNOK(def.sale.high, NO_BASIS)}.
+            Dine nåværende tall: {formatNOK(ctx.draft.saleLow, NO_BASIS)} / {formatNOK(ctx.draft.saleBase, NO_BASIS)} / {formatNOK(ctx.draft.saleHigh, NO_BASIS)}.
+            {hasOwn ? ' Vurderingen over inkluderer dine egne referanser eller din standardoverstyring og er privat.' : ''}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="secondary" disabled={!ctx.editable} onClick={apply}>
+            <Button size="sm" variant="secondary" disabled={!ctx.editable || res.source !== 'markedsmotor'} onClick={apply}>
               Bruk som salgsverdi i scenarioet
             </Button>
             {applied && <span className="text-xs text-pine-800" role="status">Salgsverdien er lagt inn i scenarioet (ulagret til du lagrer).</span>}
@@ -491,6 +502,11 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
             {est.activeSignals.competingBelowAnchor ? ' En nærliggende annonse ligger under ankerprisen.' : ''}
           </li>
         )}
+        {est.positioning.notes.map((n) => (
+          <li key={n} data-testid="market-positioning">
+            {n}
+          </li>
+        ))}
       </ul>
 
       {est.references.length === 0 ? (
@@ -536,7 +552,12 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
   const canEdit = entitlements?.canEditScenarios ?? false;
   const { analysis: a, item } = ctx;
   const scen = findAnalysisScenario(a, ctx.draft.analysisScenarioId);
-  const s = scen.sale;
+  // Én autoritativ flyt: koden (markedsmotoren) fastsetter salgsverdien. Agentens estimat er historisk referanse, og din kalkyle kan overstyre privat.
+  const resolution = scenarioFields(ctx, scen.id)?.saleResolution ?? null;
+  const s = resolution?.sale ?? null;
+  const agent = scen.sale ?? null;
+  const draft = ctx.draft;
+  const sameAsFinal = s !== null && draft.saleLow === s.low && draft.saleBase === s.base && draft.saleHigh === s.high && draft.saleBasis === s.basis;
   const mine = useLiveQuery(() => services.comparables.list(item.property.id), [item.property.id]);
   const [dialog, setDialog] = useState<null | { initial: (ComparableFields & { id?: string }) | null }>(null);
   const [del, setDel] = useState<Row | null>(null);
@@ -566,24 +587,84 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
         title={scen.saleSource === 'scenario' ? `Salgsverdi etter oppussing – ${scen.title}` : 'Salgsverdi etter oppussing'}
         sub={
           <>
-            <BasisNote basis={s.basis} />
+            <BasisNote basis={s?.basis ?? draft.saleBasis} />
             <span className="block text-xs text-slate-600">
               {scen.saleSource === 'scenario'
-                ? `Vurdert for dette sluttproduktet (${scen.endProduct.bedrooms === null ? 'soverom ikke avklart' : `${scen.endProduct.bedrooms} soverom`}). Usikkerhet: ${scen.uncertainty.level === 'uavklart' ? 'uavklart' : scen.uncertainty.level === 'hoy' ? 'høy' : scen.uncertainty.level}. ${scen.uncertainty.note}`
+                ? `Vurdert for dette sluttproduktet (${scen.endProduct.bedrooms === null ? 'soverom ikke avklart' : `${scen.endProduct.bedrooms} soverom`}${resolution ? `, ${STANDARD_CLASS_LABEL[resolution.standardClass].toLowerCase()}${resolution.standardDocumented ? '' : ' – antatt, ikke dokumentert'}` : ''}). Usikkerhet: ${scen.uncertainty.level === 'uavklart' ? 'uavklart' : scen.uncertainty.level === 'hoy' ? 'høy' : scen.uncertainty.level}. ${scen.uncertainty.note}`
                 : 'Eldre analyse: dette er analysens ene salgsverdi, ikke vurdert for et bestemt sluttprodukt.'}
             </span>
           </>
         }
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {(['low', 'base', 'high'] as const).map((k) => (
-            <div key={k} className="rounded-lg border border-slate-200 p-3">
-              <p className="text-xs font-medium text-slate-600">{CASE_LABEL[k]} scenario</p>
-              <p className="num text-lg font-semibold">{formatNOK(s[k], NO_BASIS)}</p>
-              <p className="mt-1 text-xs text-slate-700">{k === 'low' ? s.rationaleLow : k === 'base' ? s.rationaleBase : s.rationaleHigh}</p>
+        {s && resolution ? (
+          <>
+            <p className="mb-2 text-sm" data-testid="sale-source">
+              <Badge tone={resolution.source === 'markedsmotor' ? 'green' : resolution.source === 'ingen' ? 'red' : 'amber'}>{SALE_SOURCE_LABEL[resolution.source]}</Badge>
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {(['low', 'base', 'high'] as const).map((k) => (
+                <div key={k} className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-medium text-slate-600">{CASE_LABEL[k]} scenario</p>
+                  <p className="num text-lg font-semibold">{formatNOK(s[k], NO_BASIS)}</p>
+                  <p className="mt-1 text-xs text-slate-700">{k === 'low' ? s.rationaleLow : k === 'base' ? s.rationaleBase : s.rationaleHigh}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="num w-full min-w-[32rem] text-sm" data-testid="sale-values">
+                <caption className="mb-1 text-left text-xs font-medium text-slate-700">Tre verdier som holdes adskilt</caption>
+                <thead className="text-left text-xs text-slate-600">
+                  <tr>
+                    <th className="py-1 pr-2 font-medium">Kilde</th>
+                    <th className="py-1 pr-2 text-right font-medium">Lav</th>
+                    <th className="py-1 pr-2 text-right font-medium">Normal</th>
+                    <th className="py-1 text-right font-medium">Høy</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr className={resolution.source === 'markedsmotor' ? 'bg-pine-50/60 font-semibold' : ''}>
+                    <th scope="row" className="py-1.5 pr-2 text-left font-normal">
+                      Markedsmotoren {resolution.source === 'markedsmotor' ? '(fasit i kalkylen)' : ''}
+                      {resolution.source !== 'markedsmotor' && <span className="block text-[11px] text-slate-600">Kunne ikke regne en verdi</span>}
+                    </th>
+                    {(['low', 'base', 'high'] as const).map((k) => (
+                      <td key={k} className="py-1.5 pr-2 text-right">
+                        {resolution.source === 'markedsmotor' ? formatNOK(s[k], NO_BASIS) : '–'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <th scope="row" className="py-1.5 pr-2 text-left font-normal">
+                      {scen.saleSource === 'global' ? 'Analysens salgsverdi (eldre analyse)' : "Agentens historiske estimat"}
+                      <span className="block text-[11px] text-slate-600">{scen.saleSource === 'global' ? 'Brukes som grunnverdi for eldre analyser' : 'Referanse – ikke fasit når markedsmotoren kan regne'}</span>
+                    </th>
+                    <td className="py-1.5 pr-2 text-right">{formatNOK(agent?.low ?? null, NO_BASIS)}</td>
+                    <td className="py-1.5 pr-2 text-right">{formatNOK(agent?.base ?? null, NO_BASIS)}</td>
+                    <td className="py-1.5 text-right">{formatNOK(agent?.high ?? null, NO_BASIS)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row" className="py-1.5 pr-2 text-left font-normal">
+                      Din kalkyle (privat)
+                      <span className="block text-[11px] text-slate-600">{sameAsFinal ? 'Ikke endret av deg' : 'Endret av deg – skrives aldri til analysen'}</span>
+                    </th>
+                    <td className="py-1.5 pr-2 text-right">{formatNOK(draft.saleLow, NO_BASIS)}</td>
+                    <td className="py-1.5 pr-2 text-right">{formatNOK(draft.saleBase, NO_BASIS)}</td>
+                    <td className="py-1.5 text-right">{formatNOK(draft.saleHigh, NO_BASIS)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {resolution.notes.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-slate-700">
+                {resolution.notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-slate-700">Salgsverdien kan ikke vises uten annonsegrunnlag.</p>
+        )}
         <p className="mt-3 text-xs text-slate-600">Ingen udokumentert markedsvekst er lagt inn. Verdi av uavklart soverom, utleiedel eller seksjonering er ikke innregnet.</p>
       </Panel>
 

@@ -4,14 +4,14 @@ import { evaluateScenario, normalizeScenarioValues } from '../../calc/scenario';
 import { QUALITY_TIER_LABEL } from '../../calc/market';
 import { aggregateRisk, RISK_BAND_LABEL } from '../../domain/assessment';
 import { resolveAnalysisScenarios } from '../../domain/analysisScenarios';
-import { FEASIBILITY_LABEL, UNCERTAINTY_LABEL } from '../../domain/enums';
+import { FEASIBILITY_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, UNCERTAINTY_LABEL } from '../../domain/enums';
 import { effectiveRisks } from '../../domain/risks';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatHours, formatMonths, formatNOK, formatPct, NO_BASIS } from '../../lib/format';
 import { Badge } from '../ui/primitives';
 import { scenarioFields } from './ScenarioPanel';
 import { Panel, type PropertyContext } from './shared';
-import { useMarketComparables, weighForScenario } from './useMarket';
+import { resolveForScenario, useMarketComparables } from './useMarket';
 
 /** Rangering av scenarioer på flere kriterier. Betingede scenarioer styrer aldri anbefalt scenario eller maksbud. */
 export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
@@ -39,10 +39,13 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
       values ??= scenarioFields(ctx, d.id)?.values ?? null;
       if (!values) continue;
       const evaluation = evaluateScenario(values).evaluation;
-      const market = weighForScenario({ ctx, comparables: comps.all, scenario: d, values });
-      const tier = market.status === 'ok' ? market.quality.tier : null;
+      // Salgsverdiens sikkerhet: markedsmotorens datakvalitet når den regner verdien. Agentens estimat uten markedsverifisering
+      // regnes aldri som sikrere enn «middels». Eldre global verdi og manglende verdi følger scenarioets egen usikkerhet.
+      const res = resolveForScenario({ ctx, scenario: d, values, own: comps.own });
+      const tier = res.source === 'markedsmotor' && res.market?.status === 'ok' ? res.market.quality.tier : null;
+      const uncertainty = res.source === 'agent_fallback' && (d.uncertainty.level === 'lav') ? 'middels' : d.uncertainty.level;
       rows.push({
-        input: { id: d.id, title: d.title, kind: d.kind, feasibility: d.feasibility, evaluation, riskBand, saleCertainty: { tier, uncertainty: d.uncertainty.level } },
+        input: { id: d.id, title: d.title, kind: d.kind, feasibility: d.feasibility, evaluation, riskBand, scenarioRisk: d.risk ?? null, saleCertainty: { tier, uncertainty: res.source === 'ingen' ? 'uavklart' : uncertainty } },
         source,
         marketTier: tier ? QUALITY_TIER_LABEL[tier] : null,
       });
@@ -59,11 +62,12 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
   return (
     <Panel
       title="Sammenligning av scenarioer"
-      sub="Rangert på fortjeneste, avkastning, fortjeneste per egeninnsatstime, risiko, salgsverdiens sikkerhet, stresstest og finansiering – ikke bare nominell fortjeneste."
+      sub="Rangert på fortjeneste, avkastning, fortjeneste per egeninnsatstime, risiko (objekt og scenario), salgsverdiens sikkerhet, stresstest og finansiering – ikke bare nominell fortjeneste. Timekravet påvirker rangering og maksbud, men utelukker ikke et scenario."
     >
       {recommended ? (
         <p className="mb-3 rounded-lg bg-pine-50 p-3 text-sm text-pine-950">
-          Anbefalt scenario: <strong>{recommended.title}</strong>. Anbefalt modellert maksbud: <strong className="num">{recommended.metrics.maxBid === null ? NO_BASIS : formatNOK(Math.floor(recommended.metrics.maxBid / 1000) * 1000)}</strong>. Betingede og uavklarte scenarioer er ikke med i anbefalingen.
+          Anbefalt scenario: <strong>{recommended.title}</strong>. Anbefalt modellert maksbud: <strong className="num">{recommended.metrics.maxBid === null ? NO_BASIS : formatNOK(Math.floor(recommended.metrics.maxBid / 1000) * 1000)}</strong>
+          {recommended.metrics.maxBidLimitedByLabel ? ` (begrenset av ${recommended.metrics.maxBidLimitedByLabel.toLowerCase()})` : ''}. Betingede og uavklarte scenarioer er ikke med i anbefalingen.
         </p>
       ) : (
         <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Ingen scenario kan anbefales ennå: det trengs et gjennomførbart scenario med komplett kalkyle. Betingede og uavklarte scenarioer styrer ikke anbefalingen.</p>
@@ -100,11 +104,21 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
                 {metric('Per egeninnsatstime', m.profitPerOwnHour === null ? (m.ownHours === 0 ? 'Ingen timer' : '–') : `${formatNOK(m.profitPerOwnHour)}/t`, m.meetsHourlyRequirement === null ? undefined : m.meetsHourlyRequirement ? 'Oppfyller timekravet' : 'Under timekravet')}
                 {metric('Egne timer', formatHours(m.ownHours))}
                 {metric('Prosjekttid', formatMonths(m.months))}
-                {metric('Risiko', m.riskBand ? RISK_BAND_LABEL[m.riskBand] : 'Uavklart')}
+                {metric(
+                  'Risiko (objekt + scenario)',
+                  `${m.riskBand ? RISK_BAND_LABEL[m.riskBand] : 'Uavklart'} + scenario ${m.scenarioRiskAssessed ? `${m.scenarioRiskPoints.toLocaleString('nb-NO')}/4` : 'ikke vurdert'}`,
+                  SCENARIO_RISK_DIMENSIONS.map((d) => `${SCENARIO_RISK_LABEL[d].split(/[ -]/)[0].toLowerCase()} ${UNCERTAINTY_LABEL[m.scenarioRiskLevels[d]].toLowerCase()}`).join(' · '),
+                )}
                 {metric('Salgsverdiens sikkerhet', m.saleCertaintyLabel, [inf.marketTier ? `Marked: ${inf.marketTier}` : null, `Agent: ${UNCERTAINTY_LABEL[inf.input.saleCertainty.uncertainty ?? 'uavklart'].toLowerCase()}`].filter(Boolean).join(' · '))}
                 {metric('Stresstest (kombinert)', formatNOK(m.stressProfit, NO_BASIS))}
                 {metric('Finansieringsgap', m.equityGap === null ? '–' : m.equityGap > 0 ? formatNOK(m.equityGap) : 'Ingen', m.equityNeed === null ? undefined : `Behov ${formatNOK(m.equityNeed)}`)}
-                {metric('Modellert maksbud', m.maxBid === null ? '–' : formatNOK(Math.floor(m.maxBid / 1000) * 1000))}
+                {metric(
+                  'Modellert maksbud',
+                  m.maxBid === null ? '–' : formatNOK(Math.floor(m.maxBid / 1000) * 1000),
+                  m.maxBidLimitedByLabel
+                    ? `Begrenset av ${m.maxBidLimitedByLabel.toLowerCase()}${m.maxBidProfit !== null && m.maxBidHourly !== null ? ` · mål ${formatNOK(Math.floor(m.maxBidProfit / 1000) * 1000)} · timekrav ${formatNOK(Math.floor(m.maxBidHourly / 1000) * 1000)}` : ''}`
+                    : undefined,
+                )}
               </dl>
               {r.flags.length > 0 && (
                 <ul className="mt-2 space-y-0.5 text-[11px] text-amber-900">

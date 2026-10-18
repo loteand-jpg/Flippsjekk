@@ -35,6 +35,7 @@ import {
   type RiskCategory,
   type SaleStatus,
   type ScenarioKind,
+  type ScreeningConcept,
   type SourceKind,
   type StandardClass,
   type Tenure,
@@ -101,6 +102,8 @@ export interface ComparableSpec {
     balcony?: boolean | null;
     parking?: boolean | null;
     dataQuality?: DataQualityLevel | null;
+    /** Aktive annonser: opprinnelig prisantydning (kontant) før eventuell prisnedsettelse. */
+    originalAskingPrice?: number | null;
   };
 }
 
@@ -120,10 +123,16 @@ export interface ScenarioSpec {
   endProduct: ScenarioEndProduct;
   items: LaborItemSpec[];
   suggestedMonths: number | null;
-  sale: AnalysisSpec['sale'];
-  uncertainty: { level: UncertaintyLevel; note: string };
+  /** Agentens/fellesanalysens historiske estimat. Ikke fasit – salgsverdien fastsettes av markedsmotoren fra referansene. */
+  sale?: AnalysisSpec['sale'];
+  anchorAdjustment?: AnalysisScenario['anchorAdjustment'];
+  risk?: AnalysisScenario['risk'];
+  screening?: AnalysisScenario['screening'];
   /** Navn (eller del av navn) på sammenlignbare objekter som støtter salgsverdien. */
   referenceNames: string[];
+  /** Planløsningslikhet for referanser mot dette scenarioets sluttprodukt: [navn (eller del), likhet, merknad]. */
+  referenceLayout?: [string, 'lik' | 'delvis' | 'ulik' | null, string][];
+  uncertainty: { level: UncertaintyLevel; note: string };
   referenceNote: string;
 }
 
@@ -146,6 +155,8 @@ export interface AnalysisSpec {
   defaultOption: RenovationLevel | null;
   /** Basis + inntil to alternativer med egne tiltak og egen salgsverdi (valgfritt). */
   scenarios?: ScenarioSpec[];
+  /** Hva scenariojakten vurderte. `scenarioIndex` peker på posisjonen i `scenarios`. */
+  scenarioSearch?: { status: 'ferdig' | 'stoppet_ingen_bestod' | 'ikke_gjort'; considered: { concept: ScreeningConcept; outcome: 'valgt' | 'avvist'; reason: string; scenarioIndex: number | null }[] };
   months?: number | null;
   monthlyBreakdown: { label: string; amount: number | null }[];
   buyFees?: number | null;
@@ -474,6 +485,7 @@ export function buildProperty(
             balcony: c.extra.balcony ?? null,
             parking: c.extra.parking ?? null,
             dataQuality: c.extra.dataQuality ?? null,
+            originalAskingPrice: c.extra.originalAskingPrice ?? null,
           }
         : {}),
     };
@@ -510,11 +522,33 @@ export function buildProperty(
     })),
     suggestedMonths: sc.suggestedMonths,
     vatIncluded: true,
-    sale: { ...sc.sale, includesMarketGrowth: false },
+    ...(sc.sale ? { sale: { ...sc.sale, includesMarketGrowth: false as const } } : {}),
+    ...(sc.anchorAdjustment ? { anchorAdjustment: sc.anchorAdjustment } : {}),
+    ...(sc.risk ? { risk: sc.risk } : {}),
+    ...(sc.screening ? { screening: sc.screening } : {}),
     uncertainty: sc.uncertainty,
     referenceIds: comparables.filter((c) => sc.referenceNames.some((n) => c.name.includes(n))).map((c) => c.id),
     referenceNote: sc.referenceNote,
+    ...(sc.referenceLayout
+      ? {
+          referenceClassification: sc.referenceLayout.flatMap(([name, layoutMatch, note]) => {
+            const c = comparables.find((x) => x.name.includes(name));
+            return c ? [{ comparableId: c.id, layoutMatch, note }] : [];
+          }),
+        }
+      : {}),
   }));
+  const scenarioSearch = a.scenarioSearch
+    ? {
+        status: a.scenarioSearch.status,
+        considered: a.scenarioSearch.considered.map((c) => ({
+          concept: c.concept,
+          outcome: c.outcome,
+          reason: c.reason,
+          scenarioId: c.scenarioIndex === null ? null : `scn-${spec.finnId}-${c.scenarioIndex}`,
+        })),
+      }
+    : undefined;
 
   const monthlyTotal = a.monthlyBreakdown.some((m) => m.amount === null)
     ? null
@@ -587,6 +621,7 @@ export function buildProperty(
       suggestedPurchasePrice: a.suggestedPurchasePrice ?? null,
       dutyRule,
       ...(scenarios ? { scenarios, defaultScenarioId: scenarios.find((s) => s.kind === 'basis')?.id ?? null } : {}),
+      ...(scenarioSearch ? { scenarioSearch } : {}),
     },
     risks,
     checklist,

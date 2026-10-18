@@ -1,4 +1,5 @@
-import type { AnalysisScenario, SharedAnalysis } from './schemas';
+import { SCREENING_ASPECT_LABEL, SCREENING_ASPECTS } from './enums';
+import type { AnalysisScenario, RenovationItem, ScenarioSearch, SharedAnalysis } from './schemas';
 
 /**
  * Agentdefinerte scenarioer (basis + inntil to alternativer) – med fallback for eldre analyser.
@@ -42,7 +43,7 @@ export function resolveAnalysisScenarios(analysis: SharedAnalysis): ResolvedAnal
         : 'Analysens hovedvalg (eldre analyse uten egen scenariovurdering).',
       requirements: option?.requiresApproval ? ['Avklar tillatelse/godkjenning før verdiøkningen regnes med.'] : [],
       requiresApproval: option?.requiresApproval ?? false,
-      endProduct: { bedrooms: null, layoutNote: option?.saleEffectNote ?? '', kitchenChange: 'uavklart', bathChange: 'uavklart' },
+      endProduct: { bedrooms: null, standardClass: null, layoutNote: option?.saleEffectNote ?? '', kitchenChange: 'uavklart', bathChange: 'uavklart' },
       items: option?.items ?? [],
       suggestedMonths: option?.suggestedMonths ?? null,
       vatIncluded: option?.vatIncluded ?? true,
@@ -69,10 +70,23 @@ export interface ScenarioSetIssue {
 }
 
 /**
- * Regler for et sett agentscenarioer: nøyaktig ett basisscenario, høyst to alternativer, unike id-er,
- * referanser til sammenlignbare objekter som finnes, og scenarioer som krever godkjenning kan ikke være «gjennomførbare».
+ * Én kostnadsmodell per tiltak. Et tiltak med `laborCategory` bruker ny arbeidsmodell (materialer + innleid arbeid) og kan
+ * ikke i tillegg ha eldre fagbeløp (elektriker, rørlegger, andre fag) – da ville arbeidet blitt talt to ganger.
  */
-export function validateScenarioSet(scenarios: readonly AnalysisScenario[] | undefined, comparableIds: ReadonlySet<string>): ScenarioSetIssue[] {
+export function laborModelIssue(item: Pick<RenovationItem, 'title' | 'laborCategory' | 'electrician' | 'plumber' | 'other'>): string | null {
+  if (!item.laborCategory) return null;
+  const legacy = [item.electrician, item.plumber, item.other].some((x) => typeof x === 'number' && x !== 0);
+  return legacy
+    ? `Tiltaket «${item.title}» bruker både arbeidsmodell (laborCategory/laborCostHired) og eldre fagfelt (electrician/plumber/other). Bruk bare én modell, ellers telles arbeidet to ganger.`
+    : null;
+}
+
+/**
+ * Regler for et sett agentscenarioer: nøyaktig ett basisscenario, høyst to alternativer, unike id-er,
+ * referanser til sammenlignbare objekter som finnes, scenarioer som krever godkjenning kan ikke være «gjennomførbare»,
+ * og alternativene må bestå screeningen (vindu/dagslys, romgeometri, teknikk, vann/avløp, ventilasjon, myndighet, økonomi).
+ */
+export function validateScenarioSet(scenarios: readonly AnalysisScenario[] | undefined, comparableIds: ReadonlySet<string>, search?: ScenarioSearch): ScenarioSetIssue[] {
   if (!scenarios || scenarios.length === 0) return [];
   const issues: ScenarioSetIssue[] = [];
   const base = ['estimates', 'scenarios'] as const;
@@ -85,9 +99,45 @@ export function validateScenarioSet(scenarios: readonly AnalysisScenario[] | und
     if (s.requiresApproval && s.feasibility === 'klar') {
       issues.push({ path: [...base, i, 'feasibility'], message: 'Et scenario som krever godkjenning kan ikke være merket som gjennomførbart.' });
     }
+    if (s.requiresApproval && s.risk?.approval === 'lav') {
+      issues.push({ path: [...base, i, 'risk', 'approval'], message: 'Et scenario som krever godkjenning kan ikke ha lav myndighets-/godkjenningsrisiko.' });
+    }
     s.referenceIds.forEach((id, j) => {
       if (!comparableIds.has(id)) issues.push({ path: [...base, i, 'referenceIds', j], message: `Ukjent referanse «${id}».` });
     });
+    (s.referenceClassification ?? []).forEach((c, j) => {
+      if (!comparableIds.has(c.comparableId)) issues.push({ path: [...base, i, 'referenceClassification', j], message: `Ukjent referanse «${c.comparableId}».` });
+    });
+    s.items.forEach((it, j) => {
+      const m = laborModelIssue(it);
+      if (m) issues.push({ path: [...base, i, 'items', j], message: m });
+    });
+    const sc = s.screening;
+    if (sc) {
+      const covered = new Set(sc.checks.map((c) => c.aspect));
+      const missing = SCREENING_ASPECTS.filter((a) => !covered.has(a));
+      if (missing.length > 0) issues.push({ path: [...base, i, 'screening', 'checks'], message: `Screeningen mangler vurdering av: ${missing.map((a) => SCREENING_ASPECT_LABEL[a]).join(', ')}.` });
+      if (sc.checks.some((c) => c.result === 'ikke_ok')) {
+        issues.push({ path: [...base, i, 'screening', 'checks'], message: 'Et grep som ikke består screeningen skal ikke være et scenario. Før det i scenarioSearch som avvist.' });
+      }
+      if (s.feasibility === 'klar' && sc.checks.some((c) => c.result !== 'ok')) {
+        issues.push({ path: [...base, i, 'feasibility'], message: 'Et scenario kan ikke være «gjennomførbart» når screeningen har tvil eller uavklarte punkter.' });
+      }
+      if (sc.concept === 'flytte_bad' && sc.existingBathNeedsFullRenovation !== true) {
+        issues.push({ path: [...base, i, 'screening', 'existingBathNeedsFullRenovation'], message: 'Badflytting er bare aktuelt når eksisterende bad uansett må totalrenoveres.' });
+      }
+    }
   });
+  if (search) {
+    const altIds = new Set(alts.map((s) => s.id));
+    const chosen = search.considered.filter((c) => c.outcome === 'valgt');
+    if (search.status === 'stoppet_ingen_bestod' && (chosen.length > 0 || alts.length > 0)) {
+      issues.push({ path: ['estimates', 'scenarioSearch'], message: 'Jakten er stoppet fordi ingen alternativer besto screeningen, men det finnes alternative scenarioer.' });
+    }
+    chosen.forEach((c, j) => {
+      if (!c.scenarioId || !altIds.has(c.scenarioId)) issues.push({ path: ['estimates', 'scenarioSearch', 'considered', j], message: 'Et valgt grep må peke på et alternativt scenario i settet.' });
+    });
+    if (chosen.length > MAX_ALTERNATIVES) issues.push({ path: ['estimates', 'scenarioSearch'], message: `Maks ${MAX_ALTERNATIVES} valgte alternativer.` });
+  }
   return issues;
 }

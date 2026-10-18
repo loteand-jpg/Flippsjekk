@@ -1,4 +1,4 @@
-import { CALC_MODEL_VERSION } from '../calc/engine';
+import { CALC_MODEL_VERSION, recommendedBidOf } from '../calc/engine';
 import { evaluateScenario } from '../calc/scenario';
 import type { Property, Scenario, ScenarioValues } from '../domain/schemas';
 
@@ -38,6 +38,10 @@ export interface ScenarioExportV1 {
       cashSale: number | null;
       totalCosts: number | null;
       maxBid: number | null;
+      /** Hva som begrenser maksbudet (fortjenestemål eller timekrav). */
+      maxBidLimitedBy: 'profit' | 'hourly' | null;
+      maxBidProfitTarget: number | null;
+      maxBidHourlyRequirement: number | null;
       missing: string[];
     };
   }[];
@@ -74,7 +78,10 @@ export function buildScenarioExport(
           equityGap: b?.equityGap ?? null,
           cashSale: b?.S ?? null,
           totalCosts: b?.C ?? null,
-          maxBid: ev.evaluation.maxBid?.price ?? null,
+          maxBid: recommendedBidOf(ev.evaluation).price,
+          maxBidLimitedBy: recommendedBidOf(ev.evaluation).limitedBy,
+          maxBidProfitTarget: ev.evaluation.maxBid?.price ?? null,
+          maxBidHourlyRequirement: ev.evaluation.maxBidHourly?.price ?? null,
           missing: ev.missing.map((m) => m.label),
         },
       };

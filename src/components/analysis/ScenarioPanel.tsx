@@ -2,7 +2,8 @@ import clsx from 'clsx';
 import { buildBaseValues, renovationTotals } from '../../calc/scenario';
 import { useSession } from '../../app/session';
 import { resolveAnalysisScenarios, type ResolvedAnalysisScenario } from '../../domain/analysisScenarios';
-import { CHANGE_LEVEL_LABEL, FEASIBILITY_LABEL, RENOVATION_LEVEL_LABEL, SCENARIO_KIND_LABEL, UNCERTAINTY_LABEL, type FeasibilityStatus } from '../../domain/enums';
+import { CHANGE_LEVEL_LABEL, FEASIBILITY_LABEL, RENOVATION_LEVEL_LABEL, SCENARIO_KIND_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, STANDARD_CLASS_LABEL, UNCERTAINTY_LABEL, type FeasibilityStatus } from '../../domain/enums';
+import { SALE_SOURCE_LABEL } from '../../calc/saleValue';
 import { NEW_ACCOUNT_DEFAULTS } from '../../config/defaults';
 import { formatHours, formatMonths, formatNOK, NO_BASIS } from '../../lib/format';
 import { Badge, Button, type Tone } from '../ui/primitives';
@@ -26,8 +27,11 @@ export function activeScenarioId(ctx: PropertyContext): string {
 function ScenarioCard({ ctx, def, active, onCreate }: { ctx: PropertyContext; def: ResolvedAnalysisScenario; active: boolean; onCreate?: (def: ResolvedAnalysisScenario) => void }) {
   const { entitlements } = useSession();
   const canEdit = entitlements?.canEditScenarios ?? false;
-  const totals = renovationTotals({ renovationMode: 'tiltak', renovationItems: def.items, renovationLumpSum: null, lumpSumHours: null, laborModes: ctx.draft.laborModes, maxOwnWork: ctx.draft.maxOwnWork, regulatedSelfWorkConfirmed: ctx.draft.regulatedSelfWorkConfirmed });
+  const totals = renovationTotals({ renovationMode: 'tiltak', renovationItems: def.items, renovationLumpSum: null, lumpSumHours: null, laborModes: ctx.draft.laborModes, maxOwnWork: ctx.draft.maxOwnWork, regulatedCompetence: ctx.draft.regulatedCompetence });
   const months = def.suggestedMonths === null ? null : def.suggestedMonths;
+  // Salgsverdien er fastsatt av koden (markedsmotoren). Agentens estimat vises som historisk referanse, ikke som fasit.
+  const resolution = scenarioFields(ctx, def.id)?.saleResolution ?? null;
+  const sale = resolution?.sale ?? null;
   const apply = () => {
     const nb = scenarioFields(ctx, def.id)?.values;
     if (!nb) return;
@@ -65,19 +69,40 @@ function ScenarioCard({ ctx, def, active, onCreate }: { ctx: PropertyContext; de
         <dt className="text-slate-600">Oppussingstid</dt>
         <dd className="text-right">{def.monthsAreTotal ? `Totalt ${formatMonths(def.suggestedMonths)}` : formatMonths(months)}</dd>
         <dt className="text-slate-600">Salgsverdi normal</dt>
-        <dd className="text-right font-medium">{formatNOK(def.sale.base, NO_BASIS)}</dd>
+        <dd className="text-right font-medium">{formatNOK(sale?.base ?? null, NO_BASIS)}</dd>
         <dt className="text-slate-600">Lav – høy</dt>
         <dd className="text-right text-xs">
-          {formatNOK(def.sale.low, NO_BASIS)} – {formatNOK(def.sale.high, NO_BASIS)}
+          {formatNOK(sale?.low ?? null, NO_BASIS)} – {formatNOK(sale?.high ?? null, NO_BASIS)}
         </dd>
       </dl>
+      {resolution && (
+        <p className="mt-1 text-[11px] text-slate-600" data-testid="sale-source">
+          {SALE_SOURCE_LABEL[resolution.source]}
+          {resolution.source === 'markedsmotor' && def.sale?.base ? ` · agentens historiske estimat ${formatNOK(def.sale.base)}` : ''}
+        </p>
+      )}
       {def.saleSource === 'global' ? (
         <p className="mt-2 text-xs text-slate-600">Eldre analyse: salgsverdien er analysens ene vurdering og ikke vurdert for et bestemt sluttprodukt.</p>
       ) : (
         <p className="mt-2 text-xs text-slate-700">
           <span className="font-medium">Sluttprodukt:</span> {def.endProduct.bedrooms === null ? 'soverom ikke avklart' : `${def.endProduct.bedrooms} soverom`}. {def.endProduct.layoutNote} Kjøkken: {CHANGE_LEVEL_LABEL[def.endProduct.kitchenChange].toLowerCase()}. Bad: {CHANGE_LEVEL_LABEL[def.endProduct.bathChange].toLowerCase()}.
+          {resolution && (
+            <>
+              {' '}
+              Sluttstandard: <strong>{STANDARD_CLASS_LABEL[resolution.standardClass].toLowerCase()}</strong>
+              {resolution.standardDocumented ? '' : ' (antatt ut fra oppussingsnivået – ikke dokumentert)'}.
+            </>
+          )}
         </p>
       )}
+      {def.risk && (
+        <p className="mt-2 text-xs text-slate-700" data-testid="scenario-risk">
+          <span className="font-medium">Scenariorisiko:</span>{' '}
+          {SCENARIO_RISK_DIMENSIONS.map((d) => `${SCENARIO_RISK_LABEL[d].toLowerCase()} ${UNCERTAINTY_LABEL[def.risk![d]].toLowerCase()}`).join(' · ')}.
+          {def.risk.note ? ` ${def.risk.note}` : ''}
+        </p>
+      )}
+      {def.saleSource === 'scenario' && !def.risk && <p className="mt-2 text-xs text-amber-900">Scenariorisiko er ikke vurdert og regnes som uavklart i sammenligningen.</p>}
       <p className="mt-2 text-xs text-slate-700">
         <span className="font-medium">Gjennomførbarhet:</span> {def.feasibilityRationale}
       </p>

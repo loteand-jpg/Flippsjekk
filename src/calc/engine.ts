@@ -11,10 +11,12 @@ import type { DutyBasis, PriceBasis, TaxMode } from '../domain/enums';
  * avrundes én gang til nærmeste øre; summer gjøres på øre-heltall, aldri på avrundede
  * visningstall.
  *
- * Modell 1.1 (avdragsfrie prosjektlån, kjøpslån og oppussingslån adskilt):
- *   K      = A × d + F
+ * Modell 1.2 (avdragsfrie prosjektlån, kjøpslån og oppussingslån adskilt):
+ *   K      = A × d + F                                     kjøpskostnader (dokumentavgift + gebyrer)
  *   RB     = R × (1 + b)
- *   I      = r × m/12 × ( fP × (P + K)  +  fR × RB / 2  +  [løpende lånefinansiert] O / 2 )
+ *   Lp     = fP × P                                        kjøpslån – gjelder KUN kontant kjøpesum P
+ *   Lr     = fR × RB                                       oppussingslån
+ *   I      = r × m/12 × ( Lp  +  Lr / 2  +  [løpende lånefinansiert] O / 2 )
  *            – kjøpslånet er trukket fra start, oppussingslånet trekkes gradvis (snitt halvveis)
  *   O      = M × m
  *   S      = V − D1 (Totalpris) | V (Kontantpris)
@@ -23,14 +25,22 @@ import type { DutyBasis, PriceBasis, TaxMode } from '../domain/enums';
  *   resultat før skatt og eget arbeid = S − C
  *   fortjeneste per egeninnsatstime   = (S − C) / H        – egen tid er IKKE en kostnad
  *   prosjektavkastning = (S − C) / (C + D0)                – ikke egenkapitalavkastning
- *   egenkapitalbehov   = (P + K − kjøpslån) + (RB − oppussingslån) + [ikke lånefinansiert] (I + O)
+ *   egenkapitalbehov   = (P − Lp) + K + (RB − Lr) + [ikke lånefinansiert] (I + O)
+ *                        – kjøpskostnader K lånefinansieres ikke og dekkes av egenkapital
  *                        – salgskostnader inngår i resultatet, men ikke i initialt egenkapitalkrav
+ *   maksbud            = høyeste P som oppfyller hver av grensene (fortjenestemål, evt. minimum per egeninnsatstime)
+ *                        – grensene beregnes hver for seg; anbefalt maksbud er den laveste, og det vises hva som begrenser
  *   finansieringsgap   = max(0, egenkapitalbehov − tilgjengelig egenkapital)
  *
- * Endringer fra 1.0.0: `f` er delt i `fP` (kjøp) og `fR` (oppussing). Med fP = fR = f gir 1.1.0 nøyaktig samme
- * resultat som 1.0.0. Timeverdi (H × h) er beholdt som utfaset, rent informativ størrelse for eldre data.
+ * Endringer fra 1.1.0 (produktbeslutning): kjøpslånet gjelder bare kontant kjøpesum P. Tidligere ble låneandelen
+ * brukt på P + K. Resultat, renter, egenkapitalbehov, toppgjeld og maksbud er derfor IKKE bit-for-bit identiske med
+ * 1.0.0/1.1.0 når K > 0 og kjøpslånet > 0 – forskjellen er bevisst og dokumentert (docs/scenarier-og-marked.md).
+ * Major-versjonen er uendret fordi analyser ikke lagrer beregnede tall; kalkylene regnes på nytt med gjeldende motor.
+ *
+ * Endringer fra 1.0.0: `f` er delt i `fP` (kjøp) og `fR` (oppussing). Timeverdi (H × h) er beholdt som utfaset,
+ * rent informativ størrelse for eldre data.
  */
-export const CALC_MODEL_VERSION = '1.1.0';
+export const CALC_MODEL_VERSION = '1.2.0';
 export const CALC_MODEL_LABEL = `Flippsjekk kalkylemodell ${CALC_MODEL_VERSION}`;
 
 /** Toleranse for maksbud og nullpunkt (kroner). */
@@ -51,8 +61,13 @@ export interface EngineInput {
   months: number | null;
   monthlyCost: number | null;
   interestRate: number | null;
-  /** Låneandel av kjøpesum og kjøpskostnader (0–1). */
+  /** Låneandel av kontant kjøpesum P (0–1). Kjøpskostnader lånefinansieres ikke. */
   purchaseFinancingShare: number | null;
+  /**
+   * Hva kjøpslånet regnes av. Standard `kjopesum` (kun P). `kjopesum_og_kostnader` (P + K) er den eldre regelen og brukes
+   * bare av kurset, slik at kursteksten og kursets regneeksempler fortsatt stemmer. Brukes aldri i analyser.
+   */
+  purchaseLoanBasis?: 'kjopesum' | 'kjopesum_og_kostnader';
   /** Låneandel av oppussing inkl. reserve (0–1). Trekkes gradvis. */
   renovationFinancingShare: number | null;
   /** Lånefinansieres løpende kostnader (drift)? Standard nei. */
@@ -97,6 +112,8 @@ export interface ResolvedInput {
   r: number;
   /** Låneandel kjøp. */
   fP: number;
+  /** Hva kjøpslånet regnes av (se EngineInput). */
+  loanBasis: 'kjopesum' | 'kjopesum_og_kostnader';
   /** Låneandel oppussing. */
   fR: number;
   financeRunning: boolean;
@@ -136,7 +153,7 @@ export interface Breakdown {
   capitalBase: number;
   /** Prosjektavkastning (ikke egenkapitalavkastning). null ved nullnevner. */
   projectReturn: number | null;
-  /** Kjøpslån (andel av kjøpesum + kjøpskostnader). */
+  /** Kjøpslån (andel av kontant kjøpesum – ikke av kjøpskostnadene). */
   purchaseLoan: number;
   /** Oppussingslån (andel av oppussing inkl. reserve) når hele oppussingen er trukket. */
   renovationLoan: number;
@@ -314,6 +331,7 @@ export function resolveInput(input: EngineInput): ResolveResult {
       M: input.monthlyCost as number,
       r: input.interestRate as number,
       fP: input.purchaseFinancingShare as number,
+      loanBasis: input.purchaseLoanBasis ?? 'kjopesum',
       fR: input.renovationFinancingShare as number,
       financeRunning: input.financeRunningCosts,
       availableEquity: input.availableEquity,
@@ -362,7 +380,10 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
   const RBo = Ro + reserveO;
   const Oo = Math.round(toOre(x.M) * x.m);
   // Kjøpslånet er trukket fra start; oppussingslånet trekkes gradvis (snitt halvveis); lånefinansierte løpende kostnader likedan.
-  const interestBaseO = x.fP * (Po + Ko) + (x.fR * RBo) / 2 + (x.financeRunning ? Oo / 2 : 0);
+  // Kjøpslånet gjelder bare kjøpesummen P. Kjøpskostnadene K (dokumentavgift m.m.) dekkes av egenkapital.
+  const purchaseLoanO = Math.round(x.fP * (x.loanBasis === 'kjopesum_og_kostnader' ? Po + Ko : Po));
+  const renovationLoanO = Math.round(x.fR * RBo);
+  const interestBaseO = purchaseLoanO + renovationLoanO / 2 + (x.financeRunning ? Oo / 2 : 0);
   const Io = Math.round(interestBaseO * x.r * (x.m / 12));
   const Vo = toOre(V);
   const So = x.basis === 'total' ? Vo - D1o : Vo;
@@ -371,8 +392,6 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
   const profitO = So - Co;
   const ownWorkO = x.H !== null && x.h !== null ? Math.round(x.H * toOre(x.h)) : null;
   const capitalO = Co + D0o;
-  const purchaseLoanO = Math.round(x.fP * (Po + Ko));
-  const renovationLoanO = Math.round(x.fR * RBo);
   const runningLoanO = x.financeRunning ? Oo + Io : 0;
   const loanO = purchaseLoanO + renovationLoanO + runningLoanO;
   const equityO = Po + Ko - purchaseLoanO + (RBo - renovationLoanO) + (x.financeRunning ? 0 : Io + Oo);
@@ -423,8 +442,14 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
 // Løsere: maksbud og nullpunkt (biseksjon)
 // ---------------------------------------------------------------------------
 
+export type MaxBidKind = 'profit' | 'return' | 'hourly';
+
 export interface MaxBidResult {
-  kind: 'profit' | 'return';
+  /**
+   * profit = fortjenestemål (kr). return = prosjektavkastning (andel).
+   * hourly = minimum fortjeneste per egeninnsatstime (kr/t) ved oppgitte egne timer.
+   */
+  kind: MaxBidKind;
   target: number;
   /** Høyeste kontante kjøpspris som når målet, avrundet ned til hele kroner. */
   price: number | null;
@@ -438,10 +463,14 @@ export interface MaxBidResult {
 export function solveMaxBid(
   x: ResolvedInput,
   V: number,
-  target: { kind: 'profit' | 'return'; value: number },
+  target: { kind: MaxBidKind; value: number },
 ): MaxBidResult {
-  const pred = (b: Breakdown) =>
-    target.kind === 'profit' ? b.profit >= target.value : b.projectReturn !== null && b.projectReturn >= target.value;
+  const pred = (b: Breakdown) => {
+    if (target.kind === 'profit') return b.profit >= target.value;
+    if (target.kind === 'return') return b.projectReturn !== null && b.projectReturn >= target.value;
+    // Timekrav: fortjeneste / egne timer ≥ krav. Uten egne timer finnes ingen timesats, og grensen gjelder ikke.
+    return b.ownHours !== null && b.ownHours > 0 && b.profit / b.ownHours >= target.value;
+  };
   const base: Omit<MaxBidResult, 'price' | 'status' | 'profitAtPrice' | 'returnAtPrice' | 'iterations'> = {
     kind: target.kind,
     target: target.value,
@@ -610,6 +639,31 @@ export function illustrateTax(profit: number, tax: EngineInput['tax']): TaxIllus
 export const MAX_BID_PROFIT_TARGETS = [100_000, 200_000, 300_000, 400_000] as const;
 export const MAX_BID_RETURN_TARGETS = [0.15, 0.2] as const;
 
+export type MaxBidLimitId = 'profit' | 'hourly';
+export const MAX_BID_LIMIT_LABEL: Record<MaxBidLimitId, string> = {
+  profit: 'Fortjenestemål',
+  hourly: 'Minimum fortjeneste per egeninnsatstime',
+};
+
+/** Én av grensene som sammen gir anbefalt maksbud. Hver grense beregnes for seg og blandes aldri med de andre. */
+export interface MaxBidLimit {
+  id: MaxBidLimitId;
+  label: string;
+  /** Målet grensen er regnet ut fra (kr for fortjeneste, kr/t for timekrav). */
+  target: number;
+  result: MaxBidResult;
+}
+
+export interface RecommendedMaxBid {
+  /** Laveste av grensene. null når en grense ikke kan nås selv ved kjøpspris 0, eller ingen grenser er satt. */
+  price: number | null;
+  /** Hvilken grense som begrenser anbefalt maksbud. */
+  limitedBy: MaxBidLimitId | null;
+  limits: MaxBidLimit[];
+  /** Grenser som ikke gjelder, med årsak (f.eks. timekrav uten egne timer). */
+  notApplicable: { id: MaxBidLimitId; reason: string }[];
+}
+
 export interface Evaluation {
   modelVersion: string;
   status: 'complete' | 'incomplete' | 'invalid';
@@ -618,13 +672,52 @@ export interface Evaluation {
   warnings: Issue[];
   cases: Record<CaseKey, Breakdown | null>;
   base: Breakdown | null;
+  /** Maksbud for fortjenestemålet (normalt salg). Se `recommendedMaxBid` for samlet anbefaling. */
   maxBid: MaxBidResult | null;
   maxBidLow: MaxBidResult | null;
+  /** Maksbud som gir minimum fortjeneste per egeninnsatstime. null når egne timer eller timekrav mangler. */
+  maxBidHourly: MaxBidResult | null;
+  /** Anbefalt maksbud = laveste av grensene, med synlig begrensende grense. */
+  recommendedMaxBid: RecommendedMaxBid | null;
   maxBidTable: MaxBidResult[];
   breakEven: BreakEvenResult | null;
   stress: StressRow[];
   tax: TaxIllustration | null;
   resolved: ResolvedInput | null;
+}
+
+/**
+ * Samler grensene for maksbud. Fortjenestemålet og timekravet beregnes hver for seg; anbefalt maksbud er den laveste,
+ * og grensen som begrenser vises. Timekravet er et mål for kjøpsprisen – ikke en kostnad og ikke en port for scenarioet.
+ */
+export function buildRecommendedMaxBid(
+  x: Pick<ResolvedInput, 'minPerHour' | 'H'>,
+  profit: MaxBidResult | null,
+  hourly: MaxBidResult | null,
+  profitTarget: number | null,
+): RecommendedMaxBid {
+  const limits: MaxBidLimit[] = [];
+  const notApplicable: RecommendedMaxBid['notApplicable'] = [];
+  if (profit && profitTarget !== null) limits.push({ id: 'profit', label: MAX_BID_LIMIT_LABEL.profit, target: profitTarget, result: profit });
+  else notApplicable.push({ id: 'profit', reason: 'Fortjenestemål er ikke satt.' });
+  if (hourly && x.minPerHour !== null) limits.push({ id: 'hourly', label: MAX_BID_LIMIT_LABEL.hourly, target: x.minPerHour, result: hourly });
+  else if (x.minPerHour === null) notApplicable.push({ id: 'hourly', reason: 'Minimum fortjeneste per egeninnsatstime er ikke satt.' });
+  else notApplicable.push({ id: 'hourly', reason: 'Ingen egne timer i kalkylen, så timekravet gir ingen grense for kjøpsprisen.' });
+
+  // En grense som ikke kan nås selv ved kjøpspris 0 gir ingen anbefalt pris.
+  const unreachable = limits.find((l) => l.result.price === null);
+  if (unreachable) return { price: null, limitedBy: unreachable.id, limits, notApplicable };
+  let best: MaxBidLimit | null = null;
+  for (const l of limits) if (best === null || (l.result.price as number) < (best.result.price as number)) best = l;
+  return { price: best ? (best.result.price as number) : null, limitedBy: best ? best.id : null, limits, notApplicable };
+}
+
+/** Anbefalt maksbud på én linje: pris, status og hva som begrenser. Brukes av alle visninger så de viser samme tall. */
+export function recommendedBidOf(ev: Pick<Evaluation, 'recommendedMaxBid'>): { price: number | null; status: 'ok' | 'none' | 'capped' | null; limitedBy: MaxBidLimitId | null } {
+  const rec = ev.recommendedMaxBid;
+  if (!rec || rec.limits.length === 0) return { price: null, status: null, limitedBy: null };
+  const limiting = rec.limits.find((l) => l.id === rec.limitedBy) ?? rec.limits[0];
+  return { price: rec.price, status: rec.price === null ? 'none' : limiting.result.status, limitedBy: rec.limitedBy };
 }
 
 export function evaluate(input: EngineInput, options: { detailed?: boolean } = {}): Evaluation {
@@ -640,6 +733,8 @@ export function evaluate(input: EngineInput, options: { detailed?: boolean } = {
     base: null,
     maxBid: null,
     maxBidLow: null,
+    maxBidHourly: null,
+    recommendedMaxBid: null,
     maxBidTable: [],
     breakEven: null,
     stress: [],
@@ -659,6 +754,9 @@ export function evaluate(input: EngineInput, options: { detailed?: boolean } = {
   const maxBid = target === null ? null : solveMaxBid(x, baseV, { kind: 'profit', value: target });
   const lowV = input.salePrices.low;
   const maxBidLow = target === null || lowV === null ? null : solveMaxBid(x, lowV, { kind: 'profit', value: target });
+  const hourlyApplies = x.minPerHour !== null && x.H !== null && x.H > 0;
+  const maxBidHourly = hourlyApplies ? solveMaxBid(x, baseV, { kind: 'hourly', value: x.minPerHour as number }) : null;
+  const recommendedMaxBid = buildRecommendedMaxBid(x, maxBid, maxBidHourly, target);
 
   const result: Evaluation = {
     ...empty,
@@ -667,6 +765,8 @@ export function evaluate(input: EngineInput, options: { detailed?: boolean } = {
     base: cases.base,
     maxBid,
     maxBidLow,
+    maxBidHourly,
+    recommendedMaxBid,
     resolved: x,
     tax: illustrateTax((cases.base as Breakdown).profit, input.tax),
   };

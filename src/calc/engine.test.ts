@@ -4,7 +4,12 @@ import { evaluateScenario, toEngineInput } from './scenario';
 import { scenarioModelDefaults } from '../domain/migrate';
 import type { ScenarioValues } from '../domain/schemas';
 
-/** Kontrollregnestykket fra spesifikasjonen (syntetiske tall). */
+/**
+ * Kontrollregnestykket fra den opprinnelige spesifikasjonen (syntetiske tall), oppdatert for modell 1.2:
+ * kjøpslånet gjelder bare kontant kjøpesum P (ikke P + K). Med 100 % kjøpslån er renten derfor
+ * 0,06 × 0,5 × (2 000 000 + 120 000) = 63 600 (var 65 100 da lånet også dekket kjøpskostnadene), og resultatet 541 400
+ * (var 539 900). De opprinnelige tallene reproduseres under «eldre låneregel» nedenfor.
+ */
 function controlInput(overrides: Partial<EngineInput> = {}): EngineInput {
   return {
     purchasePrice: 2_000_000,
@@ -41,12 +46,21 @@ describe('kontrollregnestykke', () => {
     const b = ev.base!;
     expect(b.K).toBe(50_000);
     expect(b.RB).toBe(240_000);
-    expect(b.I).toBe(65_100);
+    expect(b.I).toBe(63_600);
     expect(b.O).toBe(30_000);
     expect(b.Csale).toBe(75_000);
+    expect(b.C).toBe(2_458_600);
+    expect(b.profit).toBe(541_400);
+    expect(b.modelVersion).toBeTruthy();
+  });
+
+  it('eldre låneregel (andel av P + K, brukt av kurset) reproduserer de opprinnelige kontrolltallene 539 900', () => {
+    const b = evaluate(controlInput({ purchaseLoanBasis: 'kjopesum_og_kostnader' })).base!;
+    expect(b.I).toBe(65_100);
     expect(b.C).toBe(2_460_100);
     expect(b.profit).toBe(539_900);
-    expect(b.modelVersion).toBeTruthy();
+    // Forskjellen mellom reglene er nøyaktig renten på kjøpskostnadene: 1 × 50 000 × 0,06 × 0,5
+    expect(541_400 - 539_900).toBe(1_500);
   });
 
   it('Totalpris 3 300 000 med D1 300 000 gir samme kontantsalg og resultat (D1 trekkes én gang)', () => {
@@ -55,22 +69,22 @@ describe('kontrollregnestykke', () => {
     );
     expect(ev.base!.S).toBe(3_000_000);
     expect(ev.base!.Csale).toBe(75_000);
-    expect(ev.base!.profit).toBe(539_900);
+    expect(ev.base!.profit).toBe(541_400);
   });
 
   it('D0 300 000 endrer kapitalgrunnlaget, men er ingen ekstra kontantkostnad', () => {
     const ev = evaluate(controlInput({ debtAtPurchase: 300_000 }));
-    expect(ev.base!.C).toBe(2_460_100);
-    expect(ev.base!.capitalBase).toBe(2_760_100);
-    expect(ev.base!.profit).toBe(539_900);
-    expect(ev.base!.projectReturn).toBeCloseTo(539_900 / 2_760_100, 12);
+    expect(ev.base!.C).toBe(2_458_600);
+    expect(ev.base!.capitalBase).toBe(2_758_600);
+    expect(ev.base!.profit).toBe(541_400);
+    expect(ev.base!.projectReturn).toBeCloseTo(541_400 / 2_758_600, 12);
   });
 
   it('eget arbeid verdsettes separat', () => {
     const b = evaluate(controlInput()).base!;
     expect(b.ownWorkValue).toBe(35_000);
-    expect(b.profitAfterOwnWork).toBe(504_900);
-    expect(b.profit).toBe(539_900);
+    expect(b.profitAfterOwnWork).toBe(506_400);
+    expect(b.profit).toBe(541_400);
   });
 });
 
@@ -86,9 +100,9 @@ describe('kjøpspris påvirker renter, avgiftsgrunnlag, resultat og maksbud', ()
     expect(a.duty).toBe(52_500);
     expect(b.duty).toBe(57_500);
     expect(b.K - a.K).toBe(5_000);
-    // Renter: f × Δ(P + K) × r × m/12 = 1 × 205 000 × 0,06 × 0,5
-    expect(b.I - a.I).toBeCloseTo(6_150, 2);
-    expect(a.profit - b.profit).toBeCloseTo(200_000 + 5_000 + 6_150, 2);
+    // Renter: kjøpslånet gjelder bare P → f × ΔP × r × m/12 = 1 × 200 000 × 0,06 × 0,5. Økt avgift (K) gir ikke økt lån.
+    expect(b.I - a.I).toBeCloseTo(6_000, 2);
+    expect(a.profit - b.profit).toBeCloseTo(200_000 + 5_000 + 6_000, 2);
   });
 
   it('maksbud når målet innen toleranse, og én krone over bryter målet', () => {
@@ -157,7 +171,8 @@ describe('prosjektavkastning', () => {
     expect(Number.isFinite(ev.base!.projectReturn!)).toBe(true);
     expect(ev.base!.capitalBase).toBe(ev.base!.C + 300_000);
     // Egenkapitalbehov ved 100 % finansiering = renter + drift (endelig, ikke null)
-    expect(ev.base!.equityNeed).toBe(65_100 + 30_000);
+    // + kjøpskostnadene (50 000) som lånet ikke dekker
+    expect(ev.base!.equityNeed).toBe(63_600 + 30_000 + 50_000);
   });
 });
 
@@ -200,8 +215,8 @@ describe('skatt', () => {
     const ev = evaluate(controlInput());
     expect(ev.tax).toEqual({ mode: 'uavklart' });
     const withTax = evaluate(controlInput({ tax: { mode: 'antatt', rate: 0.22 } }));
-    expect(withTax.base!.profit).toBe(539_900);
-    expect(withTax.tax).toMatchObject({ mode: 'antatt', taxAmount: 118_778 });
+    expect(withTax.base!.profit).toBe(541_400);
+    expect(withTax.tax).toMatchObject({ mode: 'antatt', taxAmount: 119_108 });
   });
 
   it('beregner ingen automatisk skattefordel ved tap', () => {
@@ -259,7 +274,7 @@ describe('prosentkonvertering ved grensen til motoren', () => {
     expect(input.reserveRate).toBeCloseTo(0.2, 12);
     expect(input.renovation).toBe(200_000);
     expect(input.ownHours).toBe(40);
-    expect(evaluateScenario(values).evaluation.base!.profit).toBe(539_900);
+    expect(evaluateScenario(values).evaluation.base!.profit).toBe(541_400);
   });
 
   it('rundsum brukes alene når metoden er rundsum', () => {

@@ -25,20 +25,34 @@ import {
  *  - salgsestimat: robust vektet median som anker, vektet gjennomsnitt som kontroll, og et usikkerhetsintervall
  *    som utvides når grunnlaget er svakere. For svakt grunnlag gis ingen tvungen verdi.
  *
+ * Prinsipp: **ukjent er ikke middels**. Manglende data (lokasjon, standard, BRA-i, soverom, planløsning) gir bare svake
+ * poeng i den fysiske likheten (aldri mer enn det svakeste kjente nivået), og straffes i tillegg gjennom pålitelighet.
+ * Ukjente nøkkelfelt hindrer primærstatus. En svakt dokumentert referanse blir aldri kunstig sterk.
+ *
+ * Aktive annonser er aldri oppnådd salgspris og går aldri inn i prisankeret. Flere svært relevante aktive sluttprodukter
+ * kan flytte normalverdien moderat INNENFOR det statistiske intervallet (dokumentert maksimum), og grunnlaget vises.
+ *
  * Alle terskler er samlet i `MARKET_PARAMS` og merket med modellversjon. Ingen markedsdata hentes herfra.
  */
-export const MARKET_MODEL_VERSION = '1.0.0';
+export const MARKET_MODEL_VERSION = '1.1.0';
 
 export const MARKET_PARAMS = {
   /** Poenggrenser for fysisk likhet (sum 100). */
   points: { location: 25, standard: 25, area: 15, rooms: 15, type: 10, other: 10 },
-  location: { samme_bygg: 25, mikroomrade: 20, bydel: 14, kommune: 8, region: 3, ukjent: 8 } as Record<LocationLevel | 'ukjent', number>,
+  /** Ukjent lokasjon gir aldri mer enn det svakeste kjente nivået (region). */
+  location: { samme_bygg: 25, mikroomrade: 20, bydel: 14, kommune: 8, region: 3, ukjent: 3 } as Record<LocationLevel | 'ukjent', number>,
   /** Andel av standardpoengene etter avstand i standardklasse (0 = lik). */
   standardShare: [1, 0.8, 0.45, 0.15, 0],
-  standardUnknownShare: 0.4,
+  /** Ukjent standard gir like lite som en referanse tre trinn unna. */
+  standardUnknownShare: 0.15,
   /** Tak på effektiv vekt når standarden avviker – gammel standard skal ikke dominere et nyoppusset scenario. */
   standardCap: { 0: 1, 1: 1, 2: 0.75, 3: 0.4, 4: 0.4 } as Record<number, number>,
-  standardCapUnknown: 0.9,
+  /** Ukjent standard: vekten kan ikke bli høyere enn for en referanse to–tre trinn unna. */
+  standardCapUnknown: 0.5,
+  /** Poeng for ukjente egenskaper (mindre enn laveste kjente verdi, bortsett fra «Ukjent ≠ 0» for viktige felt). */
+  unknownPoints: { bedrooms: 1, layout: 1, type: 1, tenure: 1, floor: 0.5, boolDivisor: 4 },
+  /** Pålitelighetsfaktor per ukjent nøkkelfelt. Dokumentasjonsmangler straffes primært her, ikke i fysisk likhet. */
+  unknownReliability: { location: 0.85, standard: 0.8, bedrooms: 0.9, layout: 0.95, activeDebt: 0.6 },
   /** BRA-avvik (andel) → poeng. */
   areaSteps: [
     { maxDev: 0.05, points: 15 },
@@ -49,7 +63,8 @@ export const MARKET_PARAMS = {
   ],
   reliability: { hoy: 1, middels: 0.85, lav: 0.6, ukjent: 0.8, missingDate: 0.8, missingArea: 0.6, notNormalized: 0.5 },
   /** Roller. */
-  primary: { minPhysical: 65, minReliability: 0.6, maxStandardGap: 1, maxAreaDeviation: 0.25 },
+  /** Primærreferanse krever kjent lokasjon, standard og BRA-i (og soverom når målets soverom er kjent). */
+  primary: { minPhysical: 65, minReliability: 0.6, maxStandardGap: 1, maxAreaDeviation: 0.25, maxBedroomDiff: 0 },
   secondaryMinWeightInAnchor: 0.15,
   /** Markedstidsfaktor etter alder i måneder: [alder, faktor]. Lineær interpolasjon. */
   timeWithIndex: [
@@ -76,9 +91,33 @@ export const MARKET_PARAMS = {
     normalt: { top: 85, bottom: 65, atTop: 4, atBottom: 6 },
     svakt: { top: 65, bottom: 40, atTop: 7, atBottom: 10 },
   },
+  /** Ekstra halv intervallbredde (prosentpoeng) når målets sluttstandard ikke er dokumentert, men utledet. */
+  undocumentedStandardWidthPct: 1.5,
   maxHalfWidthPct: 12,
   spreadPenaltyCapPct: 3,
   activeBelowPenaltyPct: 1,
+  /**
+   * Markedssignal fra aktive annonser. Flytter normalverdien (ikke low/high) innenfor det statistiske intervallet.
+   * Maksimum: −2 % / +1 % av ankerverdien. Ingen frie skjønnsjusteringer.
+   */
+  activeSignal: {
+    minAds: 2,
+    minPhysical: 70,
+    maxStandardGap: 1,
+    belowAnchorRatio: 0.95,
+    aboveAnchorRatio: 1.05,
+    longListedDays: 90,
+    pointsBelow: 1,
+    pointsReduced: 0.5,
+    pointsLongListed: 0.5,
+    stepPct: 0.5,
+    maxDownPct: 2,
+    maxUpPct: 1,
+    /** Forskyvningen kan aldri overstige denne andelen av halv intervallbredde. */
+    maxShareOfHalfWidth: 0.5,
+  },
+  /** Agentens begrunnede justering av ankeret er begrenset til dette (prosent). */
+  anchorAdjustmentMaxPct: 5,
 } as const;
 
 export type QualityTier = 'svaert_godt' | 'normalt' | 'svakt' | 'utilstrekkelig';
@@ -96,6 +135,8 @@ export interface MarketTarget {
   tenure: Tenure | null;
   /** Standard på sluttproduktet etter oppussing. */
   standardClass: StandardClass;
+  /** false når standarden er utledet (fallback) og ikke dokumentert i scenarioet. Utvider intervallet og vises tydelig. */
+  standardDocumented: boolean;
   floor: number | null;
   elevator: boolean | null;
   balcony: boolean | null;
@@ -130,12 +171,19 @@ export interface MarketComparable {
   dataQuality: DataQualityLevel | null;
   /** Manuell markedsjusteringsfaktor (1 = ingen). Går foran indeks hvis oppgitt. */
   marketAdjustment: number | null;
+  /** Aktive annonser: opprinnelig prisantydning (kontant). Lavere nåværende pris = prisnedsatt. */
+  originalAskingPrice: number | null;
 }
 
 export interface MarketOptions {
   /** «I dag» (ÅÅÅÅ-MM-DD). Injiseres, så beregningen er deterministisk. */
   today: string;
   index?: MarketIndex | null;
+  /**
+   * Agentens begrunnede justering av ankeret i prosent (maks ±5). Brukes på ankerverdien av koden – agenten leverer ingen
+   * egen salgsverdi. Verdier utenfor grensen kappes.
+   */
+  anchorAdjustmentPct?: number | null;
 }
 
 export interface PhysicalMatch {
@@ -148,8 +196,19 @@ export interface PhysicalMatch {
   other: number;
 }
 
+export type UnknownKeyField = 'lokasjon' | 'standard' | 'areal' | 'soverom' | 'planlosning';
+export const UNKNOWN_FIELD_LABEL: Record<UnknownKeyField, string> = {
+  lokasjon: 'lokasjon',
+  standard: 'standard',
+  areal: 'BRA-i',
+  soverom: 'soverom',
+  planlosning: 'planløsning',
+};
+
 export type ReferenceFlag =
   | 'aktiv_annonse'
+  | 'fellesgjeld_ukjent'
+  | 'ukjente_nokkelfelt'
   | 'solgt_uten_sum'
   | 'mangler_areal'
   | 'mangler_dato'
@@ -175,8 +234,14 @@ export interface WeightedReference {
   marketAdjusted: boolean;
   /** Totalpris per m² (inkl. fellesgjeld), markedsjustert. null når pris/areal/prisgrunnlag ikke kan brukes. */
   adjustedTotalPerM2: number | null;
-  /** Aktive annonser: prisantydning per m². Aldri brukt som oppnådd pris. */
+  /** Aktive annonser: totalpris (prisantydning + fellesgjeld) per m². null når fellesgjeld er ukjent – aldri antatt 0. */
   askingPerM2: number | null;
+  /** Nøkkelfelt som er ukjent for referansen. De reduserer pålitelighet og kan hindre primærstatus. */
+  unknownFields: UnknownKeyField[];
+  /** Aktive annonser: prisnedsatt siden første annonsering? null = ukjent. */
+  priceReduced: boolean | null;
+  /** Aktive annonser: dager på markedet (fra annonsedato). null = ukjent. */
+  daysListed: number | null;
   usedInAnchor: boolean;
   strength: 'sterk' | 'middels' | 'svak';
   flags: ReferenceFlag[];
@@ -200,8 +265,30 @@ export interface MarketEstimate {
   /** Estimat i målets prisgrunnlag, avrundet til nærmeste 1 000. null ved «for usikkert». */
   estimate: { low: number; base: number; high: number; basis: PriceBasis } | null;
   halfWidthPct: number | null;
+  /** Hva som flyttet normalverdien bort fra rent statistisk anker (alle prosent er av totalverdien). */
+  positioning: {
+    /** Normalverdi fra ankeret alene (før annonsesignal og agentjustering), i målets prisgrunnlag. */
+    anchorBase: number | null;
+    /** Aktive annonser: moderat forskyvning innenfor intervallet. 0 når signalet ikke er sterkt nok. */
+    activeSignalPct: number;
+    /** Agentens begrunnede ankerjustering (kappet til ±5 %). */
+    anchorAdjustmentPct: number;
+    notes: string[];
+  };
+  /** Er målets sluttstandard dokumentert i scenarioet? false = utledet fallback. */
+  standardDocumented: boolean;
   references: WeightedReference[];
-  activeSignals: { count: number; medianAskingPerM2: number | null; competingBelowAnchor: boolean };
+  activeSignals: {
+    count: number;
+    /** Aktive annonser med brukbar (normalisert) totalpris. */
+    priced: number;
+    medianAskingPerM2: number | null;
+    competingBelowAnchor: boolean;
+    /** Svært relevante aktive sluttprodukter som inngår i markedssignalet. */
+    relevant: number;
+    pointsDown: number;
+    pointsUp: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -258,43 +345,55 @@ export function areaPoints(deviation: number | null): number {
 const stdIndex = (c: StandardClass | null): number | null => (c === null ? null : STANDARD_CLASSES.indexOf(c));
 
 function boolPoints(a: boolean | null, b: boolean | null, full: number): number {
-  if (a === null || b === null) return full / 2;
+  if (a === null || b === null) return full / MARKET_PARAMS.unknownPoints.boolDivisor;
   return a === b ? full : 0;
 }
 
-export function physicalMatch(target: MarketTarget, c: MarketComparable): { match: PhysicalMatch; standardGap: number | null; areaDeviation: number | null } {
+export function physicalMatch(
+  target: MarketTarget,
+  c: MarketComparable,
+): { match: PhysicalMatch; standardGap: number | null; areaDeviation: number | null; unknownFields: UnknownKeyField[] } {
   const P = MARKET_PARAMS.points;
+  const U = MARKET_PARAMS.unknownPoints;
+  const unknownFields: UnknownKeyField[] = [];
   const location = MARKET_PARAMS.location[c.locationLevel ?? 'ukjent'];
+  if (c.locationLevel === null) unknownFields.push('lokasjon');
 
   const tIdx = stdIndex(target.standardClass) as number;
   const cIdx = stdIndex(c.standardClass);
   const standardGap = cIdx === null ? null : Math.abs(tIdx - cIdx);
   const standard = P.standard * (standardGap === null ? MARKET_PARAMS.standardUnknownShare : MARKET_PARAMS.standardShare[Math.min(standardGap, 4)]);
+  if (standardGap === null) unknownFields.push('standard');
 
   const areaDeviation = target.areaBRAi && c.area ? Math.abs(c.area - target.areaBRAi) / target.areaBRAi : null;
   const area = areaPoints(areaDeviation);
+  if (c.area === null || !target.areaBRAi) unknownFields.push('areal');
 
+  // Soverom: ukjent (hos referansen eller målet) gir mindre enn ett avvikende soverom – aldri «middels».
   let bed: number;
-  if (target.bedrooms === null || c.bedrooms === null) bed = 3;
-  else {
+  if (target.bedrooms === null || c.bedrooms === null) {
+    bed = U.bedrooms;
+    if (c.bedrooms === null && target.bedrooms !== null) unknownFields.push('soverom');
+  } else {
     const d = Math.abs(target.bedrooms - c.bedrooms);
     bed = d === 0 ? 9 : d === 1 ? 4 : 0;
   }
-  const layout = c.layoutMatch === 'lik' ? 6 : c.layoutMatch === 'delvis' ? 3 : c.layoutMatch === 'ulik' ? 0 : 2;
+  const layout = c.layoutMatch === 'lik' ? 6 : c.layoutMatch === 'delvis' ? 3 : c.layoutMatch === 'ulik' ? 0 : U.layout;
+  if (c.layoutMatch === null) unknownFields.push('planlosning');
   const rooms = bed + layout;
 
   let typePts: number;
-  if (target.propertyType === null || c.propertyType === null) typePts = 2;
+  if (target.propertyType === null || c.propertyType === null) typePts = U.type;
   else if (target.propertyType === c.propertyType) typePts = 5;
   else typePts = propertyCategory(target.propertyType) === propertyCategory(c.propertyType) ? 3 : 0;
   let tenurePts: number;
-  if (target.tenure === null || c.tenure === null) tenurePts = 2;
+  if (target.tenure === null || c.tenure === null || target.tenure === 'ukjent' || c.tenure === 'ukjent') tenurePts = U.tenure;
   else if (target.tenure === c.tenure) tenurePts = 5;
-  else tenurePts = target.tenure !== 'ukjent' && c.tenure !== 'ukjent' ? 2 : 2;
+  else tenurePts = 2;
   const type = typePts + tenurePts;
 
   let floorPts: number;
-  if (target.floor === null || c.floor === null) floorPts = 1;
+  if (target.floor === null || c.floor === null) floorPts = U.floor;
   else {
     const d = Math.abs(target.floor - c.floor);
     floorPts = d === 0 ? 2 : d === 1 ? 1.5 : 0.5;
@@ -306,6 +405,7 @@ export function physicalMatch(target: MarketTarget, c: MarketComparable): { matc
     match: { total, location, standard: round1(standard), area, rooms, type, other: round1(other) },
     standardGap,
     areaDeviation,
+    unknownFields,
   };
 }
 
@@ -338,12 +438,19 @@ function baseHalfWidth(tier: Exclude<QualityTier, 'utilstrekkelig'>, score: numb
   return w.atTop + ((w.top - clamped) / (w.top - w.bottom)) * (w.atBottom - w.atTop);
 }
 
+/** Fellesgjeld for en aktiv annonse. Ukjent er aldri 0: bare selveier uten oppgitt gjeld antas gjeldfri (som for solgte). */
+function activeDebt(c: MarketComparable): number | null {
+  if (c.sharedDebt !== null) return c.sharedDebt;
+  return c.tenure === 'selveier' ? 0 : null;
+}
+
 export function weighMarket(target: MarketTarget, comparables: readonly MarketComparable[], options: MarketOptions): MarketEstimate {
   const idx = options.index ?? null;
   const idxNow = idx ? idx.indexAt(options.today) : null;
+  const A = MARKET_PARAMS.activeSignal;
 
   const refs: WeightedReference[] = comparables.map((c) => {
-    const { match, standardGap, areaDeviation } = physicalMatch(target, c);
+    const { match, standardGap, areaDeviation, unknownFields } = physicalMatch(target, c);
     const isActive = c.kind === 'prisantydning';
     const flags: ReferenceFlag[] = [];
     const reasons: string[] = [];
@@ -373,9 +480,17 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
     let adjustedTotalPerM2: number | null = null;
     let askingPerM2: number | null = null;
     let notNormalized = false;
+    let activeDebtUnknown = false;
     if (isActive) {
       flags.push('aktiv_annonse');
-      if (c.askingPrice !== null && c.area) askingPerM2 = (c.askingPrice + (c.sharedDebt ?? 0)) / c.area;
+      const debt = activeDebt(c);
+      if (c.askingPrice !== null && c.area) {
+        if (debt === null) {
+          // Ukjent fellesgjeld er ikke 0: totalprisen kan ikke normaliseres. Annonsen beholdes som referanse uten prissignal.
+          activeDebtUnknown = true;
+          flags.push('fellesgjeld_ukjent');
+        } else askingPerM2 = (c.askingPrice + debt) / c.area;
+      }
     } else if (c.kind === 'solgt_uten_sum') {
       flags.push('solgt_uten_sum');
     } else {
@@ -387,13 +502,20 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
       if (total !== null && c.area) adjustedTotalPerM2 = (total * adjFactor) / c.area;
     }
 
-    // Pålitelighet
+    // Pålitelighet. Dokumentasjonsmangler straffes primært her: hvert ukjent nøkkelfelt senker påliteligheten.
     const R = MARKET_PARAMS.reliability;
+    const UR = MARKET_PARAMS.unknownReliability;
     let reliability: number = c.dataQuality === 'hoy' ? R.hoy : c.dataQuality === 'middels' ? R.middels : c.dataQuality === 'lav' ? R.lav : R.ukjent;
     if (c.date === null) reliability *= R.missingDate;
     if (c.area === null) reliability *= R.missingArea;
     if (notNormalized) reliability *= R.notNormalized;
+    if (unknownFields.includes('lokasjon')) reliability *= UR.location;
+    if (unknownFields.includes('standard')) reliability *= UR.standard;
+    if (unknownFields.includes('soverom')) reliability *= UR.bedrooms;
+    if (unknownFields.includes('planlosning')) reliability *= UR.layout;
+    if (activeDebtUnknown) reliability *= UR.activeDebt;
     reliability = round2(Math.min(1, reliability));
+    if (unknownFields.length > 0) flags.push('ukjente_nokkelfelt');
 
     const gapKey = standardGap === null ? null : Math.min(standardGap, 4);
     const standardCap = gapKey === null ? MARKET_PARAMS.standardCapUnknown : MARKET_PARAMS.standardCap[gapKey];
@@ -405,38 +527,53 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
     if (isActive || c.kind === 'solgt_uten_sum' || adjustedTotalPerM2 === null) effectiveWeight = 0;
     effectiveWeight = round2(effectiveWeight);
 
-    // Rolle
+    // Rolle. Primær krever at de viktigste feltene er kjent – ukjent lokasjon, standard, BRA-i eller (når målets er kjent) soverom
+    // kan aldri gi primærreferanse.
     let role: ReferenceRole;
     const P = MARKET_PARAMS.primary;
+    const keyFieldsKnown = !unknownFields.some((f) => f === 'lokasjon' || f === 'standard' || f === 'areal' || f === 'soverom');
     if (isActive) role = 'markedsreferanse';
     else if (
       adjustedTotalPerM2 !== null &&
+      keyFieldsKnown &&
       match.total >= P.minPhysical &&
       reliability >= P.minReliability &&
       (standardGap === null || standardGap <= P.maxStandardGap) &&
       areaDeviation !== null &&
-      areaDeviation <= P.maxAreaDeviation
+      areaDeviation <= P.maxAreaDeviation &&
+      // Soverom er en hoveddriver for verdi: en referanse med annet antall soverom enn sluttproduktet er aldri primær.
+      (target.bedrooms === null || c.bedrooms === null || Math.abs(target.bedrooms - c.bedrooms) <= P.maxBedroomDiff)
     )
       role = 'primaer';
     else role = 'sekundaer';
 
+    // Annonseinfo for markedssignalet
+    const priceReduced = isActive && c.askingPrice !== null && c.originalAskingPrice !== null ? c.askingPrice < c.originalAskingPrice : null;
+    const daysListed = isActive && c.date ? Math.max(0, Math.round((Date.parse(`${options.today}T00:00:00Z`) - Date.parse(`${c.date}T00:00:00Z`)) / 86_400_000)) : null;
+
     // Forklaring
     const locLabel = c.locationLevel === 'samme_bygg' ? 'Samme bygg' : c.locationLevel === 'mikroomrade' ? 'Mikroområde' : c.locationLevel === 'bydel' ? 'Bydel' : c.locationLevel === 'kommune' ? 'Kommune/by' : c.locationLevel === 'region' ? 'Region' : 'Ukjent lokasjon';
     reasons.push(`${locLabel} (${match.location}/25 for lokasjon).`);
-    if (standardGap === null) reasons.push('Standard er ukjent, så standardlikheten er usikker.');
+    if (standardGap === null) reasons.push('Standard er ukjent, så standardlikheten er svak og vekten begrenset.');
     else if (standardGap === 0) reasons.push(`Lik standard som sluttproduktet (${match.standard}/25).`);
     else if (standardGap >= 2) reasons.push(`Standarden avviker ${standardGap} trinn fra sluttproduktet. Prisen sier lite om ferdigverdi, og vekten er begrenset.`);
     else reasons.push(`Standarden avviker ett trinn (${match.standard}/25).`);
     if (areaDeviation === null) reasons.push('BRA-i mangler eller er ukjent.');
     else reasons.push(`BRA-i avviker ${Math.round(areaDeviation * 100)} % (${match.area}/15).`);
-    if (isActive) reasons.push('Aktiv annonse – prisantydning, ikke oppnådd salgspris. Brukes bare som markedssignal.');
-    else if (c.kind === 'solgt_uten_sum') reasons.push('Solgt uten dokumentert salgssum – kan ikke brukes som pris.');
+    if (target.bedrooms !== null && c.bedrooms !== null && target.bedrooms !== c.bedrooms) reasons.push(`Har ${c.bedrooms} soverom mot ${target.bedrooms} i sluttproduktet, så referansen kan ikke være primær.`);
+    if (unknownFields.length > 0) reasons.push(`Ukjent: ${unknownFields.map((f) => UNKNOWN_FIELD_LABEL[f]).join(', ')}. Ukjent er ikke middels – det gir lav fysisk likhet, lavere pålitelighet og kan hindre primærstatus.`);
+    if (isActive) {
+      reasons.push('Aktiv annonse – prisantydning, ikke oppnådd salgspris. Brukes bare som markedssignal.');
+      if (activeDebtUnknown) reasons.push('Fellesgjeld er ukjent, så totalprisen per m² er ikke beregnet (ikke antatt 0). Annonsen gir ikke prissignal.');
+      if (priceReduced) reasons.push('Prisen er nedsatt siden første annonsering.');
+      if (daysListed !== null && daysListed >= A.longListedDays) reasons.push(`Har ligget ute i ${daysListed} dager.`);
+    } else if (c.kind === 'solgt_uten_sum') reasons.push('Solgt uten dokumentert salgssum – kan ikke brukes som pris.');
     else if (ageMonths !== null) reasons.push(adjusted ? `Salget er ${Math.round(ageMonths)} mnd gammelt og markedsjustert (faktor ${round2(adjFactor)}).` : `Salget er ${Math.round(ageMonths)} mnd gammelt og ikke markedsjustert, så vekten faller raskere.`);
     if (notNormalized) reasons.push('Prisgrunnlaget (kontant/total) kan ikke normaliseres uten fellesgjeld.');
     if (c.dataQuality === 'lav') reasons.push('Lav datakvalitet reduserer vekten.');
 
     // For aktive annonser sier styrken hvor relevant signalet er (fysisk likhet), siden vekten er 0.
-    const strengthBasis = isActive ? match.total / 100 : effectiveWeight;
+    const strengthBasis = isActive ? (match.total / 100) * (activeDebtUnknown ? UR.activeDebt : 1) : effectiveWeight;
     const strength: WeightedReference['strength'] = strengthBasis >= 0.6 ? 'sterk' : strengthBasis >= 0.3 ? 'middels' : 'svak';
     return {
       id: c.id,
@@ -454,6 +591,9 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
       marketAdjusted: adjusted,
       adjustedTotalPerM2: adjustedTotalPerM2 === null ? null : Math.round(adjustedTotalPerM2),
       askingPerM2: askingPerM2 === null ? null : Math.round(askingPerM2),
+      unknownFields,
+      priceReduced,
+      daysListed,
       usedInAnchor: false,
       strength,
       flags,
@@ -475,12 +615,37 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
     spreadPct = mad === null ? null : round1((mad / median) * 100);
   }
 
-  // Aktive annonser som markedssignal
+  // Aktive annonser som markedssignal. Bare annonser med normalisert totalpris gir prissignal.
   const actives = refs.filter((r) => r.role === 'markedsreferanse');
-  const activeAsk = actives.filter((r) => r.askingPerM2 !== null).map((r) => ({ value: r.askingPerM2 as number, weight: Math.max(0.01, r.physical.total / 100) }));
+  const pricedActives = actives.filter((r) => r.askingPerM2 !== null);
+  const activeAsk = pricedActives.map((r) => ({ value: r.askingPerM2 as number, weight: Math.max(0.01, r.physical.total / 100) }));
   const medianAsk = weightedMedian(activeAsk);
-  const competingBelow = median !== null && actives.some((r) => r.askingPerM2 !== null && r.physical.total >= MARKET_PARAMS.quality.activeMinPhysical && (r.askingPerM2 as number) < median * 0.95);
-  const relevantActive = actives.filter((r) => r.physical.total >= MARKET_PARAMS.quality.activeMinPhysical).length;
+  const competingBelow = median !== null && pricedActives.some((r) => r.physical.total >= MARKET_PARAMS.quality.activeMinPhysical && (r.askingPerM2 as number) < median * 0.95);
+  const relevantActive = pricedActives.filter((r) => r.physical.total >= MARKET_PARAMS.quality.activeMinPhysical).length;
+
+  // Markedssignal: svært relevante aktive sluttprodukter (høy fysisk likhet, kjent og nær standard, normalisert pris).
+  const signalAds = pricedActives.filter((r) => r.physical.total >= A.minPhysical && r.standardGap !== null && r.standardGap <= A.maxStandardGap);
+  let pointsDown = 0;
+  let pointsUp = 0;
+  const signalNotes: string[] = [];
+  if (median !== null && median > 0) {
+    for (const r of signalAds) {
+      const ratio = (r.askingPerM2 as number) / median;
+      const below = ratio < A.belowAnchorRatio;
+      const above = ratio > A.aboveAnchorRatio;
+      const reduced = r.priceReduced === true;
+      const long = r.daysListed !== null && r.daysListed >= A.longListedDays;
+      pointsDown += (below ? A.pointsBelow : 0) + (reduced ? A.pointsReduced : 0) + (long ? A.pointsLongListed : 0);
+      if (above && !reduced && !long) pointsUp += A.pointsBelow;
+      const bits = [below ? 'under ankeret' : above ? 'over ankeret' : 'nær ankeret', reduced ? 'prisnedsatt' : null, long ? `${r.daysListed} dager ute` : null].filter(Boolean);
+      signalNotes.push(`${r.name}: ${bits.join(', ')}.`);
+    }
+  }
+  let activeSignalPct = 0;
+  if (signalAds.length >= A.minAds) {
+    if (pointsDown >= 2) activeSignalPct = -Math.min(A.maxDownPct, A.stepPct * pointsDown);
+    else if (pointsUp >= 2 && pointsDown === 0) activeSignalPct = Math.min(A.maxUpPct, A.stepPct * pointsUp);
+  }
 
   // Datakvalitet
   const Q = MARKET_PARAMS.quality;
@@ -494,14 +659,18 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
   notes.push(`${goodSales} gode dokumenterte salg, ${relevantActive} relevant aktiv annonse.`);
   if (primaries.length < 2) notes.push('Færre enn to primærreferanser – sekundære referanser er tatt med med lavere vekt.');
   if (competingBelow) notes.push('En nærliggende aktiv annonse ligger under ankerprisen (konkurranse).');
+  const unpricedActives = actives.length - pricedActives.length;
+  if (unpricedActives > 0) notes.push(`${unpricedActives} aktiv${unpricedActives === 1 ? '' : 'e'} annonse${unpricedActives === 1 ? '' : 'r'} uten kjent fellesgjeld gir ikke prissignal (totalpris er ikke antatt).`);
+  if (!target.standardDocumented) notes.push('Sluttstandarden er ikke dokumentert i scenarioet, men utledet fra oppussingsnivået. Intervallet er utvidet.');
 
   const quality = { score, tier, goodSales, effectiveSales: round2(effectiveSales), relevantActive, notes } as MarketEstimate['quality'];
   const ranked = [...refs].sort((a, b) => {
     const order = { primaer: 0, sekundaer: 1, markedsreferanse: 2 } as const;
     return order[a.role] - order[b.role] || b.effectiveWeight - a.effectiveWeight || a.name.localeCompare(b.name, 'nb');
   });
-  const activeSignals = { count: actives.length, medianAskingPerM2: medianAsk === null ? null : Math.round(medianAsk), competingBelowAnchor: competingBelow };
+  const activeSignals = { count: actives.length, priced: pricedActives.length, medianAskingPerM2: medianAsk === null ? null : Math.round(medianAsk), competingBelowAnchor: competingBelow, relevant: signalAds.length, pointsDown, pointsUp };
   const anchor = { weightedMedianPerM2: median === null ? null : Math.round(median), weightedMeanPerM2: mean === null ? null : Math.round(mean), spreadPct, used: usedSet.length };
+  const noPositioning = { anchorBase: null, activeSignalPct: 0, anchorAdjustmentPct: 0, notes: [] as string[] };
 
   const insufficient = (reason: string): MarketEstimate => ({
     modelVersion: MARKET_MODEL_VERSION,
@@ -511,6 +680,8 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
     anchor,
     estimate: null,
     halfWidthPct: null,
+    positioning: noPositioning,
+    standardDocumented: target.standardDocumented,
     references: ranked,
     activeSignals,
   });
@@ -519,32 +690,47 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
   if (tier === 'utilstrekkelig') return insufficient('Grunnlaget er for svakt til å gi et salgsestimat. Det gis ingen tvungen normalverdi.');
   if (!target.areaBRAi) return insufficient('Målets BRA-i er ukjent, så pris per m² kan ikke regnes om til en salgspris.');
 
-  // Intervall: bredere ved svakere grunnlag, med tillegg for spredning og konkurrerende annonser.
+  // Intervall: bredere ved svakere grunnlag, med tillegg for spredning, konkurrerende annonser og udokumentert sluttstandard.
   let halfWidth = baseHalfWidth(tier, score);
   if (spreadPct !== null) halfWidth += Math.min(MARKET_PARAMS.spreadPenaltyCapPct, spreadPct * 0.5);
   if (competingBelow) halfWidth += MARKET_PARAMS.activeBelowPenaltyPct;
+  if (!target.standardDocumented) halfWidth += MARKET_PARAMS.undocumentedStandardWidthPct;
   halfWidth = round1(Math.min(MARKET_PARAMS.maxHalfWidthPct, halfWidth));
 
-  const baseTotal = median * target.areaBRAi;
-  let basePrice = baseTotal;
+  // Agentens begrensede ankerjustering (kappet). Brukes på ankeret av koden – agenten leverer ingen egen salgsverdi.
+  const maxAdj = MARKET_PARAMS.anchorAdjustmentMaxPct;
+  const anchorAdjustmentPct = options.anchorAdjustmentPct ? Math.max(-maxAdj, Math.min(maxAdj, options.anchorAdjustmentPct)) : 0;
+  const adjFactorAnchor = 1 + anchorAdjustmentPct / 100;
+  const anchorTotal = median * target.areaBRAi * adjFactorAnchor;
+
+  // Aktive annonser flytter normalverdien moderat, aldri utenfor intervallet og aldri mer enn dokumentert maksimum.
+  const cappedSignalPct = activeSignalPct === 0 ? 0 : Math.sign(activeSignalPct) * Math.min(Math.abs(activeSignalPct), halfWidth * A.maxShareOfHalfWidth);
+  const baseTotal = anchorTotal * (1 + cappedSignalPct / 100);
+
+  let debt = 0;
   if (target.basis === 'kontant') {
-    let debt = target.sharedDebt;
-    if (debt === null && target.tenure === 'selveier') debt = 0;
-    if (debt === null) return insufficient('Fellesgjeld ved salg er ukjent, så totalpris kan ikke regnes om til kontantpris.');
-    basePrice = baseTotal - debt;
+    let d = target.sharedDebt;
+    if (d === null && target.tenure === 'selveier') d = 0;
+    if (d === null) return insufficient('Fellesgjeld ved salg er ukjent, så totalpris kan ikke regnes om til kontantpris.');
+    debt = d;
   }
   const roundK = (n: number) => Math.round(n / 1000) * 1000;
-  const lowTotal = baseTotal * (1 - halfWidth / 100);
-  const highTotal = baseTotal * (1 + halfWidth / 100);
-  const shift = basePrice - baseTotal; // 0 for totalpris, −fellesgjeld for kontantpris
+  const lowTotal = anchorTotal * (1 - halfWidth / 100);
+  const highTotal = anchorTotal * (1 + halfWidth / 100);
+  const positionNotes: string[] = [];
+  if (anchorAdjustmentPct !== 0) positionNotes.push(`Agentens begrunnede justering av ankeret: ${anchorAdjustmentPct > 0 ? '+' : ''}${anchorAdjustmentPct.toLocaleString('nb-NO')} % (maks ±${maxAdj} %).`);
+  if (cappedSignalPct !== 0) positionNotes.push(`Aktive annonser flytter normalverdien ${cappedSignalPct > 0 ? '+' : ''}${cappedSignalPct.toLocaleString('nb-NO')} % innenfor intervallet (maks −${A.maxDownPct} % / +${A.maxUpPct} %). ${signalNotes.join(' ')}`);
+  else if (signalAds.length > 0) positionNotes.push(`${signalAds.length} svært relevant${signalAds.length === 1 ? '' : 'e'} aktiv${signalAds.length === 1 ? '' : 'e'} annonse${signalAds.length === 1 ? '' : 'r'}, men signalet er ikke sterkt nok til å flytte normalverdien (krever minst ${A.minAds} annonser og tydelig press).`);
   return {
     modelVersion: MARKET_MODEL_VERSION,
     status: 'ok',
     reason: null,
     quality,
     anchor,
-    estimate: { low: roundK(lowTotal + shift), base: roundK(basePrice), high: roundK(highTotal + shift), basis: target.basis },
+    estimate: { low: roundK(lowTotal - debt), base: roundK(baseTotal - debt), high: roundK(highTotal - debt), basis: target.basis },
     halfWidthPct: halfWidth,
+    positioning: { anchorBase: roundK(anchorTotal - debt), activeSignalPct: cappedSignalPct, anchorAdjustmentPct, notes: positionNotes },
+    standardDocumented: target.standardDocumented,
     references: ranked,
     activeSignals,
   };
@@ -556,6 +742,7 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
 
 import type { ComparableSale, Property, PropertySnapshot, ScenarioValues, UserComparable } from '../domain/schemas';
 import type { ResolvedAnalysisScenario } from '../domain/analysisScenarios';
+import type { RenovationLevel } from '../domain/enums';
 
 /** Gjør et sammenlignbart objekt (fra analysen eller brukerens egne) om til markedsvektingens inndata. Ukjent = null. */
 export function toMarketComparable(c: ComparableSale | UserComparable): MarketComparable {
@@ -581,7 +768,21 @@ export function toMarketComparable(c: ComparableSale | UserComparable): MarketCo
     parking: c.parking ?? null,
     dataQuality: c.dataQuality ?? null,
     marketAdjustment: c.marketAdjustment ?? null,
+    originalAskingPrice: c.originalAskingPrice ?? null,
   };
+}
+
+/**
+ * Sluttstandard for et scenario. Dokumentert standard i `endProduct.standardClass` brukes automatisk. Mangler den
+ * (eldre scenarioer og analyser), brukes en tydelig merket fallback utledet fra oppussingsnivået – og den fremstår
+ * aldri som dokumentert: markedsvektingen utvider intervallet og viser at standarden er antatt.
+ */
+export const LEVEL_FALLBACK_STANDARD: Record<RenovationLevel, StandardClass> = { lett: 'oppgradert', hoved: 'nyoppusset', omfattende: 'nyoppusset' };
+
+export function scenarioStandard(scenario: Pick<ResolvedAnalysisScenario, 'endProduct' | 'level'> | null): { standardClass: StandardClass; documented: boolean } {
+  const documented = scenario?.endProduct.standardClass ?? null;
+  if (documented) return { standardClass: documented, documented: true };
+  return { standardClass: scenario ? LEVEL_FALLBACK_STANDARD[scenario.level] : 'nyoppusset', documented: false };
 }
 
 /** Målet for markedsvektingen: boligen slik den blir etter scenarioet (sluttproduktet), i scenarioets prisgrunnlag. */
@@ -589,17 +790,19 @@ export function marketTargetFor(args: {
   property: Property;
   snapshot: PropertySnapshot | null;
   values: Pick<ScenarioValues, 'saleBasis' | 'debtAtSale'>;
-  scenario: Pick<ResolvedAnalysisScenario, 'endProduct'> | null;
-  /** Standard etter oppussing. Standard: nyoppusset. */
+  scenario: Pick<ResolvedAnalysisScenario, 'endProduct' | 'level'> | null;
+  /** Brukerens private overstyring av sluttstandard. Gjelder bare brukerens egen visning, aldri felles analyse. */
   standardClass?: StandardClass;
 }): MarketTarget {
   const { property, snapshot, values, scenario } = args;
+  const std = args.standardClass ? { standardClass: args.standardClass, documented: true } : scenarioStandard(scenario);
   return {
     areaBRAi: snapshot?.areaBRAi ?? null,
     bedrooms: scenario?.endProduct.bedrooms ?? snapshot?.bedrooms ?? null,
     propertyType: property.propertyType,
     tenure: property.tenure,
-    standardClass: args.standardClass ?? 'nyoppusset',
+    standardClass: std.standardClass,
+    standardDocumented: std.documented,
     floor: snapshot?.floor ?? null,
     elevator: null,
     balcony: null,
@@ -607,4 +810,21 @@ export function marketTargetFor(args: {
     basis: values.saleBasis,
     sharedDebt: values.debtAtSale,
   };
+}
+
+/**
+ * Referanser slik de gjelder for dette scenarioet. Planløsningslikhet varierer per scenario: agentens klassifisering for
+ * scenarioet brukes. Et alternativ uten klassifisering for en referanse har ukjent planløsningslikhet (ikke samme som basis).
+ */
+export function comparablesForScenario(
+  comparables: readonly MarketComparable[],
+  scenario: Pick<ResolvedAnalysisScenario, 'kind' | 'referenceClassification'> | null,
+): MarketComparable[] {
+  if (!scenario) return [...comparables];
+  const byId = new Map((scenario.referenceClassification ?? []).map((c) => [c.comparableId, c]));
+  return comparables.map((c) => {
+    const cls = byId.get(c.id);
+    if (cls) return { ...c, layoutMatch: cls.layoutMatch };
+    return scenario.kind === 'alternativ' ? { ...c, layoutMatch: null } : c;
+  });
 }

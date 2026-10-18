@@ -8,7 +8,7 @@ import {
   LABOR_CATEGORY_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
-  REGULATED_LABOR,
+  isRegulatedLabor,
   RENOVATION_LEVEL_LABEL,
   WORK_MODE_LABEL,
   WORK_MODES,
@@ -48,7 +48,7 @@ export function RenovationTab({ ctx }: { ctx: PropertyContext }) {
   const isLegacy = !analysis.estimates.scenarios || analysis.estimates.scenarios.length === 0;
   const reno = ctx.result.renovation;
   const b = ctx.result.evaluation.base;
-  const labor = { laborModes: draft.laborModes, maxOwnWork: draft.maxOwnWork, regulatedSelfWorkConfirmed: draft.regulatedSelfWorkConfirmed };
+  const labor = { laborModes: draft.laborModes, maxOwnWork: draft.maxOwnWork, regulatedCompetence: draft.regulatedCompetence };
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
     setOpen((s) => {
@@ -218,7 +218,14 @@ export function RenovationTab({ ctx }: { ctx: PropertyContext }) {
                     </td>
                     {(['electrician', 'plumber', 'other'] as const).map((k) => (
                       <td key={k} className="w-28 py-2 pr-2">
-                        <NumberInput aria-label={`${CAT_LABEL[k]} for ${i.title}`} value={i[k]} disabled={!editable} onChange={(v) => updateItem(i.id, { [k]: v })} />
+                        {newStyle ? (
+                          // Én kostnadsmodell per tiltak: med arbeidskategori brukes «Arbeidskostnad hvis innleid», ikke eldre fagfelt.
+                          <p className="pt-2 text-right text-slate-400" title="Tiltaket bruker arbeidsmodell. Legg innleid arbeid inn som «Arbeidskostnad hvis innleid» (under «Arbeid»).">
+                            –
+                          </p>
+                        ) : (
+                          <NumberInput aria-label={`${CAT_LABEL[k]} for ${i.title}`} value={i[k]} disabled={!editable} onChange={(v) => updateItem(i.id, { [k]: v })} />
+                        )}
                       </td>
                     ))}
                     <td className="w-28 py-2 pt-4 pr-2 text-right whitespace-nowrap">
@@ -290,7 +297,7 @@ export function RenovationTab({ ctx }: { ctx: PropertyContext }) {
                               {LABOR_CATEGORIES.map((c) => (
                                 <option key={c} value={c}>
                                   {LABOR_CATEGORY_LABEL[c]}
-                                  {REGULATED_LABOR.includes(c) ? ' (regulert)' : ''}
+                                  {isRegulatedLabor(c) ? ' (regulert)' : ''}
                                 </option>
                               ))}
                             </Select>
@@ -341,7 +348,7 @@ export function RenovationTab({ ctx }: { ctx: PropertyContext }) {
                         {newStyle && (
                           <p className="mt-2 text-xs text-slate-700">
                             Brukt modus: <strong>{e.mode ? WORK_MODE_LABEL[e.mode].toLowerCase() : '–'}</strong>
-                            {e.downgraded && <span className="font-medium text-amber-900"> – regulert arbeid regnes som innleid til kompetanse og ansvar er bekreftet (Min kalkyle → Egeninnsats).</span>}
+                            {e.downgraded && <span className="font-medium text-amber-900"> – regulert arbeid regnes som innleid til relevant kompetanse/ansvar er bekreftet for dette arbeidsområdet (Min kalkyle → Egeninnsats).</span>}
                             {i.priceSource && <span className="text-slate-500"> · Priskilde: {i.priceSource.kind === 'agent' ? 'agent' : i.priceSource.kind === 'prisbank' ? `prisbank${i.priceSource.version ? ` ${i.priceSource.version}` : ''}` : 'deg'}</span>}
                           </p>
                         )}
@@ -454,7 +461,7 @@ export function RenovationTab({ ctx }: { ctx: PropertyContext }) {
                   <tr key={c}>
                     <th scope="row" className="py-1.5 text-left font-normal">
                       {LABOR_CATEGORY_LABEL[c]}
-                      {REGULATED_LABOR.includes(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
+                      {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
                     </th>
                     <td className="py-1.5 text-right">{formatHours(reno.byLabor[c]!.ownHours)}</td>
                     <td className="py-1.5 text-right">{formatNOK(reno.byLabor[c]!.hiredCost)}</td>

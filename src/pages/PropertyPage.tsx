@@ -18,6 +18,7 @@ import { Field, Select, TextInput } from '../components/ui/forms';
 import { Dialog, TabPanel, Tabs } from '../components/ui/overlay';
 import { Alert, Badge, Button, EmptyState, PageLoading } from '../components/ui/primitives';
 import { FRESHNESS } from '../config/freshness';
+import { TECHNICAL_REASON_LABEL } from '../domain/refreshPolicy';
 import { NEW_ACCOUNT_DEFAULTS } from '../config/defaults';
 import { preliminaryReasons } from '../domain/assessment';
 import { PROPERTY_TYPE_LABEL, RECOMMENDATION_LABEL, TENURE_LABEL, WORK_STATUS_LABEL, WORK_STATUSES, type WorkStatus } from '../domain/enums';
@@ -227,11 +228,11 @@ export function PropertyPage() {
     if (dirty) setPendingSwitch(sid);
     else setSelectedId(sid);
   };
-  const refresh = (kind: 'light' | 'full') =>
+  const refresh = (kind: 'light' | 'market' | 'full') =>
     run(`refresh-${kind}`, async () => {
       const r = await services.analysis.requestRefresh(it.property.id, kind, uuid());
-      if (r.outcome === 'already_fresh') toast({ tone: 'info', title: 'Annonseopplysningene er allerede ferske', body: 'Ingen oppfrisking ble belastet.' });
-      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : 'Ny analyse startet' });
+      if (r.outcome === 'already_fresh') toast({ tone: 'info', title: kind === 'market' ? 'Markedsdataene er allerede oppdaterte' : 'Annonseopplysningene er allerede ferske', body: 'Ingen oppfrisking ble belastet.' });
+      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : kind === 'market' ? 'Markedsoppfriskning startet' : 'Ny analyse startet' });
     });
 
   return (
@@ -311,17 +312,36 @@ export function PropertyPage() {
             Scenarioet bygger på ditt importerte utkast.
           </Alert>
         )}
-        {analysis.visibility === 'shared' && analysisAge > FRESHNESS.analysisMaxAgeDays && (
+        {analysis.visibility === 'shared' && analysisAge > FRESHNESS.marketRefreshAfterDays && !it.technicalReanalysis.needed && (
           <Alert
             tone="warning"
-            title={`Analysen er ${Math.floor(analysisAge)} dager gammel`}
+            title={`Markedsdataene er ${Math.floor(analysisAge)} dager gamle`}
             action={
-              <Button size="sm" loading={busy === 'refresh-full'} disabled={!entitlements?.canRequestNewAnalysis || Boolean(it.activeJob)} onClick={() => refresh('full')}>
-                Bestill full ny analyse
+              <Button size="sm" loading={busy === 'refresh-market'} disabled={!entitlements?.canRefresh || Boolean(it.activeJob)} onClick={() => refresh('market')}>
+                Oppdater markedsdata
               </Button>
             }
           >
-            Oppussing, salgsverdi og risiko bør vurderes på nytt. En full ny analyse belastes som én ny analyse.
+            <p>Vi henter ny prisantydning, visninger og salgsstatus, oppdaterer markedsreferansene og regner salgsverdien og økonomien på nytt for hvert scenario.</p>
+            <p>Det tekniske grunnlaget (dokumenter, risiko, oppussingsbehov og scenarioer) leses ikke på nytt. Belastes som én oppfriskning.</p>
+          </Alert>
+        )}
+        {analysis.visibility === 'shared' && it.technicalReanalysis.needed && (
+          <Alert
+            tone="warning"
+            title="Teknisk grunnlag bør analyseres på nytt"
+            action={
+              <Button size="sm" loading={busy === 'refresh-full'} disabled={!entitlements?.canRequestNewAnalysis || Boolean(it.activeJob)} onClick={() => refresh('full')}>
+                Bestill ny teknisk analyse
+              </Button>
+            }
+          >
+            <ul className="list-disc pl-4">
+              {it.technicalReanalysis.reasons.map((r) => (
+                <li key={r}>{TECHNICAL_REASON_LABEL[r]}</li>
+              ))}
+            </ul>
+            <p>En ny teknisk analyse belastes som én ny analyse.</p>
           </Alert>
         )}
         {volatileAgeH !== null && volatileAgeH > FRESHNESS.volatileMaxAgeHours && (
@@ -338,7 +358,7 @@ export function PropertyPage() {
           </Alert>
         )}
         {it.activeJob && (
-          <Alert tone="info" title={it.activeJob.type === 'light_refresh' ? 'Oppfrisking pågår' : 'Ny analyse pågår'}>
+          <Alert tone="info" title={it.activeJob.type === 'light_refresh' ? 'Oppfrisking pågår' : it.activeJob.type === 'market_refresh' ? 'Markedsoppfriskning pågår' : 'Ny analyse pågår'}>
             <span className="inline-flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" aria-hidden /> {it.activeJob.steps[Math.min(it.activeJob.stepIndex, it.activeJob.steps.length - 1)]} …
             </span>
