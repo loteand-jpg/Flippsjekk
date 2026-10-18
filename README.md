@@ -25,6 +25,10 @@ npm run dev          # http://localhost:5173
 
 Appen bruker hash-ruting (`#/oversikt`), så `dist/` kan legges på hvilken som helst statisk server.
 
+**Siden vises ikke hvis du bare åpner filen.** Dobbeltklikk på `index.html` (eller `dist/index.html`) fungerer ikke, fordi nettlesere blokkerer JavaScript-moduler og CSS som lastes fra `file://`. Kjør `npm install` og `npm run dev` (eller `npm run build` og `npm run preview`), eller legg `dist/` på en webserver.
+
+**GitHub Pages:** repoet har en arbeidsflyt (`.github/workflows/pages.yml`) som bygger og publiserer siden. Slå den på under *Settings → Pages → Build and deployment → Source: GitHub Actions*. Siden vises da på `https://<bruker>.github.io/Flippsjekk/`. Publiserer du råfilene fra `main` i stedet for `dist/`, blir siden blank, fordi `index.html` i roten peker på `src/main.tsx`, som nettleseren ikke kan kjøre.
+
 ## Testprofiler
 
 Innlogging skjer med **Google** eller **e-post med engangskode** – det finnes ingen passord. I demoen sendes ingen e-post: koden vises i en simulert e-post på skjermen, og Google-innloggingen bruker en simulert kontovelger. Under «Testprofiler» på innloggingssiden kan du hoppe over koden. Vipps, mobilnummer og Apple kommer senere.
