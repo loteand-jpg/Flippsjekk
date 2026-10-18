@@ -62,3 +62,32 @@ export function findAnalysisScenario(analysis: SharedAnalysis, id: string | null
   const all = resolveAnalysisScenarios(analysis);
   return (id ? all.find((s) => s.id === id) : undefined) ?? all.find((s) => s.id === analysis.estimates.defaultScenarioId) ?? all.find((s) => s.kind === 'basis') ?? all[0];
 }
+
+export interface ScenarioSetIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+/**
+ * Regler for et sett agentscenarioer: nøyaktig ett basisscenario, høyst to alternativer, unike id-er,
+ * referanser til sammenlignbare objekter som finnes, og scenarioer som krever godkjenning kan ikke være «gjennomførbare».
+ */
+export function validateScenarioSet(scenarios: readonly AnalysisScenario[] | undefined, comparableIds: ReadonlySet<string>): ScenarioSetIssue[] {
+  if (!scenarios || scenarios.length === 0) return [];
+  const issues: ScenarioSetIssue[] = [];
+  const base = ['estimates', 'scenarios'] as const;
+  const basis = scenarios.filter((s) => s.kind === 'basis');
+  const alts = scenarios.filter((s) => s.kind === 'alternativ');
+  if (basis.length !== 1) issues.push({ path: [...base], message: 'Scenariosettet må ha nøyaktig ett basisscenario.' });
+  if (alts.length > MAX_ALTERNATIVES) issues.push({ path: [...base], message: `Maks ${MAX_ALTERNATIVES} alternative planløsninger.` });
+  if (new Set(scenarios.map((s) => s.id)).size !== scenarios.length) issues.push({ path: [...base], message: 'Scenario-ID-er må være unike.' });
+  scenarios.forEach((s, i) => {
+    if (s.requiresApproval && s.feasibility === 'klar') {
+      issues.push({ path: [...base, i, 'feasibility'], message: 'Et scenario som krever godkjenning kan ikke være merket som gjennomførbart.' });
+    }
+    s.referenceIds.forEach((id, j) => {
+      if (!comparableIds.has(id)) issues.push({ path: [...base, i, 'referenceIds', j], message: `Ukjent referanse «${id}».` });
+    });
+  });
+  return issues;
+}

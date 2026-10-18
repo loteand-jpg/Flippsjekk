@@ -34,6 +34,7 @@ import {
   WORK_MODES,
   WORK_STATUSES,
 } from './enums';
+import { validateScenarioSet } from './analysisScenarios';
 import { migrateProfileDefaultsRaw, migrateScenarioValuesRaw } from './migrate';
 
 /**
@@ -421,6 +422,10 @@ export const PublishableAnalysisSchema = SharedAnalysisSchema.extend({
   publishedAt: isoDateTime,
   checklist: z.array(ChecklistItemSchema).length(12),
   sources: z.array(SourceSchema).min(1),
+}).superRefine((a, ctx) => {
+  for (const issue of validateScenarioSet(a.estimates.scenarios, new Set(a.comparables.map((c) => c.id)))) {
+    ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+  }
 });
 
 const LaborModesSchema = z.object(Object.fromEntries(LABOR_CATEGORIES.map((c) => [c, z.enum(WORK_MODES)])) as Record<(typeof LABOR_CATEGORIES)[number], z.ZodEnum<{ selv: 'selv'; delvis: 'delvis'; innleid: 'innleid' }>>);

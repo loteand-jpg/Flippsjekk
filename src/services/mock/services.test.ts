@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { evaluateScenario } from '../../calc/scenario';
+import { DEFAULT_LABOR_MODES as NEW_DEFAULTS_FOR_TEST } from '../../config/defaultLabor';
 import { DB_FORMAT, DB_STORAGE_KEY, type DbState } from '../../data/db';
 import { DEMO_USERS } from '../../data/seed';
 import { DEMO_FINN } from '../../data/seedProperties';
@@ -566,6 +567,44 @@ describe('import v1', () => {
     expect(await s.analysis.getAnalysis(draft.id)).toBeNull();
   });
 
+  it('bakoverkompatibel: v1-filens låneandel og timesats bevares, og nye felt hentes fra profilen', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const text = file([obj({ financing: 80, hourRate: 400 })]);
+    const p = await s.imports.preview(text, text.length);
+    expect(p.objects[0].errors).toEqual([]);
+    const v = p.objects[0].mapped!.values;
+    expect(v.purchaseFinancingPct).toBe(80);
+    expect(v.renovationFinancingPct).toBe(80); // eldre `financing` gjaldt alt
+    expect(v.hourValue).toBe(400); // beholdt som utfaset felt, ikke i hovedøkonomien
+    expect(v.minProfitPerOwnHour).toBe(500); // fra profilen
+    expect(v.availableEquity).toBe(300_000);
+    expect(v.laborModes.elektro).toBe('innleid');
+    expect(evaluateScenario(v).evaluation.status).toBe('complete');
+    // Eldre `financing: 100` gir samme låneandel som før (ingen stille endring)
+    const text100 = file([obj()]);
+    const p100 = await s.imports.preview(text100, text100.length);
+    expect(p100.objects[0].mapped!.values.purchaseFinancingPct).toBe(100);
+  });
+
+  it('eksport av scenarioer inneholder nye felt og nøkkeltall, og beholder formatnavnet', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const { content } = await s.imports.exportScenarios();
+    const data = JSON.parse(content);
+    expect(data.format).toBe('flipprom-scenarios');
+    expect(data.version).toBe(1);
+    expect(data.calcModelVersion).toBe('1.1.0');
+    const row = data.scenarios.find((x: any) => x.result.status === 'complete');
+    expect(row.values).toHaveProperty('purchaseFinancingPct');
+    expect(row.values).toHaveProperty('renovationFinancingPct');
+    expect(row.values).toHaveProperty('minProfitPerOwnHour');
+    expect(row.values).not.toHaveProperty('financingPct');
+    expect(row.result).toHaveProperty('profitPerOwnHour');
+    expect(row.result).toHaveProperty('equityGap');
+    expect(row.result).toHaveProperty('equityNeed');
+  });
+
   it('avviser feil rotformat, for mange objekter og for stor fil', async () => {
     const { services: s } = setup();
     await signIn(s, 'ada');
@@ -1066,5 +1105,99 @@ describe('kurskjøp: betalingsmur, engangsbetaling og varig tilgang', () => {
     clock.advance(6 * 60_000);
     await expectError(s.demo.vipps.decide(b.paymentId, 'approved'), 'conflict');
     expect((await s.courses.getAccess('flipping-privat')).owned).toBe(false);
+  });
+});
+
+describe('migrering av mockdatabase v3 → v4 (modell 1.1)', () => {
+  const NEW_SCENARIO_KEYS = ['analysisScenarioId', 'purchaseFinancingPct', 'renovationFinancingPct', 'financeRunningCosts', 'availableEquity', 'settlementMonths', 'weeklyOwnHours', 'minProfitPerOwnHour', 'laborModes', 'maxOwnWork', 'regulatedSelfWorkConfirmed'];
+  const NEW_PROFILE_KEYS = ['purchaseFinancingPct', 'renovationFinancingPct', 'financeRunningCosts', 'availableEquity', 'weeklyOwnHours', 'minProfitPerOwnHour', 'saleSettlementMonths', 'laborModes', 'maxOwnWork', 'regulatedSelfWorkConfirmed'];
+
+  /** Lager en lagret database slik den så ut i versjon 3 (eldre kalkylemodell). */
+  function legacyEnvelope(storage: StorageLike) {
+    const raw = JSON.parse(storage.getItem(DB_STORAGE_KEY)!) as { state: Record<string, any[]> };
+    const state = structuredClone(raw.state);
+    state.profiles = state.profiles.map((p: any) => {
+      const d = { ...p.defaults, financingPct: 85 };
+      for (const k of NEW_PROFILE_KEYS) delete d[k];
+      return { ...p, defaults: d };
+    });
+    state.scenarios = state.scenarios.map((sc: any) => {
+      const v = { ...sc.values, financingPct: sc.values.purchaseFinancingPct ?? 100 };
+      for (const k of NEW_SCENARIO_KEYS) delete v[k];
+      return { ...sc, values: v };
+    });
+    return { legacy: { format: DB_FORMAT, schemaVersion: 3, savedAt: new Date().toISOString(), state }, before: raw.state };
+  }
+
+  it('migrerer profiler og scenarioer, dropper ingen rader og gir uendrede resultater', () => {
+    const storage = memoryStorage();
+    setup(storage);
+    const { legacy, before } = legacyEnvelope(storage);
+    storage.setItem(DB_STORAGE_KEY, JSON.stringify(legacy));
+
+    const { services: s } = setup(storage);
+    expect(s.demo.loadReport().status).toBe('migrated');
+    const after = s.db.read((st) => st);
+    expect(after.scenarios.length).toBe(before.scenarios.length);
+    expect(after.profiles.length).toBe(before.profiles.length);
+    expect(after.analyses.length).toBe(before.analyses.length);
+    expect(after.userProperties.length).toBe(before.userProperties.length);
+
+    const profile = after.profiles[0];
+    expect(profile.defaults).toMatchObject({ purchaseFinancingPct: 85, renovationFinancingPct: 85, financeRunningCosts: false, availableEquity: 300_000, weeklyOwnHours: 10, minProfitPerOwnHour: 500 });
+    expect('financingPct' in profile.defaults).toBe(false);
+
+    for (const sc of after.scenarios) {
+      const v = sc.values as unknown as Record<string, unknown>;
+      expect('financingPct' in v).toBe(false);
+      for (const k of NEW_SCENARIO_KEYS) expect(k in v, k).toBe(true);
+      expect(v.renovationFinancingPct).toBe(v.purchaseFinancingPct);
+      expect(v.minProfitPerOwnHour).toBe(500);
+      expect(v.availableEquity).toBe(300_000);
+    }
+    // Samme kalkyleresultat som i modell 1.0: renten er f × ((P + K) + RB/2) × r × m/12 med f = gammel låneandel
+    for (const sc of after.scenarios) {
+      const old = legacy.state.scenarios.find((x: any) => x.id === sc.id)!;
+      const f = (old.values.financingPct as number | null) ?? null;
+      const m = evaluateScenario(sc.values).evaluation.base;
+      const viaSchema = evaluateScenario(old.values).evaluation.base; // eldre rad leses direkte via skjemaet
+      expect(m?.profit).toBe(viaSchema?.profit);
+      if (m && f !== null && sc.values.interestPct !== null && sc.values.months !== null) {
+        const expectedI = Math.round(((f / 100) * (m.P + m.K + m.RB / 2) * (sc.values.interestPct / 100) * (sc.values.months / 12)) * 100) / 100;
+        expect(m.I).toBeCloseTo(expectedI, 1);
+      }
+    }
+  });
+
+  it('en fersk database har versjon 4 og nye standarder', () => {
+    const { services: s } = setup();
+    const defaults = s.db.read((st) => st.profiles.find((p) => p.userId === DEMO_USERS.ada.id)!.defaults);
+    expect(defaults).toMatchObject({ purchaseFinancingPct: 90, renovationFinancingPct: 0, minProfitPerOwnHour: 500, weeklyOwnHours: 10, availableEquity: 300_000, saleFixedCost: 120_000 });
+  });
+
+  it('profilstandarder kan lagres og valideres', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const upd = await s.profile.update({ defaults: { minProfitPerOwnHour: 750, weeklyOwnHours: 14, availableEquity: 450_000, renovationFinancingPct: 20, financeRunningCosts: true, laborModes: { ...NEW_DEFAULTS_FOR_TEST, gulv: 'selv' } } });
+    expect(upd.defaults).toMatchObject({ minProfitPerOwnHour: 750, weeklyOwnHours: 14, availableEquity: 450_000, renovationFinancingPct: 20, financeRunningCosts: true });
+    expect(upd.defaults.laborModes.gulv).toBe('selv');
+    await expectError(s.profile.update({ defaults: { purchaseFinancingPct: 150 } }), 'validation');
+    await expectError(s.profile.update({ defaults: { weeklyOwnHours: -3 } }), 'validation');
+  });
+
+  it('nye scenarioer får profilens standarder, og private overstyringer endrer ikke felles analyse', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    await s.profile.update({ defaults: { minProfitPerOwnHour: 650, availableEquity: 123_000 } });
+    const item = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.sharedAB)!;
+    const analysisBefore = JSON.stringify(item.latestAnalysis);
+    const sc = await s.scenarios.create(item.property.id, {
+      name: 'Alternativ med mine tall',
+      analysisId: item.latestAnalysis!.id,
+      values: { ...item.primaryScenario!.values, saleBase: 9_999_999, minProfitPerOwnHour: 650, availableEquity: 123_000, renovationFinancingPct: 50 },
+    });
+    expect(sc.values).toMatchObject({ saleBase: 9_999_999, minProfitPerOwnHour: 650, availableEquity: 123_000, renovationFinancingPct: 50 });
+    const again = (await s.properties.getMine(item.property.id))!;
+    expect(JSON.stringify(again.latestAnalysis)).toBe(analysisBefore);
   });
 });

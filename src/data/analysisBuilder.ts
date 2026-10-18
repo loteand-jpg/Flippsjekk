@@ -22,6 +22,11 @@ import {
   type ChecklistKey,
   type CheckStatus,
   type ComparableKind,
+  type DataQualityLevel,
+  type FeasibilityStatus,
+  type LaborCategory,
+  type LayoutMatch,
+  type LocationLevel,
   type PriceBasis,
   type Priority,
   type PropertyType,
@@ -29,10 +34,14 @@ import {
   type RenovationLevel,
   type RiskCategory,
   type SaleStatus,
+  type ScenarioKind,
   type SourceKind,
+  type StandardClass,
   type Tenure,
+  type UncertaintyLevel,
 } from '../domain/enums';
 import { CALC_MODEL_VERSION } from '../calc/engine';
+import type { AnalysisScenario, ScenarioEndProduct } from '../domain/schemas';
 import { defaultDutyRule } from '../calc/scenario';
 import { pricesFromLegacy } from '../domain/comparables';
 import { canonicalFinnUrl } from '../lib/finn';
@@ -79,6 +88,43 @@ export interface ComparableSpec {
   monthsAgo: number | null;
   kind: ComparableKind;
   notes: string;
+  /** Valgfrie egenskaper til markedsvektingen (ukjent hvis utelatt). */
+  extra?: {
+    bedrooms?: number | null;
+    propertyType?: PropertyType | null;
+    tenure?: Tenure | null;
+    locationLevel?: LocationLevel | null;
+    standardClass?: StandardClass | null;
+    layoutMatch?: LayoutMatch | null;
+    floor?: number | null;
+    elevator?: boolean | null;
+    balcony?: boolean | null;
+    parking?: boolean | null;
+    dataQuality?: DataQualityLevel | null;
+  };
+}
+
+/** [rom, tiltak, materialer, arbeidskategori, arbeidstimer totalt, arbeidskost hvis innleid, prioritet, inkludert?] */
+export type LaborItemSpec = [string, string, number | null, LaborCategory, number | null, number | null, Priority, boolean?];
+
+/** Agentdefinert scenario (basis eller alternativ) med egne tiltak og egen salgsverdi. */
+export interface ScenarioSpec {
+  kind: ScenarioKind;
+  level: RenovationLevel;
+  title: string;
+  description: string;
+  feasibility: FeasibilityStatus;
+  feasibilityRationale: string;
+  requirements?: string[];
+  requiresApproval?: boolean;
+  endProduct: ScenarioEndProduct;
+  items: LaborItemSpec[];
+  suggestedMonths: number | null;
+  sale: AnalysisSpec['sale'];
+  uncertainty: { level: UncertaintyLevel; note: string };
+  /** Navn (eller del av navn) på sammenlignbare objekter som støtter salgsverdien. */
+  referenceNames: string[];
+  referenceNote: string;
 }
 
 export interface AnalysisSpec {
@@ -98,6 +144,8 @@ export interface AnalysisSpec {
   };
   renovationOptions: RenovationOptionSpec[];
   defaultOption: RenovationLevel | null;
+  /** Basis + inntil to alternativer med egne tiltak og egen salgsverdi (valgfritt). */
+  scenarios?: ScenarioSpec[];
   months?: number | null;
   monthlyBreakdown: { label: string; amount: number | null }[];
   buyFees?: number | null;
@@ -412,8 +460,60 @@ export function buildProperty(
       notes: c.notes,
       sourceId: srcId('sammenligning'),
       isDemo: true,
+      ...(c.extra
+        ? {
+            bedrooms: c.extra.bedrooms ?? null,
+            propertyType: c.extra.propertyType ?? null,
+            tenure: c.extra.tenure ?? null,
+            sharedDebt: prices.soldTotalPrice !== null && prices.soldPrice !== null ? prices.soldTotalPrice - prices.soldPrice : c.debt ?? null,
+            locationLevel: c.extra.locationLevel ?? null,
+            standardClass: c.extra.standardClass ?? null,
+            layoutMatch: c.extra.layoutMatch ?? null,
+            floor: c.extra.floor ?? null,
+            elevator: c.extra.elevator ?? null,
+            balcony: c.extra.balcony ?? null,
+            parking: c.extra.parking ?? null,
+            dataQuality: c.extra.dataQuality ?? null,
+          }
+        : {}),
     };
   });
+
+  // Agentscenarioer: basis og inntil to alternativer med egne tiltak og egen salgsverdi.
+  const scenarios: AnalysisScenario[] | undefined = a.scenarios?.map((sc, si) => ({
+    id: `scn-${aKey}-${si}`,
+    kind: sc.kind,
+    level: sc.level,
+    title: sc.title,
+    description: sc.description,
+    feasibility: sc.feasibility,
+    feasibilityRationale: sc.feasibilityRationale,
+    requirements: sc.requirements ?? [],
+    requiresApproval: sc.requiresApproval ?? false,
+    endProduct: sc.endProduct,
+    items: sc.items.map((it, idx): RenovationItem => ({
+      id: `item-${aKey}-s${si}-${idx}`,
+      room: it[0],
+      title: it[1],
+      materials: it[2],
+      electrician: 0,
+      plumber: 0,
+      other: 0,
+      hours: null,
+      priority: it[6],
+      included: it[7] ?? true,
+      laborCategory: it[3],
+      laborHours: it[4],
+      laborCostHired: it[5],
+      priceSource: { kind: 'agent', version: null },
+    })),
+    suggestedMonths: sc.suggestedMonths,
+    vatIncluded: true,
+    sale: { ...sc.sale, includesMarketGrowth: false },
+    uncertainty: sc.uncertainty,
+    referenceIds: comparables.filter((c) => sc.referenceNames.some((n) => c.name.includes(n))).map((c) => c.id),
+    referenceNote: sc.referenceNote,
+  }));
 
   const monthlyTotal = a.monthlyBreakdown.some((m) => m.amount === null)
     ? null
@@ -485,6 +585,7 @@ export function buildProperty(
       debtAtSale: a.debtAtSale ?? null,
       suggestedPurchasePrice: a.suggestedPurchasePrice ?? null,
       dutyRule,
+      ...(scenarios ? { scenarios, defaultScenarioId: scenarios.find((s) => s.kind === 'basis')?.id ?? null } : {}),
     },
     risks,
     checklist,

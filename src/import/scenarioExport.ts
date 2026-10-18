@@ -30,6 +30,11 @@ export interface ScenarioExportV1 {
       status: 'complete' | 'incomplete' | 'invalid';
       profitBeforeTaxAndOwnWork: number | null;
       projectReturn: number | null;
+      /** Modell 1.1: fortjeneste per egeninnsatstime (egen tid er ikke en kostnad). */
+      profitPerOwnHour: number | null;
+      /** Modell 1.1: egenkapitalbehov og eventuelt gap mot tilgjengelig egenkapital. */
+      equityNeed: number | null;
+      equityGap: number | null;
       cashSale: number | null;
       totalCosts: number | null;
       maxBid: number | null;
@@ -64,6 +69,9 @@ export function buildScenarioExport(
           status: ev.evaluation.status,
           profitBeforeTaxAndOwnWork: b?.profit ?? null,
           projectReturn: b?.projectReturn ?? null,
+          profitPerOwnHour: b?.profitPerOwnHour ?? null,
+          equityNeed: b?.equityNeed ?? null,
+          equityGap: b?.equityGap ?? null,
           cashSale: b?.S ?? null,
           totalCosts: b?.C ?? null,
           maxBid: ev.evaluation.maxBid?.price ?? null,
