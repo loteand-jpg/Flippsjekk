@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeCore, evaluate, resolveInput, SOLVER_TOLERANCE_KR, solveMaxBid, type EngineInput } from './engine';
 import { evaluateScenario, toEngineInput } from './scenario';
+import { scenarioModelDefaults } from '../domain/migrate';
 import type { ScenarioValues } from '../domain/schemas';
 
 /** Kontrollregnestykket fra spesifikasjonen (syntetiske tall). */
@@ -16,13 +17,17 @@ function controlInput(overrides: Partial<EngineInput> = {}): EngineInput {
     months: 6,
     monthlyCost: 5_000,
     interestRate: 0.06,
-    financingShare: 1,
+    purchaseFinancingShare: 1,
+    renovationFinancingShare: 1,
+    financeRunningCosts: false,
+    availableEquity: null,
     saleFixedCost: 30_000,
     saleCommissionRate: 0.015,
     saleBasis: 'kontant',
     salePrices: { low: 2_800_000, base: 3_000_000, high: 3_200_000 },
     ownHours: 100,
     hourValue: 350,
+    minProfitPerOwnHour: null,
     profitTarget: 400_000,
     tax: { mode: 'uavklart', rate: null },
     ...overrides,
@@ -148,7 +153,7 @@ describe('manglende og ugyldige inngangsverdier', () => {
 
 describe('prosjektavkastning', () => {
   it('er endelig ved 100 % finansiering og bruker C + D0 som kapitalgrunnlag', () => {
-    const ev = evaluate(controlInput({ financingShare: 1, debtAtPurchase: 300_000 }));
+    const ev = evaluate(controlInput({ purchaseFinancingShare: 1, renovationFinancingShare: 1, debtAtPurchase: 300_000 }));
     expect(Number.isFinite(ev.base!.projectReturn!)).toBe(true);
     expect(ev.base!.capitalBase).toBe(ev.base!.C + 300_000);
     // Egenkapitalbehov ved 100 % finansiering = renter + drift (endelig, ikke null)
@@ -208,6 +213,7 @@ describe('skatt', () => {
 
 describe('prosentkonvertering ved grensen til motoren', () => {
   const values: ScenarioValues = {
+    ...scenarioModelDefaults(),
     buyerType: 'privat',
     purchasePrice: 2_000_000,
     debtAtPurchase: 0,
@@ -229,7 +235,8 @@ describe('prosentkonvertering ved grensen til motoren', () => {
     months: 6,
     monthlyCost: 5_000,
     interestPct: 6,
-    financingPct: 100,
+    purchaseFinancingPct: 100,
+    renovationFinancingPct: 100,
     saleBasis: 'kontant',
     saleLow: null,
     saleBase: 3_000_000,
@@ -237,6 +244,7 @@ describe('prosentkonvertering ved grensen til motoren', () => {
     saleFixedCost: 30_000,
     saleCommissionPct: 1.5,
     hourValue: 350,
+    minProfitPerOwnHour: null,
     profitTarget: 400_000,
     taxMode: 'uavklart',
     taxPct: null,

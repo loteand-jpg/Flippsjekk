@@ -620,6 +620,16 @@ function mapObject(raw: unknown, index: number, defaults: ProfileDefaults): Adap
     options.push({ id: localId('opt'), level: 'hoved', title: 'Importerte tiltak', description: 'Tiltak fra importfilen.', items, suggestedMonths: months, saleEffectNote: '', requiresApproval: false, vatIncluded: true });
 
   const values: ScenarioValues = {
+    // Nye modellfelt (profilens krav og egeninnsats). Importfilen kjenner dem ikke, så de hentes fra profilen.
+    analysisScenarioId: null,
+    financeRunningCosts: defaults.financeRunningCosts,
+    availableEquity: defaults.availableEquity,
+    settlementMonths: null,
+    weeklyOwnHours: defaults.weeklyOwnHours,
+    minProfitPerOwnHour: defaults.minProfitPerOwnHour,
+    laborModes: { ...defaults.laborModes },
+    maxOwnWork: defaults.maxOwnWork,
+    regulatedSelfWorkConfirmed: defaults.regulatedSelfWorkConfirmed,
     buyerType: propertyType && propertyCategory(propertyType) === 'hus' ? defaults.buyerTypeHouse : defaults.buyerTypeApartment,
     purchasePrice: purchase,
     debtAtPurchase: debt,
@@ -638,7 +648,8 @@ function mapObject(raw: unknown, index: number, defaults: ProfileDefaults): Adap
     months,
     monthlyCost: monthly,
     interestPct: interest,
-    financingPct: financing,
+    purchaseFinancingPct: financing,
+    renovationFinancingPct: financing,
     saleBasis: basis,
     saleLow: bear,
     saleBase: base,

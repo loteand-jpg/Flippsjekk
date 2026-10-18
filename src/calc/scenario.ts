@@ -1,4 +1,6 @@
-import { propertyCategory, type Tenure } from '../domain/enums';
+import { findAnalysisScenario } from '../domain/analysisScenarios';
+import { LABOR_CATEGORIES, propertyCategory, REGULATED_LABOR, type LaborCategory, type Tenure, type WorkMode } from '../domain/enums';
+import { migrateScenarioValuesRaw } from '../domain/migrate';
 import type {
   DutyRule,
   Property,
@@ -18,22 +20,74 @@ export interface RenovationTotals {
   mode: ScenarioValues['renovationMode'];
   /** R uten reserve. null når et inkludert tiltak mangler kostnad. */
   total: number | null;
+  /** Egne timer. null når timer mangler for arbeid som utføres selv. */
   hours: number | null;
-  byCategory: { materials: number; electrician: number; plumber: number; other: number };
+  byCategory: { materials: number; electrician: number; plumber: number; other: number; hiredLabor: number };
+  /** Arbeid fordelt på arbeidskategori (bare tiltak med arbeidskategori). */
+  byLabor: Partial<Record<LaborCategory, { ownHours: number; hiredCost: number }>>;
   includedCount: number;
   unknownItems: RenovationItem[];
   excludedRequired: RenovationItem[];
+  /** Regulert arbeid som er regnet som innleid fordi kompetanse/ansvar ikke er bekreftet. */
+  downgradedRegulated: RenovationItem[];
 }
 
-export function itemCost(item: RenovationItem): number | null {
+type LaborContext = Pick<ScenarioValues, 'laborModes' | 'maxOwnWork' | 'regulatedSelfWorkConfirmed'>;
+
+/** Eldre kostnad uten arbeidsmodell: summen av materialer og fag. */
+function legacyBuckets(item: RenovationItem): number | null {
   const parts = [item.materials, item.electrician, item.plumber, item.other];
   if (parts.some((p) => p === null)) return null;
   return (parts as number[]).reduce((sum, p) => sum + Math.round(p * 100), 0) / 100;
 }
 
+export interface ItemEconomics {
+  /** Kostnad (materialer + innleid arbeid). null = ikke avklart. */
+  cost: number | null;
+  /** Egne timer for tiltaket. null = ikke avklart. */
+  ownHours: number | null;
+  /** Innleid arbeid (bare tiltak med arbeidskategori). null = ikke avklart. */
+  hiredLabor: number | null;
+  /** Arbeidsmodus som er brukt. null for eldre tiltak uten arbeidsmodell. */
+  mode: WorkMode | null;
+  /** Regulert arbeid som ble regnet som innleid. */
+  downgraded: boolean;
+}
+
+/**
+ * Økonomien i ett tiltak. Tiltak uten `laborCategory` følger eldre regler (fagene er innleide kostnader, `hours`
+ * er egne timer). Med `laborCategory` fordeles arbeidet etter arbeidsmodus: selv, delvis eller innleid.
+ * Egne timer er aldri en kostnad. Regulert arbeid regnes aldri som gratis uten bekreftet kompetanse og ansvar.
+ */
+export function itemEconomics(item: RenovationItem, ctx?: LaborContext): ItemEconomics {
+  const cat = item.laborCategory ?? null;
+  if (cat === null) {
+    return { cost: legacyBuckets(item), ownHours: item.hours, hiredLabor: null, mode: null, downgraded: false };
+  }
+  const modes = ctx?.laborModes;
+  let mode: WorkMode = item.workMode ?? modes?.[cat] ?? 'innleid';
+  if (ctx?.maxOwnWork && !REGULATED_LABOR.includes(cat) && !item.workMode) mode = 'selv';
+  let downgraded = false;
+  if (REGULATED_LABOR.includes(cat) && mode !== 'innleid' && !ctx?.regulatedSelfWorkConfirmed) {
+    mode = 'innleid';
+    downgraded = true;
+  }
+  const share = mode === 'selv' ? 1 : mode === 'innleid' ? 0 : (item.selfShare ?? 0.5);
+  const hired = share >= 1 ? 0 : item.laborCostHired == null ? null : Math.round(item.laborCostHired * 100 * (1 - share)) / 100;
+  const ownHours = share <= 0 ? 0 : item.laborHours == null ? null : Math.round(item.laborHours * share * 100) / 100;
+  const buckets = legacyBuckets(item);
+  const cost = buckets === null || hired === null ? null : Math.round(buckets * 100 + hired * 100) / 100;
+  return { cost, ownHours, hiredLabor: hired, mode, downgraded };
+}
+
+/** Kostnad for ett tiltak uten arbeidsmodell-kontekst (profilens modus brukes ikke). Beholdt for visning. */
+export function itemCost(item: RenovationItem, ctx?: LaborContext): number | null {
+  return itemEconomics(item, ctx).cost;
+}
+
 /** Enten summering av tiltak eller eksplisitt rundsum – aldri begge. */
 export function renovationTotals(
-  v: Pick<ScenarioValues, 'renovationMode' | 'renovationItems' | 'renovationLumpSum' | 'lumpSumHours'>,
+  v: Pick<ScenarioValues, 'renovationMode' | 'renovationItems' | 'renovationLumpSum' | 'lumpSumHours'> & Partial<LaborContext>,
 ): RenovationTotals {
   const excludedRequired = v.renovationItems.filter((i) => !i.included && i.priority === 'pakrevd');
   if (v.renovationMode === 'rundsum') {
@@ -41,37 +95,61 @@ export function renovationTotals(
       mode: 'rundsum',
       total: v.renovationLumpSum,
       hours: v.lumpSumHours,
-      byCategory: { materials: 0, electrician: 0, plumber: 0, other: 0 },
+      byCategory: { materials: 0, electrician: 0, plumber: 0, other: 0, hiredLabor: 0 },
+      byLabor: {},
       includedCount: 0,
       unknownItems: [],
       excludedRequired: [],
+      downgradedRegulated: [],
     };
   }
+  const ctx: LaborContext = {
+    laborModes: v.laborModes ?? ({} as LaborContext['laborModes']),
+    maxOwnWork: v.maxOwnWork ?? false,
+    regulatedSelfWorkConfirmed: v.regulatedSelfWorkConfirmed ?? false,
+  };
   const included = v.renovationItems.filter((i) => i.included);
-  const unknownItems = included.filter((i) => itemCost(i) === null);
-  const ore = (n: number | null) => Math.round((n ?? 0) * 100);
-  const byCatOre = { materials: 0, electrician: 0, plumber: 0, other: 0 };
-  for (const i of included) {
+  const econ = included.map((i) => ({ item: i, e: itemEconomics(i, ctx) }));
+  const unknownItems = econ.filter((x) => x.e.cost === null).map((x) => x.item);
+  const ore = (n: number | null | undefined) => Math.round((n ?? 0) * 100);
+  const byCatOre = { materials: 0, electrician: 0, plumber: 0, other: 0, hiredLabor: 0 };
+  const byLaborOre: Partial<Record<LaborCategory, { ownHours: number; hiredOre: number }>> = {};
+  let totalOre = 0;
+  for (const { item: i, e } of econ) {
     byCatOre.materials += ore(i.materials);
     byCatOre.electrician += ore(i.electrician);
     byCatOre.plumber += ore(i.plumber);
     byCatOre.other += ore(i.other);
+    byCatOre.hiredLabor += ore(e.hiredLabor);
+    totalOre += ore(i.materials) + ore(i.electrician) + ore(i.plumber) + ore(i.other) + ore(e.hiredLabor);
+    if (i.laborCategory) {
+      const slot = (byLaborOre[i.laborCategory] ??= { ownHours: 0, hiredOre: 0 });
+      slot.ownHours += e.ownHours ?? 0;
+      slot.hiredOre += ore(e.hiredLabor);
+    }
   }
-  const totalOre = byCatOre.materials + byCatOre.electrician + byCatOre.plumber + byCatOre.other;
-  const hoursUnknown = included.some((i) => i.hours === null);
+  const hoursUnknown = econ.some((x) => x.e.ownHours === null);
+  const byLabor: RenovationTotals['byLabor'] = {};
+  for (const c of LABOR_CATEGORIES) {
+    const slot = byLaborOre[c];
+    if (slot) byLabor[c] = { ownHours: slot.ownHours, hiredCost: slot.hiredOre / 100 };
+  }
   return {
     mode: 'tiltak',
     total: unknownItems.length > 0 ? null : totalOre / 100,
-    hours: hoursUnknown ? null : included.reduce((s, i) => s + (i.hours ?? 0), 0),
+    hours: hoursUnknown ? null : econ.reduce((sum, x) => sum + (x.e.ownHours ?? 0), 0),
     byCategory: {
       materials: byCatOre.materials / 100,
       electrician: byCatOre.electrician / 100,
       plumber: byCatOre.plumber / 100,
       other: byCatOre.other / 100,
+      hiredLabor: byCatOre.hiredLabor / 100,
     },
+    byLabor,
     includedCount: included.length,
     unknownItems,
     excludedRequired,
+    downgradedRegulated: econ.filter((x) => x.e.downgraded).map((x) => x.item),
   };
 }
 
@@ -93,13 +171,17 @@ export function toEngineInput(v: ScenarioValues, reno: RenovationTotals = renova
     months: v.months,
     monthlyCost: v.monthlyCost,
     interestRate: pct(v.interestPct),
-    financingShare: pct(v.financingPct),
+    purchaseFinancingShare: pct(v.purchaseFinancingPct),
+    renovationFinancingShare: pct(v.renovationFinancingPct),
+    financeRunningCosts: v.financeRunningCosts,
+    availableEquity: v.availableEquity,
     saleFixedCost: v.saleFixedCost,
     saleCommissionRate: pct(v.saleCommissionPct),
     saleBasis: v.saleBasis,
     salePrices: { low: v.saleLow, base: v.saleBase, high: v.saleHigh },
     ownHours: reno.hours,
     hourValue: v.hourValue,
+    minProfitPerOwnHour: v.minProfitPerOwnHour,
     profitTarget: v.profitTarget,
     tax: { mode: v.taxMode, rate: pct(v.taxPct) },
   };
@@ -114,7 +196,15 @@ export interface ScenarioEvaluation {
   warnings: Issue[];
 }
 
-export function evaluateScenario(v: ScenarioValues, options: { detailed?: boolean } = {}): ScenarioEvaluation {
+/** Sikrer at eldre rader (uten modell 1.1-felt, med `financingPct`) kan evalueres. Allerede migrerte rader er uendret. */
+export function normalizeScenarioValues(v: ScenarioValues): ScenarioValues {
+  return migrateScenarioValuesRaw(v) as ScenarioValues;
+}
+
+const WEEKS_PER_MONTH = 4.345;
+
+export function evaluateScenario(raw: ScenarioValues, options: { detailed?: boolean } = {}): ScenarioEvaluation {
+  const v = normalizeScenarioValues(raw);
   const renovation = renovationTotals(v);
   const input = toEngineInput(v, renovation);
   const evaluation = evaluate(input, options);
@@ -147,6 +237,26 @@ export function evaluateScenario(v: ScenarioValues, options: { detailed?: boolea
       field: 'vatIncluded',
       message: 'Oppussingsanslag er angitt uten mva. Ikke anta at mva. kan trekkes fra bare fordi kjøper er AS.',
     });
+  }
+  if (renovation.downgradedRegulated.length > 0) {
+    warnings.push({
+      field: 'laborModes',
+      message: `Regulert arbeid er regnet som innleid fordi kompetanse og ansvar ikke er bekreftet: ${renovation.downgradedRegulated
+        .map((i) => `«${i.title}»`)
+        .join(', ')}. Egeninnsats på rør, elektro og våtrom regnes aldri som gratis automatisk.`,
+    });
+  }
+  // Kapasitet: rekker egeninnsatsen innen oppussingstiden med oppgitt ukentlig innsats?
+  if (renovation.hours !== null && renovation.hours > 0 && v.weeklyOwnHours && v.weeklyOwnHours > 0 && v.months) {
+    const renovationMonths = Math.max(0, v.months - (v.settlementMonths ?? 0));
+    const weeksNeeded = renovation.hours / v.weeklyOwnHours;
+    const weeksAvailable = renovationMonths * WEEKS_PER_MONTH;
+    if (weeksNeeded > weeksAvailable + 0.01) {
+      warnings.push({
+        field: 'weeklyOwnHours',
+        message: `Egeninnsatsen på ${Math.round(renovation.hours)} timer krever ca. ${Math.ceil(weeksNeeded)} uker med ${v.weeklyOwnHours} t/uke, men oppussingstiden er ca. ${Math.floor(weeksAvailable)} uker. Øk innsatsen, forleng tiden eller leie inn mer.`,
+      });
+    }
   }
   return { evaluation, renovation, input, missing, warnings };
 }
@@ -185,10 +295,11 @@ export function defaultDutyRule(tenure: Tenure): DutyRule {
   }
 }
 
-export type ValueOrigin = 'annonse' | 'analyse' | 'profil' | 'modellregel' | 'standard';
+export type ValueOrigin = 'annonse' | 'analyse' | 'scenario' | 'profil' | 'modellregel' | 'standard';
 export const VALUE_ORIGIN_LABEL: Record<ValueOrigin, string> = {
   annonse: 'Fra annonsen',
   analyse: 'Analyseanslag',
+  scenario: 'Fra scenarioet i analysen',
   profil: 'Din profilforutsetning',
   modellregel: 'Modellregel',
   standard: 'Standardvalg',
@@ -208,13 +319,32 @@ export function buildBaseValues(args: {
   snapshot: PropertySnapshot;
   analysis: SharedAnalysis;
   defaults: ProfileDefaults;
+  /** Hvilket agentscenario (basis/alternativ) grunnverdiene bygger på. Standard: analysens basis. */
+  analysisScenarioId?: string | null;
 }): BaseValues {
   const { property, snapshot, analysis, defaults } = args;
   const est = analysis.estimates;
   const rule = est.dutyRule ?? defaultDutyRule(property.tenure);
-  const option =
-    est.renovationOptions.find((o) => o.id === est.defaultRenovationOptionId) ?? est.renovationOptions[0] ?? null;
+  const scenario = findAnalysisScenario(analysis, args.analysisScenarioId);
+  const isLegacy = scenario.source === 'legacy';
+  // Eldre analyser: oppussingsnivå styres av gamle alternativer. Nye scenarioer har egne tiltak.
+  const option = isLegacy ? (est.renovationOptions.find((o) => o.id === est.defaultRenovationOptionId) ?? est.renovationOptions[0] ?? null) : null;
   const category = propertyCategory(property.propertyType);
+
+  // Varighet: eldre analyser oppgir total varighet. Scenarioer oppgir oppussingstid, og tid til oppgjør legges til fra profilen.
+  let months: number;
+  let monthsOrigin: ValueOrigin;
+  if (scenario.monthsAreTotal) {
+    months = est.months ?? scenario.suggestedMonths ?? defaults.months;
+    monthsOrigin = est.months !== null || scenario.suggestedMonths ? 'analyse' : 'profil';
+  } else if (scenario.suggestedMonths !== null) {
+    months = scenario.suggestedMonths + defaults.saleSettlementMonths;
+    monthsOrigin = 'analyse';
+  } else {
+    months = defaults.months;
+    monthsOrigin = 'profil';
+  }
+  const settlement = defaults.saleSettlementMonths < months ? defaults.saleSettlementMonths : null;
 
   const values: ScenarioValues = {
     buyerType: category === 'leilighet' ? defaults.buyerTypeApartment : defaults.buyerTypeHouse,
@@ -225,24 +355,34 @@ export function buildBaseValues(args: {
     dutyPct: rule.ratePct,
     dutyCustomBase: rule.customBase,
     buyFees: est.buyFees ?? defaults.buyFees,
-    renovationMode: option ? 'tiltak' : 'rundsum',
+    renovationMode: scenario.items.length > 0 ? 'tiltak' : 'rundsum',
     renovationOptionId: option?.id ?? null,
-    renovationItems: option ? cloneItems(option.items) : [],
+    renovationItems: cloneItems(scenario.items),
     renovationLumpSum: null,
     lumpSumHours: null,
-    vatIncluded: option?.vatIncluded ?? true,
+    vatIncluded: scenario.vatIncluded,
     reservePct: defaults.reservePct,
-    months: est.months ?? option?.suggestedMonths ?? defaults.months,
+    months,
+    settlementMonths: settlement,
     monthlyCost: est.monthlyTotal,
     interestPct: defaults.interestPct,
-    financingPct: defaults.financingPct,
-    saleBasis: est.sale.basis,
-    saleLow: est.sale.low,
-    saleBase: est.sale.base,
-    saleHigh: est.sale.high,
+    purchaseFinancingPct: defaults.purchaseFinancingPct,
+    renovationFinancingPct: defaults.renovationFinancingPct,
+    financeRunningCosts: defaults.financeRunningCosts,
+    availableEquity: defaults.availableEquity,
+    saleBasis: scenario.sale.basis,
+    saleLow: scenario.sale.low,
+    saleBase: scenario.sale.base,
+    saleHigh: scenario.sale.high,
     saleFixedCost: defaults.saleFixedCost,
     saleCommissionPct: defaults.saleCommissionPct,
-    hourValue: defaults.hourValue,
+    hourValue: null,
+    minProfitPerOwnHour: defaults.minProfitPerOwnHour,
+    weeklyOwnHours: defaults.weeklyOwnHours,
+    laborModes: { ...defaults.laborModes },
+    maxOwnWork: defaults.maxOwnWork,
+    regulatedSelfWorkConfirmed: defaults.regulatedSelfWorkConfirmed,
+    analysisScenarioId: scenario.id,
     profitTarget: defaults.profitTarget,
     taxMode: 'uavklart',
     taxPct: null,
@@ -250,6 +390,7 @@ export function buildBaseValues(args: {
     walkAway: null,
     notes: '',
   };
+  const saleOrigin: ValueOrigin = scenario.saleSource === 'scenario' ? 'scenario' : 'analyse';
   const origins: BaseValues['origins'] = {
     buyerType: 'profil',
     purchasePrice: est.suggestedPurchasePrice !== null ? 'analyse' : 'annonse',
@@ -258,19 +399,28 @@ export function buildBaseValues(args: {
     dutyBasis: 'modellregel',
     dutyPct: 'modellregel',
     buyFees: est.buyFees !== null ? 'analyse' : 'profil',
-    renovationItems: 'analyse',
+    renovationItems: isLegacy ? 'analyse' : 'scenario',
     reservePct: 'profil',
-    months: est.months !== null || option?.suggestedMonths ? 'analyse' : 'profil',
+    months: monthsOrigin,
+    settlementMonths: 'profil',
     monthlyCost: 'analyse',
     interestPct: 'profil',
-    financingPct: 'profil',
-    saleBasis: 'analyse',
-    saleLow: 'analyse',
-    saleBase: 'analyse',
-    saleHigh: 'analyse',
+    purchaseFinancingPct: 'profil',
+    renovationFinancingPct: 'profil',
+    financeRunningCosts: 'profil',
+    availableEquity: 'profil',
+    saleBasis: saleOrigin,
+    saleLow: saleOrigin,
+    saleBase: saleOrigin,
+    saleHigh: saleOrigin,
     saleFixedCost: 'profil',
     saleCommissionPct: 'profil',
-    hourValue: 'profil',
+    minProfitPerOwnHour: 'profil',
+    weeklyOwnHours: 'profil',
+    laborModes: 'profil',
+    maxOwnWork: 'profil',
+    regulatedSelfWorkConfirmed: 'profil',
+    analysisScenarioId: 'standard',
     profitTarget: 'profil',
     taxMode: 'standard',
     vatIncluded: 'standard',
@@ -300,16 +450,25 @@ export const SCENARIO_FIELDS: { key: keyof ScenarioValues; label: string; kind: 
   { key: 'vatIncluded', label: 'Anslag inkl. mva.', kind: 'bool' },
   { key: 'reservePct', label: 'Oppussingsreserve', kind: 'pct' },
   { key: 'months', label: 'Prosjektvarighet', kind: 'months' },
+  { key: 'settlementMonths', label: 'Tid til økonomisk oppgjør', kind: 'months' },
   { key: 'monthlyCost', label: 'Månedlige kostnader', kind: 'money' },
   { key: 'interestPct', label: 'Rente', kind: 'pct' },
-  { key: 'financingPct', label: 'Låneandel', kind: 'pct' },
+  { key: 'purchaseFinancingPct', label: 'Låneandel kjøp', kind: 'pct' },
+  { key: 'renovationFinancingPct', label: 'Låneandel oppussing', kind: 'pct' },
+  { key: 'financeRunningCosts', label: 'Løpende kostnader lånefinansieres', kind: 'bool' },
+  { key: 'availableEquity', label: 'Tilgjengelig egenkapital', kind: 'money' },
   { key: 'saleBasis', label: 'Prisgrunnlag for salg', kind: 'enum' },
   { key: 'saleLow', label: 'Salgspris lav', kind: 'money' },
   { key: 'saleBase', label: 'Salgspris normal', kind: 'money' },
   { key: 'saleHigh', label: 'Salgspris høy', kind: 'money' },
   { key: 'saleFixedCost', label: 'Faste salgskostnader', kind: 'money' },
   { key: 'saleCommissionPct', label: 'Meglerprovisjon', kind: 'pct' },
-  { key: 'hourValue', label: 'Timeverdi eget arbeid', kind: 'money' },
+  { key: 'minProfitPerOwnHour', label: 'Minimum fortjeneste per egeninnsatstime', kind: 'money' },
+  { key: 'weeklyOwnHours', label: 'Egeninnsats per uke', kind: 'hours' },
+  { key: 'laborModes', label: 'Hvem utfører arbeidet', kind: 'text' },
+  { key: 'maxOwnWork', label: 'Maks egeninnsats', kind: 'bool' },
+  { key: 'regulatedSelfWorkConfirmed', label: 'Kompetanse for regulert arbeid bekreftet', kind: 'bool' },
+  { key: 'analysisScenarioId', label: 'Scenario i analysen', kind: 'enum' },
   { key: 'profitTarget', label: 'Fortjenestemål', kind: 'money' },
   { key: 'buyerType', label: 'Kjøpertype', kind: 'enum' },
   { key: 'taxMode', label: 'Skatteforutsetning', kind: 'enum' },

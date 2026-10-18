@@ -11,19 +11,26 @@ import type { DutyBasis, PriceBasis, TaxMode } from '../domain/enums';
  * avrundes én gang til nærmeste øre; summer gjøres på øre-heltall, aldri på avrundede
  * visningstall.
  *
- * Modell (avdragsfritt prosjektlån):
+ * Modell 1.1 (avdragsfrie prosjektlån, kjøpslån og oppussingslån adskilt):
  *   K      = A × d + F
  *   RB     = R × (1 + b)
- *   I      = f × ((P + K) + RB / 2) × r × m / 12
+ *   I      = r × m/12 × ( fP × (P + K)  +  fR × RB / 2  +  [løpende lånefinansiert] O / 2 )
+ *            – kjøpslånet er trukket fra start, oppussingslånet trekkes gradvis (snitt halvveis)
  *   O      = M × m
  *   S      = V − D1 (Totalpris) | V (Kontantpris)
  *   Csale  = Sf + s × S
  *   C      = P + K + RB + I + O + Csale
  *   resultat før skatt og eget arbeid = S − C
- *   resultat etter verdsatt eget arbeid = S − C − H × h
- *   prosjektavkastning = (S − C) / (C + D0)
+ *   fortjeneste per egeninnsatstime   = (S − C) / H        – egen tid er IKKE en kostnad
+ *   prosjektavkastning = (S − C) / (C + D0)                – ikke egenkapitalavkastning
+ *   egenkapitalbehov   = (P + K − kjøpslån) + (RB − oppussingslån) + [ikke lånefinansiert] (I + O)
+ *                        – salgskostnader inngår i resultatet, men ikke i initialt egenkapitalkrav
+ *   finansieringsgap   = max(0, egenkapitalbehov − tilgjengelig egenkapital)
+ *
+ * Endringer fra 1.0.0: `f` er delt i `fP` (kjøp) og `fR` (oppussing). Med fP = fR = f gir 1.1.0 nøyaktig samme
+ * resultat som 1.0.0. Timeverdi (H × h) er beholdt som utfaset, rent informativ størrelse for eldre data.
  */
-export const CALC_MODEL_VERSION = '1.0.0';
+export const CALC_MODEL_VERSION = '1.1.0';
 export const CALC_MODEL_LABEL = `Flippsjekk kalkylemodell ${CALC_MODEL_VERSION}`;
 
 /** Toleranse for maksbud og nullpunkt (kroner). */
@@ -44,13 +51,23 @@ export interface EngineInput {
   months: number | null;
   monthlyCost: number | null;
   interestRate: number | null;
-  financingShare: number | null;
+  /** Låneandel av kjøpesum og kjøpskostnader (0–1). */
+  purchaseFinancingShare: number | null;
+  /** Låneandel av oppussing inkl. reserve (0–1). Trekkes gradvis. */
+  renovationFinancingShare: number | null;
+  /** Lånefinansieres løpende kostnader (drift)? Standard nei. */
+  financeRunningCosts: boolean;
+  /** Tilgjengelig egenkapital (kr) for å vise finansieringsgap. null = ukjent. */
+  availableEquity: number | null;
   saleFixedCost: number | null;
   saleCommissionRate: number | null;
   saleBasis: PriceBasis;
   salePrices: Record<CaseKey, number | null>;
   ownHours: number | null;
+  /** @deprecated Eldre timeverdi. Brukes kun til informativ «resultat etter verdsatt eget arbeid». */
   hourValue: number | null;
+  /** Minimum ønsket fortjeneste per egeninnsatstime (kr/t). */
+  minProfitPerOwnHour: number | null;
   profitTarget: number | null;
   tax: { mode: TaxMode; rate: number | null };
 }
@@ -78,7 +95,13 @@ export interface ResolvedInput {
   m: number;
   M: number;
   r: number;
-  f: number;
+  /** Låneandel kjøp. */
+  fP: number;
+  /** Låneandel oppussing. */
+  fR: number;
+  financeRunning: boolean;
+  availableEquity: number | null;
+  minPerHour: number | null;
   Sf: number;
   s: number;
   basis: PriceBasis;
@@ -113,10 +136,28 @@ export interface Breakdown {
   capitalBase: number;
   /** Prosjektavkastning (ikke egenkapitalavkastning). null ved nullnevner. */
   projectReturn: number | null;
-  /** Høyeste prosjektlån når hele oppussingen er trukket. */
+  /** Kjøpslån (andel av kjøpesum + kjøpskostnader). */
+  purchaseLoan: number;
+  /** Oppussingslån (andel av oppussing inkl. reserve) når hele oppussingen er trukket. */
+  renovationLoan: number;
+  /** Lånefinansierte løpende kostnader (drift og renter) når slik finansiering er valgt, ellers 0. */
+  runningLoan: number;
+  /** Høyeste samlede prosjektlån når hele oppussingen er trukket. */
   loanPeak: number;
-  /** Egenkapital: ufinansiert andel av kjøp/oppussing + renter og drift i prosjektperioden. */
+  /** Egenkapital: ufinansiert andel av kjøp/oppussing + (ikke lånefinansierte) renter og drift. Uten salgskostnader. */
   equityNeed: number;
+  /** Tilgjengelig egenkapital fra forutsetningene. null = ukjent. */
+  availableEquity: number | null;
+  /** Mangel på egenkapital (≥ 0). null når tilgjengelig egenkapital er ukjent. */
+  equityGap: number | null;
+  /** Egne timer som inngår i beregningen. null = ukjent. */
+  ownHours: number | null;
+  /** Fortjeneste før skatt per egeninnsatstime. null når egne timer er ukjent eller 0. Egen tid trekkes ikke som kostnad. */
+  profitPerOwnHour: number | null;
+  /** Ønsket minimum per time (fra forutsetningene). */
+  minProfitPerOwnHour: number | null;
+  /** Oppfyller fortjenesten per time minimumskravet? null når ett av tallene er ukjent. */
+  meetsHourlyRequirement: boolean | null;
 }
 
 export const INPUT_LABEL: Record<string, string> = {
@@ -131,7 +172,8 @@ export const INPUT_LABEL: Record<string, string> = {
   months: 'Prosjektvarighet',
   monthlyCost: 'Månedlige kostnader',
   interestRate: 'Rente',
-  financingShare: 'Låneandel',
+  purchaseFinancingShare: 'Låneandel kjøp',
+  renovationFinancingShare: 'Låneandel oppussing',
   saleFixedCost: 'Faste salgskostnader',
   saleCommissionRate: 'Meglerprovisjon',
   saleLow: 'Salgspris – lavt scenario',
@@ -139,6 +181,8 @@ export const INPUT_LABEL: Record<string, string> = {
   saleHigh: 'Salgspris – høyt scenario',
   ownHours: 'Egne timer',
   hourValue: 'Timeverdi for eget arbeid',
+  minProfitPerOwnHour: 'Minimum fortjeneste per egeninnsatstime',
+  availableEquity: 'Tilgjengelig egenkapital',
   profitTarget: 'Fortjenestemål',
   taxRate: 'Skattesats (forutsetning)',
 };
@@ -192,7 +236,8 @@ export function resolveInput(input: EngineInput): ResolveResult {
   need('months', input.months);
   need('monthlyCost', input.monthlyCost);
   need('interestRate', input.interestRate);
-  need('financingShare', input.financingShare);
+  need('purchaseFinancingShare', input.purchaseFinancingShare);
+  need('renovationFinancingShare', input.renovationFinancingShare);
   need('saleFixedCost', input.saleFixedCost);
   need('saleCommissionRate', input.saleCommissionRate);
   need('saleBase', input.salePrices.base);
@@ -219,11 +264,14 @@ export function resolveInput(input: EngineInput): ResolveResult {
   }
   nonNegative('ownHours', input.ownHours);
   nonNegative('hourValue', input.hourValue);
+  nonNegative('minProfitPerOwnHour', input.minProfitPerOwnHour);
+  nonNegative('availableEquity', input.availableEquity);
 
   range('dutyRate', input.duty.basis === 'ingen' ? null : input.duty.rate, 0, 0.1);
   range('reserveRate', input.reserveRate, 0, 1);
   range('interestRate', input.interestRate, 0, 0.3);
-  range('financingShare', input.financingShare, 0, 1);
+  range('purchaseFinancingShare', input.purchaseFinancingShare, 0, 1);
+  range('renovationFinancingShare', input.renovationFinancingShare, 0, 1);
   range('saleCommissionRate', input.saleCommissionRate, 0, 0.1);
   if (input.tax.mode === 'antatt') range('taxRate', input.tax.rate, 0, 1);
   if (input.months !== null && (input.months <= 0 || input.months > 60)) {
@@ -265,7 +313,11 @@ export function resolveInput(input: EngineInput): ResolveResult {
       m: input.months as number,
       M: input.monthlyCost as number,
       r: input.interestRate as number,
-      f: input.financingShare as number,
+      fP: input.purchaseFinancingShare as number,
+      fR: input.renovationFinancingShare as number,
+      financeRunning: input.financeRunningCosts,
+      availableEquity: input.availableEquity,
+      minPerHour: input.minProfitPerOwnHour,
       Sf: input.saleFixedCost as number,
       s: input.saleCommissionRate as number,
       basis: input.saleBasis,
@@ -308,8 +360,10 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
   const Ro = toOre(x.R);
   const reserveO = Math.round(Ro * x.b);
   const RBo = Ro + reserveO;
-  const Io = Math.round(x.f * (Po + Ko + RBo / 2) * x.r * (x.m / 12));
   const Oo = Math.round(toOre(x.M) * x.m);
+  // Kjøpslånet er trukket fra start; oppussingslånet trekkes gradvis (snitt halvveis); lånefinansierte løpende kostnader likedan.
+  const interestBaseO = x.fP * (Po + Ko) + (x.fR * RBo) / 2 + (x.financeRunning ? Oo / 2 : 0);
+  const Io = Math.round(interestBaseO * x.r * (x.m / 12));
   const Vo = toOre(V);
   const So = x.basis === 'total' ? Vo - D1o : Vo;
   const CsaleO = toOre(x.Sf) + Math.round(x.s * So);
@@ -317,8 +371,14 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
   const profitO = So - Co;
   const ownWorkO = x.H !== null && x.h !== null ? Math.round(x.H * toOre(x.h)) : null;
   const capitalO = Co + D0o;
-  const loanO = Math.round(x.f * (Po + Ko + RBo));
-  const equityO = Po + Ko + RBo - loanO + Io + Oo;
+  const purchaseLoanO = Math.round(x.fP * (Po + Ko));
+  const renovationLoanO = Math.round(x.fR * RBo);
+  const runningLoanO = x.financeRunning ? Oo + Io : 0;
+  const loanO = purchaseLoanO + renovationLoanO + runningLoanO;
+  const equityO = Po + Ko - purchaseLoanO + (RBo - renovationLoanO) + (x.financeRunning ? 0 : Io + Oo);
+  const ownHours = x.H;
+  const profit = fromOre(profitO);
+  const profitPerOwnHour = ownHours !== null && ownHours > 0 ? profit / ownHours : null;
 
   return {
     modelVersion: CALC_MODEL_VERSION,
@@ -345,8 +405,17 @@ export function computeCore(x: ResolvedInput, P: number, V: number): Breakdown {
     profitAfterOwnWork: ownWorkO === null ? null : fromOre(profitO - ownWorkO),
     capitalBase: fromOre(capitalO),
     projectReturn: capitalO > 0 ? profitO / capitalO : null,
+    purchaseLoan: fromOre(purchaseLoanO),
+    renovationLoan: fromOre(renovationLoanO),
+    runningLoan: fromOre(runningLoanO),
     loanPeak: fromOre(loanO),
     equityNeed: fromOre(equityO),
+    availableEquity: x.availableEquity,
+    equityGap: x.availableEquity === null ? null : Math.max(0, fromOre(equityO) - x.availableEquity),
+    ownHours,
+    profitPerOwnHour,
+    minProfitPerOwnHour: x.minPerHour,
+    meetsHourlyRequirement: profitPerOwnHour === null || x.minPerHour === null ? null : profitPerOwnHour >= x.minPerHour,
   };
 }
 

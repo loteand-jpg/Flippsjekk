@@ -247,3 +247,88 @@ export type TaxMode = (typeof TAX_MODES)[number];
 
 export const RENOVATION_MODES = ['tiltak', 'rundsum'] as const;
 export type RenovationMode = (typeof RENOVATION_MODES)[number];
+
+// ---------------------------------------------------------------------------
+// Egeninnsats, scenarioer og markedsvekting (modell 1.1)
+// ---------------------------------------------------------------------------
+
+/** Arbeidskategorier for egeninnsats og prisbank-klargjøring. */
+export const LABOR_CATEGORIES = ['riving', 'maling_sparkling', 'gulv', 'tomrer', 'kjokkenmontering', 'ror', 'elektro', 'bad_vatrom', 'annet'] as const;
+export type LaborCategory = (typeof LABOR_CATEGORIES)[number];
+export const LABOR_CATEGORY_LABEL: Record<LaborCategory, string> = {
+  riving: 'Riving',
+  maling_sparkling: 'Maling og sparkling',
+  gulv: 'Gulv',
+  tomrer: 'Tømrer',
+  kjokkenmontering: 'Kjøkkenmontering',
+  ror: 'Rør',
+  elektro: 'Elektro',
+  bad_vatrom: 'Bad og våtrom',
+  annet: 'Annet',
+};
+/** Regulert arbeid: kan ikke regnes som gratis egeninnsats uten bekreftet kompetanse og ansvar. */
+export const REGULATED_LABOR: readonly LaborCategory[] = ['ror', 'elektro', 'bad_vatrom'];
+
+export const WORK_MODES = ['selv', 'delvis', 'innleid'] as const;
+export type WorkMode = (typeof WORK_MODES)[number];
+export const WORK_MODE_LABEL: Record<WorkMode, string> = { selv: 'Selv', delvis: 'Delvis', innleid: 'Innleid' };
+
+/** Gjennomførbarhetsstatus for et agentdefinert scenario. */
+export const FEASIBILITY_STATUSES = ['klar', 'betinget', 'uavklart', 'ikke_gjennomforbar'] as const;
+export type FeasibilityStatus = (typeof FEASIBILITY_STATUSES)[number];
+export const FEASIBILITY_LABEL: Record<FeasibilityStatus, string> = {
+  klar: 'Gjennomførbart',
+  betinget: 'Betinget',
+  uavklart: 'Uavklart',
+  ikke_gjennomforbar: 'Ikke gjennomførbart',
+};
+
+export const SCENARIO_KINDS = ['basis', 'alternativ'] as const;
+export type ScenarioKind = (typeof SCENARIO_KINDS)[number];
+export const SCENARIO_KIND_LABEL: Record<ScenarioKind, string> = { basis: 'Basis', alternativ: 'Alternativ' };
+
+export const UNCERTAINTY_LEVELS = ['lav', 'middels', 'hoy', 'uavklart'] as const;
+export type UncertaintyLevel = (typeof UNCERTAINTY_LEVELS)[number];
+export const UNCERTAINTY_LABEL: Record<UncertaintyLevel, string> = { lav: 'Lav', middels: 'Middels', hoy: 'Høy', uavklart: 'Uavklart' };
+
+export const CHANGE_LEVELS = ['ingen', 'oppgradering', 'nytt', 'uavklart'] as const;
+export type ChangeLevel = (typeof CHANGE_LEVELS)[number];
+export const CHANGE_LEVEL_LABEL: Record<ChangeLevel, string> = { ingen: 'Ingen endring', oppgradering: 'Oppgradering', nytt: 'Nytt', uavklart: 'Uavklart' };
+
+/** Rolle for et sammenlignbart objekt i verdivurderingen. */
+export const REFERENCE_ROLES = ['primaer', 'sekundaer', 'markedsreferanse'] as const;
+export type ReferenceRole = (typeof REFERENCE_ROLES)[number];
+export const REFERENCE_ROLE_LABEL: Record<ReferenceRole, string> = {
+  primaer: 'Primærreferanse',
+  sekundaer: 'Sekundærreferanse',
+  markedsreferanse: 'Markedsreferanse',
+};
+
+/** Standardklasse, fra oppussingsobjekt (lavest) til nyoppusset (høyest). */
+export const STANDARD_CLASSES = ['oppussingsobjekt', 'dagens_standard', 'middels', 'oppgradert', 'nyoppusset'] as const;
+export type StandardClass = (typeof STANDARD_CLASSES)[number];
+export const STANDARD_CLASS_LABEL: Record<StandardClass, string> = {
+  oppussingsobjekt: 'Oppussingsobjekt',
+  dagens_standard: 'Slitt / dagens standard',
+  middels: 'Middels',
+  oppgradert: 'Oppgradert',
+  nyoppusset: 'Nyoppusset',
+};
+
+/** Hvor nær referansen ligger. Fallback-rekkefølge for områdeprofil følger samme nivåer. */
+export const LOCATION_LEVELS = ['samme_bygg', 'mikroomrade', 'bydel', 'kommune', 'region'] as const;
+export type LocationLevel = (typeof LOCATION_LEVELS)[number];
+export const LOCATION_LEVEL_LABEL: Record<LocationLevel, string> = {
+  samme_bygg: 'Samme bygg',
+  mikroomrade: 'Mikroområde',
+  bydel: 'Bydel',
+  kommune: 'Kommune/by',
+  region: 'Region',
+};
+
+export const LAYOUT_MATCHES = ['lik', 'delvis', 'ulik'] as const;
+export type LayoutMatch = (typeof LAYOUT_MATCHES)[number];
+export const LAYOUT_MATCH_LABEL: Record<LayoutMatch, string> = { lik: 'Lik planløsning', delvis: 'Delvis lik', ulik: 'Ulik planløsning' };
+
+export const DATA_QUALITY_LEVELS = ['hoy', 'middels', 'lav'] as const;
+export type DataQualityLevel = (typeof DATA_QUALITY_LEVELS)[number];

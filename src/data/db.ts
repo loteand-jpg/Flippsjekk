@@ -34,6 +34,7 @@ import {
   type Viewing,
 } from '../domain/schemas';
 import { migrateLegacyComparable } from '../domain/comparables';
+import { migrateProfileDefaultsRaw, migrateScenarioValuesRaw, type ProfileMigrationHints } from '../domain/migrate';
 import type { SaleStatus } from '../domain/enums';
 import type { Clock } from '../lib/clock';
 import type { StorageLike } from './storage';
@@ -45,7 +46,7 @@ import type { StorageLike } from './storage';
  * calendarOverrides, usageEvents, analyses (visibility=private), profiles, subscriptions.
  */
 export const DB_FORMAT = 'flipprom-mockdb';
-export const DB_SCHEMA_VERSION = 3;
+export const DB_SCHEMA_VERSION = 4;
 export const DB_STORAGE_KEY = 'flipprom.mockdb';
 
 export interface RefreshScript {
@@ -117,6 +118,34 @@ export interface LoadReport {
 
 /** Migreringer: nøkkel = versjon det migreres FRA. */
 export const MIGRATIONS: Record<number, (state: Record<string, unknown>) => Record<string, unknown>> = {
+  3: (s) => {
+    // v4 (modell 1.1): profilen får nye standarder (egeninnsats, egenkapital, separate lån), og scenarioer får
+    // separate kjøps-/oppussingslån. Eldre `financingPct` bevares som begge deler, så eldre kalkyler gir samme resultat.
+    // Ingen rader droppes. Eldre `hourValue` beholdes som utfaset felt.
+    const next: Record<string, unknown> = { ...s };
+    const hintsByUser = new Map<string, ProfileMigrationHints>();
+    if (Array.isArray(s.profiles)) {
+      next.profiles = (s.profiles as Record<string, unknown>[]).map((p) => {
+        const defaults = migrateProfileDefaultsRaw(p.defaults) as Record<string, unknown> | undefined;
+        if (typeof p.userId === 'string' && defaults) {
+          hintsByUser.set(p.userId, {
+            weeklyOwnHours: defaults.weeklyOwnHours as number,
+            minProfitPerOwnHour: defaults.minProfitPerOwnHour as number,
+            availableEquity: defaults.availableEquity as number,
+            laborModes: defaults.laborModes,
+          });
+        }
+        return { ...p, defaults };
+      });
+    }
+    if (Array.isArray(s.scenarios)) {
+      next.scenarios = (s.scenarios as Record<string, unknown>[]).map((sc) => ({
+        ...sc,
+        values: migrateScenarioValuesRaw(sc.values, hintsByUser.get(String(sc.ownerId)) ?? {}),
+      }));
+    }
+    return next;
+  },
   2: (s) => {
     // v3: sammenlignbare objekter har eksplisitte prisfelt, og brukere kan legge inn egne.
     const next: Record<string, unknown> = { ...s };

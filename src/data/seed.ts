@@ -44,7 +44,7 @@ export function createSeed(now: Date): DbState {
       userId: DEMO_USERS.bjorn.id,
       displayName: DEMO_USERS.bjorn.displayName,
       email: DEMO_USERS.bjorn.email,
-      defaults: { ...EXAMPLE_PROFILE_DEFAULTS, buyerTypeHouse: 'privat', hourValue: 500, interestPct: 6.5, profitTarget: 300_000 },
+      defaults: { ...EXAMPLE_PROFILE_DEFAULTS, buyerTypeHouse: 'privat', interestPct: 6.5, profitTarget: 300_000 },
       updatedAt: iso(-60 * DAY),
     },
   ];

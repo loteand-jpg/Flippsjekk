@@ -1,10 +1,22 @@
 import { useMemo } from 'react';
 import { CALC_MODEL_LABEL, CASE_LABEL, sensitivity, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
 import { VALUE_ORIGIN_LABEL } from '../../calc/scenario';
-import { BUYER_TYPE_LABEL, DUTY_BASIS_LABEL, DUTY_BASES, PRICE_BASIS_LABEL, type DutyBasis } from '../../domain/enums';
+import {
+  BUYER_TYPE_LABEL,
+  DUTY_BASIS_LABEL,
+  DUTY_BASES,
+  LABOR_CATEGORIES,
+  LABOR_CATEGORY_LABEL,
+  PRICE_BASIS_LABEL,
+  REGULATED_LABOR,
+  WORK_MODE_LABEL,
+  WORK_MODES,
+  type DutyBasis,
+  type WorkMode,
+} from '../../domain/enums';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatHours, formatMonths, formatNOK, formatNOKSigned, formatPct, formatPctPoints, NO_BASIS, UNKNOWN } from '../../lib/format';
-import { Field, ScenarioNumberField, Segmented, Select } from '../ui/forms';
+import { Field, ScenarioNumberField, Segmented, Select, Switch } from '../ui/forms';
 import { InfoTip } from '../ui/overlay';
 import { Alert } from '../ui/primitives';
 import { BarList, SensitivityChart } from './charts';
@@ -34,13 +46,15 @@ const fieldAlias: Partial<Record<NumKey, string>> = {
   months: 'months',
   monthlyCost: 'monthlyCost',
   interestPct: 'interestRate',
-  financingPct: 'financingShare',
+  purchaseFinancingPct: 'purchaseFinancingShare',
+  renovationFinancingPct: 'renovationFinancingShare',
+  availableEquity: 'availableEquity',
+  minProfitPerOwnHour: 'minProfitPerOwnHour',
   saleLow: 'saleLow',
   saleBase: 'saleBase',
   saleHigh: 'saleHigh',
   saleFixedCost: 'saleFixedCost',
   saleCommissionPct: 'saleCommissionRate',
-  hourValue: 'hourValue',
   taxPct: 'taxRate',
 };
 
@@ -128,9 +142,33 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
         </div>
       </Panel>
 
-      <Panel title="Prosjekt og finansiering" sub="Forutsetninger – ikke finansieringstilbud.">
+      <Panel title="Prosjekt og finansiering" sub="Forutsetninger – ikke finansieringstilbud. Kjøpslån og oppussingslån er adskilt.">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ScenarioNumberField label="Prosjektvarighet" unit="mnd" decimals={1} formatBase={(v) => formatMonths(v)} slider={{ min: 1, max: 24, step: 0.5 }} {...f('months')} />
+          <ScenarioNumberField
+            label="Oppussingstid"
+            unit="mnd"
+            decimals={1}
+            formatBase={(v) => formatMonths(v)}
+            value={d.months === null ? null : Math.max(0, d.months - (d.settlementMonths ?? 0))}
+            onChange={(v) => ctx.setDraft((x) => ({ ...x, months: v === null ? null : v + (x.settlementMonths ?? 0) }))}
+            baseValue={ctx.base?.values.months == null ? undefined : Math.max(0, ctx.base.values.months - (ctx.base.values.settlementMonths ?? 0))}
+            origin={ctx.base?.origins.months ? VALUE_ORIGIN_LABEL[ctx.base.origins.months] : undefined}
+            disabled={!ctx.editable}
+            error={ctx.result.evaluation.errors.find((e) => e.field === 'months')?.message ?? null}
+            hint="Selve oppussingen, uten tiden til økonomisk oppgjør."
+          />
+          <ScenarioNumberField
+            label="Tid fra ferdig oppussing til økonomisk oppgjør"
+            unit="mnd"
+            decimals={1}
+            formatBase={(v) => formatMonths(v)}
+            value={d.settlementMonths}
+            onChange={(v) => ctx.setDraft((x) => ({ ...x, months: x.months === null ? null : x.months - (x.settlementMonths ?? 0) + (v ?? 0), settlementMonths: v }))}
+            baseValue={ctx.base?.values.settlementMonths}
+            origin={ctx.base?.origins.settlementMonths ? VALUE_ORIGIN_LABEL[ctx.base.origins.settlementMonths] : undefined}
+            disabled={!ctx.editable}
+            hint={`Total prosjektvarighet: ${formatMonths(d.months)}. Typisk 3–4 måneder.`}
+          />
           <ScenarioNumberField
             label="Månedlige kostnader"
             unit="kr"
@@ -138,26 +176,96 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
             {...f('monthlyCost')}
             hint="Hele felleskostnaden (også renter/avdrag på fellesgjeld), strøm, forsikring og kommunale avgifter."
           />
-          <ScenarioNumberField label="Rente (prosjektlån)" unit="%" decimals={2} formatBase={pct} slider={{ min: 0, max: 15, step: 0.05 }} {...f('interestPct')} />
-          <ScenarioNumberField label="Låneandel" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('financingPct')} hint="Andel av kjøp, kjøpskostnader og oppussing som lånefinansieres." />
+          <ScenarioNumberField label="Rente" unit="%" decimals={2} formatBase={pct} slider={{ min: 0, max: 15, step: 0.05 }} {...f('interestPct')} />
+          <ScenarioNumberField label="Låneandel kjøpesum" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('purchaseFinancingPct')} hint="Andel av kjøpesum og kjøpskostnader som lånefinansieres." />
+          <ScenarioNumberField label="Låneandel oppussing" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('renovationFinancingPct')} hint="Trekkes gradvis – renter beregnes på snitt halvveis uttrekk." />
+          <div>
+            <p className="mb-1 text-sm font-medium text-slate-800">Lånefinansiere øvrige løpende utgifter</p>
+            <Segmented
+              label="Lånefinansiere øvrige løpende utgifter"
+              value={d.financeRunningCosts ? 'ja' : 'nei'}
+              disabled={!ctx.editable}
+              onChange={(v) => ctx.setDraft((x) => ({ ...x, financeRunningCosts: v === 'ja' }))}
+              options={[
+                { value: 'nei', label: 'Nei' },
+                { value: 'ja', label: 'Ja' },
+              ]}
+            />
+            <p className="mt-1 text-xs text-slate-600">Nei: drift og renter dekkes av egenkapital. Ja: de lånefinansieres (forenklet halvveis uttrekk, ingen rente på rente).</p>
+          </div>
+          <ScenarioNumberField label="Tilgjengelig egenkapital" unit="kr" formatBase={money} {...f('availableEquity')} hint="Sammenlignes med egenkapitalbehovet (finansieringsgap)." />
           <ScenarioNumberField label="Oppussingsreserve" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 60, step: 1 }} {...f('reservePct')} />
           <ScenarioNumberField label="Fortjenestemål" unit="kr" formatBase={money} {...f('profitTarget')} hint="Brukes for modellert maksbud." />
         </div>
       </Panel>
 
-      <Panel title="Egeninnsats" sub="Verdsettes separat – ikke automatisk en skattemessig fradragspost.">
+      <Panel title="Egeninnsats" sub="Egen tid er ikke en kostnad. Du setter i stedet et krav til fortjeneste per egeninnsatstime.">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {d.renovationMode === 'tiltak' ? (
             <div>
               <p className="mb-1 text-sm font-medium text-slate-800">Egne timer</p>
               <p className="num rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">{formatHours(ctx.result.renovation.hours)}</p>
-              <p className="mt-1 text-xs text-slate-600">Summert fra inkluderte oppussingstiltak. Endres under «Oppussing».</p>
+              <p className="mt-1 text-xs text-slate-600">Summert fra tiltakene etter arbeidsmodus. Endres under «Oppussing».</p>
             </div>
           ) : (
             <ScenarioNumberField label="Egne timer" unit="t" formatBase={(v) => formatHours(v)} {...f('lumpSumHours')} />
           )}
-          <ScenarioNumberField label="Timeverdi for eget arbeid" unit="kr/t" formatBase={money} {...f('hourValue')} />
+          <ScenarioNumberField label="Egeninnsats per uke (samlet team)" unit="t/uke" formatBase={(v) => formatHours(v)} {...f('weeklyOwnHours')} />
+          <ScenarioNumberField label="Minimum fortjeneste per egeninnsatstime" unit="kr/t" formatBase={money} {...f('minProfitPerOwnHour')} hint="Lønnsomhetskrav – ikke en kostnad i kalkylen." />
+          <div className="space-y-2">
+            <Switch checked={d.maxOwnWork} disabled={!ctx.editable} onChange={(v) => ctx.setDraft((x) => ({ ...x, maxOwnWork: v }))} label="Maks egeninnsats" />
+            <Switch
+              checked={d.regulatedSelfWorkConfirmed}
+              disabled={!ctx.editable}
+              onChange={(v) => ctx.setDraft((x) => ({ ...x, regulatedSelfWorkConfirmed: v }))}
+              label="Kompetanse og ansvar for regulert arbeid er bekreftet"
+            />
+            <p className="text-xs text-slate-600">Rør, elektro og bad/våtrom regnes som innleid til kompetanse og ansvar er bekreftet. Maks egeninnsats oppgraderer aldri regulert arbeid.</p>
+          </div>
         </div>
+        <details className="mt-4 rounded-lg border border-slate-200 p-3">
+          <summary className="cursor-pointer text-sm font-medium">Hvem utfører arbeidet? (per kategori)</summary>
+          <table className="mt-2 w-full text-sm">
+            <caption className="sr-only">Hvem som utfører hvilket arbeid i dette scenarioet</caption>
+            <tbody className="divide-y divide-slate-100">
+              {LABOR_CATEGORIES.map((c) => {
+                const baseMode = ctx.base?.values.laborModes?.[c];
+                const changed = baseMode !== undefined && baseMode !== d.laborModes[c];
+                return (
+                  <tr key={c}>
+                    <th scope="row" className="py-1.5 pr-3 text-left font-normal">
+                      {LABOR_CATEGORY_LABEL[c]}
+                      {REGULATED_LABOR.includes(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
+                      {changed && <span className="block text-[11px] font-medium text-violet-800">Endret av deg · grunnverdi {WORK_MODE_LABEL[baseMode!]}</span>}
+                    </th>
+                    <td className="py-1.5">
+                      <Select
+                        aria-label={`Hvem utfører ${LABOR_CATEGORY_LABEL[c].toLowerCase()}`}
+                        className="max-w-40"
+                        value={d.laborModes[c]}
+                        disabled={!ctx.editable}
+                        onChange={(e) => ctx.setDraft((x) => ({ ...x, laborModes: { ...x.laborModes, [c]: e.target.value as WorkMode } }))}
+                      >
+                        {WORK_MODES.map((m) => (
+                          <option key={m} value={m}>
+                            {WORK_MODE_LABEL[m]}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className="w-24 py-1.5 text-right">
+                      {changed && ctx.editable && (
+                        <button type="button" className="text-xs text-pine-800 hover:underline" onClick={() => ctx.setDraft((x) => ({ ...x, laborModes: { ...x.laborModes, [c]: baseMode! } }))}>
+                          Tilbakestill
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </details>
       </Panel>
 
       <Panel title="Skatt" sub="Uavklart som standard og vist utenfor hovedresultatet.">
@@ -212,7 +320,7 @@ export function BreakdownTable({ b }: { b: Breakdown }) {
         <Line label="Oppussing (R)" indent value={formatNOK(b.R)} />
         <Line label="Reserve" indent value={formatNOK(b.reserve)} />
         <Line label="Oppussing med reserve (RB)" value={formatNOK(b.RB)} />
-        <Line label="Renter prosjektlån (I)" sub="f × ((P + K) + RB/2) × r × m/12 – oppussing trekkes i snitt halvveis" value={formatNOK(b.I)} />
+        <Line label="Renter prosjektlån (I)" sub="r × m/12 × (kjøpslån + oppussingslån/2) – oppussingslånet trekkes i snitt halvveis" value={formatNOK(b.I)} />
         <Line label="Månedlige kostnader (O)" sub={`${formatMonths(b.months)}`} value={formatNOK(b.O)} />
         <Line label={`Salgspris (${b.basis === 'total' ? 'totalpris' : 'kontantpris'})`} value={formatNOK(b.V)} />
         {b.basis === 'total' && <Line label="− Fellesgjeld ved salg (én gang)" indent value={formatNOK(b.D1 === null ? null : -b.D1)} />}
@@ -220,12 +328,22 @@ export function BreakdownTable({ b }: { b: Breakdown }) {
         <Line label="Salgskostnader" sub="Fast + provisjon av kontantsalget" value={formatNOK(b.Csale)} />
         <Line label="Samlede kontantkostnader (C)" value={formatNOK(b.C)} />
         <Line label="Resultat før skatt og eget arbeid (S − C)" strong value={formatNOK(b.profit)} />
-        <Line label="Verdsatt eget arbeid" indent value={b.ownWorkValue === null ? UNKNOWN : formatNOK(-b.ownWorkValue)} />
-        <Line label="Resultat etter verdsatt eget arbeid" value={formatNOK(b.profitAfterOwnWork)} />
         <Line label="Kapitalgrunnlag (C + fellesgjeld ved kjøp)" value={formatNOK(b.capitalBase)} />
         <Line label="Prosjektavkastning" sub="Ikke egenkapitalavkastning" value={b.projectReturn === null ? NO_BASIS : pctTxt(b.projectReturn)} />
-        <Line label="Egenkapitalbehov underveis" sub="Ufinansiert del av kjøp og oppussing + renter og drift i perioden" value={formatNOK(b.equityNeed)} />
+        <Line label="Kjøpslån" indent value={formatNOK(b.purchaseLoan)} />
+        <Line label="Oppussingslån" indent value={formatNOK(b.renovationLoan)} />
+        {b.runningLoan > 0 && <Line label="Lånefinansierte løpende kostnader" indent value={formatNOK(b.runningLoan)} />}
         <Line label="Høyeste prosjektlån" value={formatNOK(b.loanPeak)} />
+        <Line label="Egenkapitalbehov" sub="Ufinansiert del av kjøp og oppussing + ikke lånefinansierte renter og drift. Salgskostnader er ikke med." value={formatNOK(b.equityNeed)} />
+        <Line label="Tilgjengelig egenkapital" indent value={formatNOK(b.availableEquity, UNKNOWN)} />
+        <Line label="Finansieringsgap" strong value={b.equityGap === null ? UNKNOWN : b.equityGap > 0 ? formatNOK(b.equityGap) : 'Ingen – egenkapitalen dekker behovet'} />
+        <Line label="Egne timer" value={b.ownHours === null ? UNKNOWN : formatHours(b.ownHours)} />
+        <Line
+          label="Fortjeneste per egeninnsatstime"
+          sub={b.minProfitPerOwnHour === null ? 'Minimumskrav er ikke satt' : `Minimumskrav ${formatNOK(b.minProfitPerOwnHour)}/t – ${b.meetsHourlyRequirement === null ? 'ikke vurdert' : b.meetsHourlyRequirement ? 'oppfylt' : 'ikke oppfylt'}`}
+          strong
+          value={b.profitPerOwnHour === null ? (b.ownHours === 0 ? 'Ingen egne timer' : UNKNOWN) : `${formatNOK(b.profitPerOwnHour)}/t`}
+        />
       </tbody>
     </table>
   );
