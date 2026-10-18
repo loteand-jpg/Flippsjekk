@@ -11,9 +11,9 @@ import { Dialog } from '../components/ui/overlay';
 import { Alert, Badge, Button, buttonClass, Card, SectionTitle } from '../components/ui/primitives';
 import { getCourse } from '../config/courses';
 import { PRIMARY_PLAN } from '../config/plans';
-import { BUYER_TYPE_LABEL, SUBSCRIPTION_STATUS_LABEL, USAGE_KIND_LABEL, type BuyerType } from '../domain/enums';
+import { BUYER_TYPE_LABEL, SUBSCRIPTION_STATUS_LABEL, type BuyerType } from '../domain/enums';
 import type { ProfileDefaults } from '../domain/schemas';
-import { formatDate, formatDateTime, formatNOK } from '../lib/format';
+import { formatDate, formatNOK } from '../lib/format';
 
 function downloadText(filename: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -48,9 +48,6 @@ export function AccountPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const welcome = (location.state as { welcome?: boolean } | null)?.welcome;
-  const usage = useLiveQuery(() => services.subscription.listUsage(), []);
-  // Gjenbruk av en eksisterende analyse vises ikke for brukeren – det ser likt ut som en ny analyse.
-  const usageShown = (usage.data ?? []).filter((u) => u.kind !== 'reuse');
   const purchases = useLiveQuery(() => services.courses.listPurchases(), []);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [portalOpen, setPortalOpen] = useState(false);
@@ -292,34 +289,6 @@ export function AccountPage() {
               </li>
             ))}
           </ul>
-        )}
-      </Card>
-
-      <Card className="p-5">
-        <SectionTitle sub="Nye analyser og oppfriskinger som er belastet kvoten. Hver hendelse har en idempotensnøkkel, så samme handling telles aldri to ganger.">Forbrukshistorikk</SectionTitle>
-        {usageShown.length === 0 ? (
-          <p className="text-sm text-slate-600">Ingen registrert bruk.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] text-sm">
-              <thead className="text-left text-xs text-slate-600">
-                <tr>
-                  <th className="py-1.5 font-medium">Tidspunkt</th>
-                  <th className="py-1.5 font-medium">Type</th>
-                  <th className="py-1.5 font-medium">Belastet kvote</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {usageShown.slice(0, 25).map((u) => (
-                  <tr key={u.id}>
-                    <td className="py-1.5">{formatDateTime(u.createdAt)}</td>
-                    <td className="py-1.5">{USAGE_KIND_LABEL[u.kind]}</td>
-                    <td className="py-1.5">{u.chargeable ? 'Ja' : 'Nei'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         )}
       </Card>
 
