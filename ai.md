@@ -63,22 +63,24 @@ UI (pages/components)  ──►  useServices()  ──►  Services (grensesnit
 
 ```
 src/
-  calc/        engine.ts (ren beregningsmotor), scenario.ts (ScenarioValues -> motor, diff, basisverdier)
+  calc/        engine.ts (ren beregningsmotor 1.1), scenario.ts (ScenarioValues -> motor, arbeidsmodell, diff, basisverdier),
+               market.ts (markedsvekting V1), ranking.ts (scenario-rangering)
   domain/      schemas.ts (Zod = kilde til typene), enums.ts (+ norske labels), agentContract.ts,
-               assessment.ts (risiko-/datakvalitetsregler), comparables.ts, risks.ts
+               assessment.ts (risiko-/datakvalitetsregler), comparables.ts, risks.ts,
+               analysisScenarios.ts (agentscenarioer + fallback), areaProfile.ts (områdeprofil, markedsindeks), migrate.ts (migrering til modell 1.1)
   lib/         finn.ts, time.ts, holidays.ts, bidDay.ts, ics.ts, format.ts, calendarGrid.ts, calendarOverlap.ts, sort.ts, ids.ts, clock.ts
   data/        db.ts (MockDatabase), storage.ts, seed.ts, seedProperties.ts, synthetic.ts, analysisBuilder.ts
   services/    types.ts (kontrakter) + mock/ (accountServices, analysisService, courseServices, dataServices,
                calendarImportServices, context, jobs, heal, mockAgent, index)
   import/      v1Adapter.ts, types.ts, example.ts, scenarioExport.ts
-  config/      app.ts (modus), plans.ts (abonnement), courses.ts (kurskatalog), defaults.ts, freshness.ts
+  config/      app.ts (modus), plans.ts (abonnement), courses.ts (kurskatalog), defaults.ts (profilstandarder), defaultLabor.ts, freshness.ts
   app/         services.tsx, session.tsx, analyzeFlow.tsx, hooks.ts, preferences.ts, toast.tsx
   components/  ui/ (primitiver), layout/ (AppShell, DemoControls), property/ (liste/tabell), analysis/ (objektfaner),
                account/ (VippsCheckout, VippsApproval, CoursePurchase), marketing/ (forside-visuals)
   pages/       Landing, HowItWorks, Auth (login/signup), Dashboard, Property, Calendar, Compare, Import, Account, Course, CoursePaywall
   course/      types.ts, content/ (m01-03, m04-06, m07-11, finalQuiz), progress.tsx, widgets/, glossary.ts, marketData.ts, caseData.ts, print.ts
 e2e/           kurs, innlogging, hovedflyt, demokontroller, sammenlignbare, risiko, forside
-docs/          datamodell.md, agentkontrakt.md, formater.md, integrasjoner.md + eksempelfiler (JSON)
+docs/          datamodell.md, agentkontrakt.md, formater.md, integrasjoner.md, scenarier-og-marked.md + eksempelfiler (JSON)
 .github/workflows/pages.yml   bygger og publiserer dist/ til GitHub Pages
 ```
 
@@ -91,8 +93,9 @@ Hash-ruting og `base: './'` i `vite.config.ts` er bevisste valg slik at `dist/` 
 
 ### 3.4 Mockdatabase (`src/data/db.ts`)
 
-* Versjonert `localStorage` (`flipprom.mockdb`, `DB_FORMAT='flipprom-mockdb'`, `DB_SCHEMA_VERSION=3`) med migreringer, **radvalidering med Zod** (ugyldige rader droppes, men aldri uten sikkerhetskopi), atomiske transaksjoner og backup ved skade. Skadet lagring gir ny seed – ikke hvit skjerm.
+* Versjonert `localStorage` (`flipprom.mockdb`, `DB_FORMAT='flipprom-mockdb'`, `DB_SCHEMA_VERSION=4`) med migreringer, **radvalidering med Zod** (ugyldige rader droppes, men aldri uten sikkerhetskopi), atomiske transaksjoner og backup ved skade. Skadet lagring gir ny seed – ikke hvit skjerm.
 * Tabeller (`DbState`): `users, profiles, subscriptions, properties, snapshots, analyses, viewings, userProperties, scenarios, jobs, usageEvents, privateEvents, calendarOverrides, userComparables, userRisks, coursePurchases` + `session`, `demo`.
+* **v3 → v4 (modell 1.1)** er en eksplisitt migrering (`MIGRATIONS[3]`): profiler og scenarioer får nye felt, `financingPct` blir både kjøps- og oppussingslån, ingen rader droppes. Se `docs/scenarier-og-marked.md` §10.
 * **Nye tabeller kan legges til uten migrering:** `sanitizeState` gir `[]` for manglende tabeller. Bumpe `DB_SCHEMA_VERSION` bare når eksisterende rader må omformes (legg da til migrering i `MIGRATIONS`). Å droppe rader «stille» ga tidligere en alvorlig feil (se §6.9) – vær forsiktig.
 * Referanseintegritet: private rader som peker på slettede objekter fjernes ved lasting.
 * `healMissingAnalyses` (`mock/heal.ts`) gjenoppretter automatisk manglende felles analyser fra deterministiske demodata ved oppstart (krav K-21).
@@ -112,40 +115,51 @@ Mock-tilgangsregler ligger i `mock/context.ts`: `computeEntitlements`, `requireF
 **Privat (per bruker, eieravgrenset):** `userProperties` (liste, favoritt, arbeidsstatus, notater, private sjekklistebekreftelser `checks`, `analyzedAt`, `lastSeenAnalysisVersion`), `scenarios` (kalkyler), `userComparables`, `userRisks` (egne risikoer + endringer/skjuling av analysens risikoer), `privateEvents` (private visninger), `calendarOverrides` (privat buddag), `usageEvents`, `coursePurchases`, `profiles` (forutsetninger), `subscriptions`.
 
 Viktige relasjoner:
-* En **analyse** hører til én eiendom og har `version`, `status`, `visibility` (`shared` | `private` for importerte utkast), `schemaVersion`, `modelVersion`, risikoer, sjekkliste (12 faste punkter), sammenlignbare, kilder, estimater (salg lav/base/høy, oppussingsalternativer).
+* En **analyse** hører til én eiendom og har `version`, `status`, `visibility` (`shared` | `private` for importerte utkast), `schemaVersion`, `modelVersion`, risikoer, sjekkliste (12 faste punkter), sammenlignbare, kilder, estimater (salg lav/base/høy, oppussingsalternativer, valgfritt `scenarios`: ett basis + inntil to alternativ med egen salgsverdi og gjennomførbarhet, se §5.1).
 * Et **scenario** peker på `analysisId`/`analysisVersion`. Brukerens scenarioer slettes **aldri** automatisk – heller ikke ved nedgradering av abonnement.
 * Én **brukerlenke** per (bruker, eiendom). `primaryScenarioId` styrer hva liste/sammenligning/kalender bruker.
 * **Låst scenario «Nettsidens vurdering»** (`locked: true`, `BASE_SCENARIO_NAME`) opprettes automatisk ved brukerens første lagrede endring av «Hovedscenario», slik at grunnlaget alltid er lett tilgjengelig. Det kan ikke redigeres, bare dupliseres via «Lagre som nytt».
-* `ScenarioValues` har prosent som prosentpoeng (7 = 7 %); motoren bruker brøk internt.
+* `ScenarioValues` har prosent som prosentpoeng (7 = 7 %); motoren bruker brøk internt. Verdiene er en **full privat kopi** av grunnverdiene (valgt agentscenario + profilstandarder, bygget av `buildBaseValues`); `diffValues` viser hva brukeren har endret, og hvert felt kan tilbakestilles. Eldre scenarioverdier (bl.a. `financingPct`, `hourValue`) migreres ved lesing og i DB-migreringen.
 
 Fullt skjema og forslag til Postgres/RLS: `docs/datamodell.md`.
 
 ---
 
-## 5. Beregningsmotoren (`src/calc/engine.ts`)
+## 5. Beregningsmotoren (modell 1.1.0)
 
-Rene funksjoner, mellomregning i hele øre, resultat merket med `CALC_MODEL_VERSION = '1.0.0'`.
+Rene funksjoner, mellomregning i hele øre, resultat merket med `CALC_MODEL_VERSION = '1.1.0'` (major uendret, så analyser forblir kompatible). Detaljer og alle parametere: `docs/scenarier-og-marked.md`.
 
 ```
 K      = A × d + F                         kjøpskostnader (dokumentavgift + øvrige)
 RB     = R × (1 + b)                       oppussing med reserve
-I      = f × ((P + K) + RB/2) × r × m/12   avdragsfritt prosjektlån; oppussing trekkes i snitt halvveis
+I      = r × m/12 × (fP × (P + K) + fR × RB/2 + [lånefinansierte løpende] O/2)   kjøpslån fra start, oppussingslån i snitt halvveis
 O      = M × m                             felleskostnad + drift (gjeldsbetjening legges ikke til på nytt)
 S      = V − D1 (totalpris) | V (kontant)  fellesgjeld ved salg trekkes nøyaktig én gang
 Csale  = Sf + s × S                        faste salgskostnader + provisjon av kontantsalget
 C      = P + K + RB + I + O + Csale
-Resultat før skatt og eget arbeid = S − C
+Resultat før skatt = S − C                 EGEN TID ER IKKE EN KOSTNAD
+Fortjeneste per egeninnsatstime = (S − C) / egne timer     (null ved 0/ukjent timer – ingen deling på null)
 Prosjektavkastning = (S − C) / (C + D0)    ikke egenkapitalavkastning
+Egenkapitalbehov = (P + K − kjøpslån) + (RB − oppussingslån) + [ikke lånefinansiert] (I + O)    uten salgskostnader
+Finansieringsgap = max(0, egenkapitalbehov − tilgjengelig egenkapital)
 ```
 
-* **Maksbud:** baklengs med biseksjon (toleranse 1 kr); kjøpsavgift og renter beregnes på nytt per pris; mål for resultat (100–400 000 kr) og avkastning (15/20 %).
-* **Stresstester:** salg −5/−10/−15 %, oppussing +100 000, tid +3 mnd, kombinert (−10 %, +100 000, +3 mnd), økt fellesgjeld ved salg.
-* **Dokumentavgift** er en eksplisitt, overstyrbar regel etter eierform (selveier 2,5 % av kjøpesum + fellesgjeld; borettslag 0).
-* **Skatt** er uavklart som standard; vises bare som separat illustrasjon med brukerens egen sats. Ingen automatisk skattefordel ved tap.
-* Kontrolltall fra kravspesifikasjonen (resultat 539 900 kr m.fl.) er dekket av `src/calc/engine.test.ts`. **Ikke endre formler uten å oppdatere disse og modellversjonen.**
-* `evaluateScenario` (`scenario.ts`) kobler `ScenarioValues` til motoren og returnerer status (`complete`/`incomplete`), navngitte mangler, tre salgscaser, maksbud og stresstester.
+* **Separate lån:** `purchaseFinancingPct` (standard 90) og `renovationFinancingPct` (standard 0). `financeRunningCosts` (standard nei). Med `fP = fR = f` gir 1.1.0 nøyaktig samme tall som 1.0.0.
+* **Lønnsomhetskrav i stedet for timeverdi:** `minProfitPerOwnHour` (standard 500 kr/t). `hourValue`/`profitAfterOwnWork` er utfaset (beregnes bare informativt når `hourValue` er satt; kurset bruker dem) og styrer ikke hovedøkonomien.
+* **Maksbud:** baklengs med biseksjon (toleranse 1 kr); mål for resultat og avkastning. **Stresstester:** salg −5/−10/−15 %, oppussing +100 000, tid +3 mnd, kombinert, økt fellesgjeld.
+* **Dokumentavgift** er en eksplisitt, overstyrbar regel etter eierform. **Skatt** er uavklart som standard og vises bare som separat illustrasjon.
+* Kontrolltall fra kravspesifikasjonen (resultat 539 900 kr m.fl.) er dekket av `src/calc/engine.test.ts`. Nye regler i `src/calc/model11.test.ts`. **Ikke endre formler uten å oppdatere tester og modellversjon.**
+* `evaluateScenario` (`scenario.ts`) normaliserer eldre verdier, evaluerer, og gir mangler, advarsler (påkrevd utbedring tatt ut, regulert arbeid regnet som innleid, egeninnsats som ikke rekker innen oppussingstiden) og stresstester.
 
-Eksempelforutsetninger (profilstandard, redigerbare under Konto, **ikke** verifiserte markedsvilkår): 6 mnd, 7 % rente, 100 % låneandel, 20 % reserve, 350 kr/t, 400 000 kr fortjenestemål, 55 000 kr faste salgskostnader, 1,5 % provisjon, 6 000 kr kjøpskostnader.
+**Profilstandarder** (`config/defaults.ts`, redigerbare under Konto): 10 arbeidstimer per uke (samlet team i V1), minimum 500 kr/t, tilgjengelig egenkapital 300 000, rente 6 %, kjøpslån 90 %, oppussingslån 0 %, ingen lånefinansiering av løpende utgifter, reserve 20 %, fortjenestemål 400 000, salgskostnader 120 000 kr (fast sum; meglerprovisjon % finnes fortsatt, standard 0), tid fra ferdig oppussing til økonomisk oppgjør 3,5 mnd, kjøpsgebyrer 6 000, hjemområde Trondheim, og arbeidsmodus (selv/delvis/innleid) for 9 kategorier (riving, maling/sparkling, gulv, tømrer, kjøkkenmontering, rør, elektro, bad/våtrom, annet). **Regulert arbeid (rør, elektro, bad/våtrom) regnes aldri som gratis** uten bekreftet kompetanse og ansvar (`regulatedSelfWorkConfirmed`) – heller ikke via «maks egeninnsats» (`maxOwnWork`).
+
+### 5.1 Scenarioer, overstyringer, markedsvekting og rangering
+
+* **Agentscenarioer** (`estimates.scenarios`, valgfritt, strengt skjema): ett `basis` + inntil to `alternativ`, hvert med egne tiltak, **egen salgsverdi**, gjennomførbarhetsstatus (`klar`/`betinget`/`uavklart`/`ikke_gjennomforbar`) med krav til avklaring, sluttproduktegenskaper, usikkerhet og referanser. **Fallback** (`resolveAnalysisScenarios`): eldre analyser med én global `estimates.sale` får ett basisscenario merket `saleSource: 'global'` – den globale verdien kopieres aldri til alternativer. Agentkontrakten er utvidet (se `docs/agentkontrakt.md`); et scenario som krever godkjenning kan ikke være `klar`.
+* **Private overstyringer:** `ScenarioValues` er en privat kopi av grunnverdiene (valgt agentscenario + profil) og kan endres felt for felt. UI viser grunnverdi, opprinnelse, «Endret av deg» og «Tilbakestill» (per felt og per tiltak). `analysisScenarioId` husker hvilket scenario kalkylen bygger på. Ingenting skrives tilbake til `SharedAnalysis` (testet).
+* **Arbeid i tiltak** (`RenovationItem`): eldre felt (`materials`, `electrician`, `plumber`, `other`, `hours`) virker som før. Valgfritt: `laborCategory`, `laborHours`, `laborCostHired`, `workMode`, `selfShare`, `priceSource` (klart for prisbank; ingen nasjonale priser er lagt inn). `itemEconomics` skiller materialer, innleid arbeid og egne timer.
+* **Markedsvekting V1** (`calc/market.ts`, versjon 1.0.0): fysisk likhet 0–100 (lokasjon 25, standard 25, BRA-i 15, soverom/planløsning 15, type/eierform 10, øvrig 10), adskilte `reliabilityFactor` og `marketTimeFactor`, effektiv vekt = fysisk/100 × pålitelighet × markedstid × standardtak, markedsjustert pris = pris × indeks nå / indeks ved salg, roller (primær/sekundær/markedsreferanse), robust vektet median som anker og vektet snitt som kontroll, intervall etter datakvalitet (±3–10 %), «for usikkert» uten tvungen verdi. **Aktive annonser er aldri oppnådd salgspris** (vekt 0, markedssignal). Samme bygg i gammel standard kan ikke dominere et nyoppusset scenario. Områdeprofil (`domain/areaProfile.ts`) er datamodell + fallback (samme bygg → mikroområde → bydel → kommune → region) og kan gi en `MarketIndex`; ingenting hentes.
+* **Scenario-rangering** (`calc/ranking.ts`): fortjeneste 25 %, avkastning 15 %, fortjeneste per time 15 %, risiko 10 %, salgsverdiens sikkerhet 10 %, stresstest 10 %, finansieringsgap 10 %, varighet 5 % – åpent i UI, ikke ett ugjennomsiktig tall. **Bare `klar` + komplett kalkyle kan anbefales; betingede/uavklarte scenarioer styrer aldri anbefalt scenario eller anbefalt maksbud.**
 
 ---
 
@@ -233,6 +247,15 @@ Etter en skadelig skjemaendring forsvant analyser i en brukers lokale data. Rege
 * Oversikt: tabell/kort, aktiv/arkiv-visning, sortering, kolonnevalg, filtre (boligtype, eierform, kjøpertype, risiko, datakvalitet, anbefaling, arbeidsstatus, salgsstatus, pris, resultat, favoritter). **Områdefilteret er satt på pause** (krav K-4): `districts` finnes i filtertypen for bakoverkompatibilitet men ignoreres. Søk på adresse/område/FINN-kode virker.
 * Sammenligning: **inntil tre objekter**, samme nøkkeltall fra primært scenario og samme motor.
 
+### 6.12 Scenarioer, overstyringer og marked (modell 1.1)
+
+* **Kalkyle (fane Kalkulator):** Egenkapitalbehov, finansieringsgap, toppgjeld, fortjeneste og **fortjeneste per egeninnsatstime** står øverst; egen tid trekkes aldri som kostnad. Uten egne timer vises «Ikke beregnet», aldri 0 eller uendelig. Kravet (standard 500 kr/t) vises som ok/under.
+* **Forutsetninger (Konto):** grupperte standarder (tid og egeninnsats, finansiering, salg, arbeidsfordeling) som kopieres inn i nye kalkyler. Endring av profilstandard endrer ikke eksisterende kalkyler som brukeren har overstyrt.
+* **Overstyring:** hvert felt i en kalkyle viser grunnverdi, opprinnelse (agent / profil / endret av deg) og «Tilbakestill». Valg av agentscenario i en kalkyle bygger nye grunnverdier uten å røre brukerens egne endringer.
+* **Oppussing (fane Oppussing):** materialer, innleid arbeid og egne timer vises hver for seg; arbeidsmodus per tiltak; regulert arbeid er alltid innleid uten bekreftelse; «Maks egeninnsats» oppgraderer bare ikke-regulert arbeid og viser hvor mye tid det koster mot kapasiteten (timer per uke × måneder).
+* **Marked (fane Marked):** per scenario vises salgsverdi fra scenarioets egen verdi (agent) eller markedsvektingen, med anker, kontrolltall, intervall, datakvalitet og hvilke referanser som veier tyngst. «For usikkert» vises uten tvungen verdi. Eldre analyser uten scenariospesifikk salgsverdi viser tydelig at salgsverdien er global.
+* **Sammenligning av scenarioer:** rangeringskort viser alle kriterier og flagg (betinget, finansieringsgap, under timekrav …). Anbefalt scenario og anbefalt maksbud kommer aldri fra et betinget eller uavklart scenario.
+
 ---
 
 ## 7. Kurs «Flipping nivå 1 - Privat» (`src/course/`)
@@ -262,8 +285,8 @@ Etter en skadelig skjemaendring forsvant analyser i en brukers lokale data. Rege
 
 ## 9. Testing
 
-* **Vitest** (`src/**/*.test.ts`, miljø `node`, `TZ=UTC`): motor (kontrolltall), scenario, FINN-parsing, budprognose/helligdager, kalender, ics, sortering, agentkontrakt (mot `docs/eksempel-agent-analyse.json`), kurs (struktur, 11 moduler, 15 quiz, ordliste), og **tjenestetester** i `services/mock/services.test.ts` (tilgang, kvote, dedup, eierskap, kode/Google, Vipps, kurskjøp, risiko, import, abonnementstilstander).
-* **Playwright** (`e2e/`, desktop + mobil; `demokontroller` kun desktop): hovedflyt, innlogging/Vipps, kurs (inkl. betalingsmur), forside, sammenlignbare, risiko, testkontroller. Starter `vite --port 5198 --strictPort` selv. `test-results/` og `playwright-report/` er git-ignorert.
+* **Vitest** (`src/**/*.test.ts`, miljø `node`, `TZ=UTC`): motor (kontrolltall), modell 1.1 (`model11.test.ts`), markedsvekting (`market.test.ts`), rangering (`ranking.test.ts`), områdeprofil, scenario, FINN-parsing, budprognose/helligdager, kalender, ics, sortering, agentkontrakt (mot `docs/eksempel-agent-analyse.json`), kurs (struktur, 11 moduler, 15 quiz, ordliste), og **tjenestetester** i `services/mock/services.test.ts` (tilgang, kvote, dedup, eierskap, kode/Google, Vipps, kurskjøp, risiko, import, abonnementstilstander).
+* **Playwright** (`e2e/`, desktop + mobil; `demokontroller` kun desktop): hovedflyt, scenarier/overstyringer/markedsvekting (`scenarier.spec.ts`), innlogging/Vipps, kurs (inkl. betalingsmur), forside, sammenlignbare, risiko, testkontroller. Starter `vite --port 5198 --strictPort` selv. `test-results/` og `playwright-report/` er git-ignorert.
 * Regel: nye forretningsregler får enhetstest i tjenestelaget **og** (hvis brukersynlig) e2e. Endrer du tekst brukere ser, oppdater e2e-selektorene.
 * Demo-hjelp: «Testkontroller» (lilla stripe) – bytte bruker, sette abonnementstilstand, ferdige FINN-lenker (`DEMO_FINN` i `seedProperties.ts`), simulere feil, tilbakestille, skade lagring.
 
@@ -350,6 +373,17 @@ Repo: `https://github.com/loteand-jpg/Flippsjekk` (`origin`, gren `main`). `.git
 | Områdefilter pauset | Krav K-4: produktet er generelt; kan slås på igjen |
 | Forbrukshistorikk fjernet fra Konto | Krav K-52 |
 | Tilgang etter status **og** periode | Oppsagt abonnement beholder tilgang ut perioden; lesemodus ellers |
+| Egen tid er ikke en kostnad; krav til fortjeneste per egeninnsatstime (modell 1.1) | Spesifikasjon: `hourValue` ga misvisende resultat og fikk egen tid til å se «gratis» eller «dyr» ut |
+| Separate kjøps- og oppussingslån, oppussingslån trekkes gradvis (snitt halvparten) | Mer realistisk rentekostnad og egenkapitalbehov; samme tall som før når begge andeler er like |
+| Salgskostnader ikke med i egenkapitalbehov | De betales av salgsprovenyet, ikke ved kjøp |
+| Modell 1.1.0 uten ny major | Eksisterende analyser skal fortsatt være kompatible; endringen er bakoverkompatibel for lik finansieringsandel |
+| Eksplisitt DB-migrering v3→v4 | MockDatabase beholder rå rader; skjemaendringer må ikke krasje eller miste brukerens kalkyler |
+| `AnalysisScenario` er `strictObject` uten økonomiske nøkler | Agenten leverer forutsetninger, aldri beregnede tall (fortjeneste, maksbud) |
+| Global salgsverdi kopieres aldri til alternativscenarioer | Et alternativ med annet sluttprodukt skal ikke arve verdien fra basis |
+| Regulert arbeid alltid innleid uten bekreftet kompetanse | Sikkerhet/lovverk; «maks egeninnsats» må ikke late som elektro/rør/våtrom er gratis |
+| Markedsvekting V1 er ren, versjonert funksjon uten datahenting | Testbar og forklarbar; parametere er ikke validert mot reelle salg ennå |
+| Rangering som åpne kriterier + materialitetsgrenser | Små forskjeller skal ikke gi full uttelling; ingen skjult AI-score |
+| Betinget scenario styrer ikke anbefalt maksbud | Et bud skal ikke bygge på noe som ikke er avklart |
 
 ---
 
@@ -390,6 +424,17 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 **Drift**
 * K-53. Siden skal kunne kjøres fra GitHub (Pages via Actions). K-54. Repo: `loteand-jpg/Flippsjekk`, kun `origin`.
 
+**Scenario-, markeds- og brukerforutsetningsmodell (modell 1.1)**
+* K-55. Analysen kan ha **basis + maks to alternativscenarioer** med egne tiltak, egen salgsverdi, gjennomførbarhet, krav, sluttproduktegenskaper, varighet, usikkerhet og referanser. Eldre analyser med én global salgsverdi virker via tydelig fallback; global verdi kopieres aldri til alternativer.
+* K-56. **Private overstyringer** av alle relevante agent-/profilverdier per scenario, med grunnverdi, opprinnelse og tilbakestilling; skrives aldri til felles analyse.
+* K-57. **Profilstandarder:** 10 t/uke (team), minimum 500 kr per egen time, egenkapital 300 000, rente 6 %, kjøpslån 90 %, oppussingslån 0 %, løpende utgifter ikke lånefinansiert, reserve redigerbar, salgskostnader 120 000, 3–4 mnd til oppgjør, hjemområde beholdt, arbeidsmodus (selv/delvis/innleid) per kategori, «Maks egeninnsats» som aldri antar at regulert arbeid er gratis.
+* K-58. **Egen tid er ikke en kostnad:** `hourValue` erstattes av fortjeneste per egeninnsatstime (null ved 0/ukjente timer); `CALC_MODEL_VERSION` oppdatert.
+* K-59. **Separate lån** (kjøp/oppussing), gradvis opptrekk (snitt halvparten), egenkapitalbehov, finansieringsgap og toppgjeld; salgskostnader ikke i startkapital.
+* K-60. **Oppussingstiltak klare for prisbank** (materialer separat, arbeid per kategori, priskilde/-versjon) – ingen oppdiktede priser.
+* K-61. **Markedsvekting V1** som ren, versjonert funksjon (fysisk match 25/25/15/15/10/10, BRA-regler, pålitelighets- og markedstidsfaktor, markedsjustert pris, aktive annonser aldri solgt pris, vektet median som anker med snitt som kontroll, kvalitetsnivåer, voksende intervall, «for usikkert»).
+* K-62. **Områdeprofil** som datamodell + fallback (ingen datahenting). K-63. **Rangering** av scenarioer på flere kriterier; betinget scenario styrer ikke anbefalt maksbud.
+* K-64. Endringene skal være **kontrollert utvidelse**: ikke omskriving, ingen teknologiskifte, ingen ekte FINN/Supabase/betaling/ekstern AI, ingen delte private data, kurs/abonnement urørt.
+
 ---
 
 ## 14. Oppskrifter for vanlige endringer
@@ -409,7 +454,8 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 
 * Demo er **ikke sikker**: tilgangskontroll i nettleseren, kursinnhold i klientbygget, kode vises i UI. Ikke bruk ekte personopplysninger.
 * Lagring i `localStorage` er per nettleser; e-postkoder og ventende Vipps-avtaler ligger i minnet og forsvinner ved omlasting.
-* Eksisterende lokale databaser får ikke automatisk nye seeddata (f.eks. Adas kurskjøp) – bruk «Tilbakestill demodata» i testkontrollene.
+* Eksisterende lokale databaser får ikke automatisk nye **seeddata** (f.eks. Adas kurskjøp, scenariodata på p01) – bruk «Tilbakestill demodata» i testkontrollene. **Skjemaendringer** migreres derimot automatisk (v3→v4).
+* **Modell 1.1 – kjente begrensninger:** markedsindeks/områdeprofil er ikke koblet til data (kun modell + fallback); `weeklyOwnHours` er team-nivå, ikke per person; scenariodemodata finnes bare for ett objekt (p01); `hourValue` finnes fortsatt for kurset; lånefinansierte løpende utgifter er forenklet (ingen rente på rente); rangeringsvekter og markedsparametere er heuristikker som ikke er validert mot reelle salg; ingen prisbank er koblet til.
 * Dev-server under Git-grenbytte: bytte gren mens `vite` kjører kan ødelegge `node_modules/.vite`; stopp serveren og slett `node_modules/.vite` ved rare feil.
 * Test-selektorer og tallformat: NBSP/U+2212 (se §8). Flere elementer med samme tekst gir strict-mode-feil i Playwright (bruk `.first()`/roller).
 * `README.md` beskriver demo og kjøring; `docs/*.md` beskriver datamodell, agentkontrakt, formater og integrasjoner. Hold dem og denne filen i synk når regler endres.
@@ -423,3 +469,5 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 5. Angrerett/kvittering/mva for kurs og abonnement; endelige vilkår og personvernerklæring.
 6. Rett til å hente FINN-data (lisens/avtale) og valg av agent/modell og hosting.
 7. Når skal interne «flipprom»-identifikatorer byttes (krever datamigrering)?
+8. Hvilke parametere i markedsvekting V1 og rangeringen skal kalibreres mot reelle salg, og hvem eier områdeprofil-/markedsindeksdata?
+9. Skal arbeidskapasitet (timer per uke) være per person i stedet for for hele teamet?

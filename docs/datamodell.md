@@ -26,7 +26,7 @@ I demoen (lokal lagring) gjenopprettes en felles analyse som mangler for et demo
 ## Tabeller
 
 ### profiles
-`user_id` (PK, = auth.users.id), `display_name`, `email`, `defaults` (jsonb: kjøpertype per kategori, måneder, rente, låneandel, reserve, timeverdi, fortjenestemål, salgskostnader, kjøpsgebyrer, hjemområde), `updated_at`.
+`user_id` (PK, = auth.users.id), `display_name`, `email`, `defaults` (jsonb, `ProfileDefaultsSchema`: kjøpertype per kategori, total prosjektvarighet, tid til økonomisk oppgjør, rente, låneandel kjøp og oppussing, lånefinansiering av løpende utgifter, tilgjengelig egenkapital, arbeidstimer per uke, minimum fortjeneste per egeninnsatstime, arbeidsmodus per kategori, maks egeninnsats, bekreftet kompetanse for regulert arbeid, reserve, fortjenestemål, salgskostnader, kjøpsgebyrer, hjemområde). Eldre `financingPct` migreres til begge låneandelene; `hourValue` er utfaset og valgfri, `updated_at`.
 
 ### subscriptions
 `id`, `user_id`, `plan_id`, `interval` (month/year), `status` (active, trialing, past_due, canceled, incomplete), `current_period_start`, `current_period_end`, `cancel_at_period_end`, `provider` (vipps), `provider_subscription_id` (Vipps `agreementId`), `created_at`, `updated_at`.
@@ -63,6 +63,8 @@ Unik (`user_id`, `property_id`): `favorite`, `work_status` (vurderes, visning_pl
 ### scenarios
 `id`, `owner_id`, `property_id`, `analysis_id`, `analysis_version`, `name`, `values` (jsonb, `ScenarioValuesSchema`), `created_at`, `updated_at`.
 
+`values` har fra modell 1.1: `analysisScenarioId` (hvilket agentscenario – basis eller alternativ – kalkylen bygger på), `purchaseFinancingPct`, `renovationFinancingPct`, `financeRunningCosts`, `availableEquity`, `settlementMonths`, `weeklyOwnHours`, `minProfitPerOwnHour`, `laborModes`, `maxOwnWork`, `regulatedSelfWorkConfirmed`. `financingPct` er migrert bort, og `hourValue` er utfaset. Se [scenarier-og-marked.md](scenarier-og-marked.md) for migreringen (databaseversjon 4).
+
 ### comparables (i analysen) og user_comparables
 Sammenlignbare objekter har samme felt i grunnlaget og hos brukeren: `name`, `url`, `kind` (solgt = faktisk salg, prisantydning, solgt_uten_sum), `asking_price` (prisantydning), `sold_price` (oppnådd kontantpris), `common_costs` (felleskostnader per måned), `sold_total_price` (oppnådd pris inkl. fellesgjeld, uten kjøpskostnader), `area`, `date` og `notes`. kr/m² lagres ikke, men beregnes: solgt totalpris → solgt pris → prisantydning.
 
@@ -70,6 +72,7 @@ Sammenlignbare objekter har samme felt i grunnlaget og hos brukeren: `name`, `ur
 - Brukerens egne ligger i `user_comparables` (`id`, `user_id`, `property_id`, feltene over, `created_at`, `updated_at`). Private og eieravgrenset, og de blir aldri en del av en felles analyse. Maks 50 per bolig.
 - Valideringsregler (`validateComparable`): faktisk salg krever solgt pris eller solgt totalpris, andre typer kan ikke ha solgt pris, ingen negative beløp, areal over 0, og solgt totalpris kan ikke være lavere enn solgt pris. Ukjent er `null`, aldri 0.
 - Median kr/m² regnes bare for faktiske salg, og totalpris og kontantpris blandes ikke.
+- Valgfrie felt til markedsvektingen (modell 1.1), både i analysen og hos brukeren: `bedrooms`, `property_type`, `tenure`, `shared_debt`, `location_level` (samme bygg, mikroområde, bydel, kommune, region), `standard_class`, `layout_match`, `floor`, `elevator`, `balcony`, `parking`, `view_note`, `data_quality`, `market_adjustment`. Ukjent = utelatt (aldri 0/«nei»). Vektingen er beskrevet i [scenarier-og-marked.md](scenarier-og-marked.md).
 
 ### private_events og calendar_overrides
 - `private_events`: brukerens egne og importerte visninger (`confirmed` bevares fra import). De påvirker aldri den avledede buddagen.

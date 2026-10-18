@@ -71,18 +71,21 @@ Testtilganger finnes bare med mocktjenestene. I produksjonsmodus (`VITE_FLIPPROM
 
 ## Beregningsmotor
 
-Rene funksjoner i [src/calc/engine.ts](src/calc/engine.ts). Objektside, tabell, sammenligning, kalender og eksport bruker samme motor. Alle mellomregninger gjøres i hele øre, og alle resultater merkes med modellversjon (`1.0.0`).
+Rene funksjoner i [src/calc/engine.ts](src/calc/engine.ts). Objektside, tabell, sammenligning, kalender og eksport bruker samme motor. Alle mellomregninger gjøres i hele øre, og alle resultater merkes med modellversjon (`1.1.0`). Detaljer om scenarioer, markedsvekting, rangering og migrering: [docs/scenarier-og-marked.md](docs/scenarier-og-marked.md).
 
 ```
 K      = A × d + F                         kjøpskostnader
 RB     = R × (1 + b)                       oppussing med reserve
-I      = f × ((P + K) + RB/2) × r × m/12   avdragsfritt prosjektlån; oppussing trekkes i snitt halvveis
+I      = r × m/12 × (fP × (P + K) + fR × RB/2)   avdragsfrie lån: kjøpslån fra start, oppussingslån trekkes i snitt halvveis
 O      = M × m                             M = hele felleskostnaden + drift (gjeldsbetjening legges ikke til på nytt)
 S      = V − D1 (totalpris) | V (kontant)  fellesgjeld ved salg trekkes nøyaktig én gang
-Csale  = Sf + s × S                        provisjon av kontantsalget
+Csale  = Sf + s × S                        fast sum + provisjon av kontantsalget
 C      = P + K + RB + I + O + Csale
-Resultat før skatt og eget arbeid = S − C
+Resultat før skatt = S − C                 egen tid er IKKE en kostnad
+Fortjeneste per egeninnsatstime = (S − C) / egne timer   mot ditt minimumskrav
 Prosjektavkastning = (S − C) / (C + D0)    ikke egenkapitalavkastning
+Egenkapitalbehov = (P + K − kjøpslån) + (RB − oppussingslån) + ikke lånefinansierte (I + O)   uten salgskostnader
+Finansieringsgap = max(0, egenkapitalbehov − tilgjengelig egenkapital)
 ```
 
 - **Maksbud** løses baklengs med biseksjon (toleranse 1 kr). Kjøpsavgift og renter beregnes på nytt for hver pris. Grenser beregnes for 100–400 000 kr og 15/20 % avkastning. Finnes ingen løsning, vises «Ingen gjennomførbar pris innen søkeområdet».
@@ -91,7 +94,9 @@ Prosjektavkastning = (S − C) / (C + D0)    ikke egenkapitalavkastning
 - **Skatt** er uavklart som standard og vises bare som separat illustrasjon med din egen sats. Ingen automatisk skattefordel ved tap.
 - **Dokumentavgift** er en eksplisitt, overstyrbar regel etter eierform. Selveier: 2,5 % av kjøpesum + fellesgjeld (følger kjøpsprisen). Borettslag: 0.
 
-**Eksempelforutsetninger** (redigerbare på kontosiden, ikke verifiserte markedsvilkår): 6 måneder, 7 % rente, 100 % låneandel, 20 % reserve, 350 kr/t, 400 000 kr fortjenestemål, 55 000 kr faste salgskostnader, 1,5 % provisjon. Profilstandard for kjøpertype er leilighet → privat og hus → AS. Kjøpertype endrer ikke skattebehandlingen.
+**Standardforutsetninger** (redigerbare på kontosiden, ikke verifiserte markedsvilkår): 10 arbeidstimer per uke (samlet team), minimum 500 kr per egeninnsatstime, 300 000 kr tilgjengelig egenkapital, 6 % rente, 90 % låneandel på kjøpesum og 0 % på oppussing, ingen lånefinansiering av løpende utgifter, 20 % reserve, 400 000 kr fortjenestemål, 120 000 kr salgskostnader (fast sum, meglerprovisjon 0 % som tillegg), 3,5 måneder fra ferdig oppussing til økonomisk oppgjør og arbeidsmodus (selv/delvis/innleid) per kategori. Kjøpertype er leilighet → privat og hus → AS i eksempelprofilene. Kjøpertype endrer ikke skattebehandlingen.
+
+**Scenarioer:** en analyse kan ha basis og inntil to alternative planløsninger, hver med egne oppussingstiltak, egen salgsverdi og egen gjennomførbarhetsstatus. Eldre analyser med én global salgsverdi virker via fallback (ett basisscenario merket som global). Alle verdier kan overstyres privat per scenario, med grunnverdi, opprinnelse og «Tilbakestill». **Markedsvekting V1** vekter sammenlignbare objekter etter fysisk likhet, pålitelighet og alder, og aktive annonser er aldri oppnådd salgspris. Scenarioene rangeres på flere kriterier, og betingede scenarioer styrer aldri anbefalt maksbud.
 
 Kontrollregnestykket fra kravspesifikasjonen (resultat 539 900 kr, totalpris-varianten og kapitalgrunnlag 2 760 100 kr) er dekket av tester i [src/calc/engine.test.ts](src/calc/engine.test.ts).
 

@@ -26,9 +26,9 @@ Det eksisterende Flippsjekk-formatet, i UTF-8 JSON:
 | `saleBasis`, `bear`, `base`, `bull` | `saleBasis` (`kontant`/`total`), `saleLow`/`saleBase`/`saleHigh` | Mangler grunnlag → kontant med merknad |
 | `rehab`, `hours` | rundsum og egne timer | Brukes bare når `tasks` er tom. Rundsum og tiltak summeres aldri sammen. |
 | `tasks[]` | oppussingstiltak (room, title, materials, electrician, plumber, other, hours, priority, included) | Prioritet: påkrevd, anbefalt, verdiøkende, valgfri |
-| `buffer`, `duty`, `salePercent`, `interest`, `financing`, `tax` | `reservePct`, `dutyPct`, `saleCommissionPct`, `interestPct`, `financingPct`, `taxPct` | **Prosentpoeng.** Verdier mellom 0 og 1 gir merknad (mente du ×100?). Konvertering til desimal skjer i motoren. |
+| `buffer`, `duty`, `salePercent`, `interest`, `financing`, `tax` | `reservePct`, `dutyPct`, `saleCommissionPct`, `interestPct`, `purchaseFinancingPct` **og** `renovationFinancingPct` (eldre `financing` gjaldt alt), `taxPct` | **Prosentpoeng.** Verdier mellom 0 og 1 gir merknad (mente du ×100?). Konvertering til desimal skjer i motoren. |
 | `dutyBase` | dokumentavgiftsregel | Lik kjøpesum (+ gjeld) → dynamisk regel. Ellers eget grunnlag med merknad. |
-| `buyFees`, `saleFixed`, `monthly`, `months`, `target`, `hourRate` | tilsvarende scenariofelt | |
+| `buyFees`, `saleFixed`, `monthly`, `months`, `target`, `hourRate` | tilsvarende scenariofelt | `hourRate` beholdes som utfaset `hourValue` og styrer ikke hovedøkonomien. Egenkapital, minimumskrav per time og arbeidsmodus hentes fra brukerens profil. |
 | `tax: null` | skatt uavklart | Tall → egen skatteforutsetning |
 | `viewing`, `confirmed` | privat «importert visning» | `confirmed:false` forblir false. Påvirker aldri buddagen. |
 | `bidDay` | privat overstyring (`origin: import_v1`) | Merket «ikke kildebekreftet». Overskriver ikke en eksisterende overstyring. |

@@ -25,7 +25,7 @@ Mockagenten ([src/services/mock/mockAgent.ts](../src/services/mock/mockAgent.ts)
 | `viewings[]` | Annonserte visninger: stabil `id`, `start`, `end`, `status` (`planlagt`/`avlyst`) og `sourceId` |
 | `sources[]` | `id`, `kind`, `title`, `url`, `documentName`, `page`, `fetchedAt`, `observedAt`, `status`, `isDemo` |
 | `assessment` | `recommendation` (interessant, folg_med, avklar_forst, avsta), `recommendationRationale`, `summary`, `strategy`, `conditions[]` |
-| `estimates` | `sale{basis, low, base, high, rationale*, includesMarketGrowth:false}`, `renovationOptions[]` (lett/hoved/omfattende med tiltak per rom: materialer, elektriker, rørlegger, andre fag, egne timer, prioritet, inkludert), `defaultRenovationOptionId`, `months`, `monthlyBreakdown[]`, `buyFees`, `debtAtSale`, `suggestedPurchasePrice`, `dutyRule` |
+| `estimates` | `sale{basis, low, base, high, rationale*, includesMarketGrowth:false}`, `renovationOptions[]` (lett/hoved/omfattende med tiltak per rom: materialer, elektriker, rørlegger, andre fag, egne timer, prioritet, inkludert), `defaultRenovationOptionId`, `months`, `monthlyBreakdown[]`, `buyFees`, `debtAtSale`, `suggestedPurchasePrice`, `dutyRule`, og valgfritt `scenarios[]` (basis + inntil to alternativer) med `defaultScenarioId` |
 | `risks[]` | Kategori, alvorlighet 1–10 eller `null` (ukjent), mulig kostnad lav/høy, begrunnelse, kilde og tiltak |
 | `checklist[12]` | Alle 12 faste punkter med kildestatus (dokumentert, delvis, mangler, ikke_relevant), notat, kilde og oppgave før bud |
 | `comparables[]`, `facts[]`, `assumptions[]`, `uncertainties[]`, `report[]`, `bidSteps[]`, `nextSteps[]` | Rapportinnhold |
@@ -47,3 +47,17 @@ Feiler et steg, markeres jobben som feilet med feltliste. Ingen delvis skriving 
 ## Dataskille og rettigheter
 
 Agentens resultat er **felles** data og kan gjenbrukes av andre abonnenter som legger inn samme FINN-ID. Private dokumenter eller kommentarer fra en bruker skal aldri sendes til agenten som grunnlag for en felles analyse. Før produksjon må datakilden tillate den planlagte innhentingen, lagringen og gjenbruken (se [integrasjoner.md](integrasjoner.md)).
+
+## Scenarioer (valgfritt, modell 1.1)
+
+`estimates.scenarios` kan inneholde **nøyaktig ett `basis`** og **høyst to `alternativ`** (unike id-er). Eksempel: [eksempel-agent-analyse-scenarier.json](eksempel-agent-analyse-scenarier.json). Hvert scenario har:
+
+- `kind`, `level`, `title`, `description`
+- `feasibility` (`klar`, `betinget`, `uavklart`, `ikke_gjennomforbar`), `feasibilityRationale`, `requirements[]` (krav til avklaring/godkjenning) og `requiresApproval`. **Et scenario som krever godkjenning kan ikke være `klar`.**
+- `endProduct`: `bedrooms`, `layoutNote`, `kitchenChange`, `bathChange` (`ingen`, `oppgradering`, `nytt`, `uavklart`)
+- `items[]`: egne tiltak. Med `laborCategory` (`riving`, `maling_sparkling`, `gulv`, `tomrer`, `kjokkenmontering`, `ror`, `elektro`, `bad_vatrom`, `annet`) skilles materialer (`materials`) fra arbeid (`laborHours`, `laborCostHired`). `priceSource` angir kilde og senere prisbankversjon.
+- `suggestedMonths` (selve oppussingen), `vatIncluded`
+- `sale`: **egen salgsverdi** (lav/normal/høy, prisgrunnlag, begrunnelse, `includesMarketGrowth: false`) for dette sluttproduktet
+- `uncertainty {level, note}` og `referenceIds[]` (id-er i `comparables`) + `referenceNote`
+
+Skjemaet er strengt: økonomiske nøkkeltall (fortjeneste, maksbud osv.) avvises også inne i et scenario. Mangler `scenarios`, brukes analysens ene `sale` som fallback for ett basisscenario – den kopieres aldri til alternativer. `comparables[]` kan i tillegg ha valgfrie egenskaper til markedsvektingen (se [scenarier-og-marked.md](scenarier-og-marked.md)).
