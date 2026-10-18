@@ -60,3 +60,55 @@ describe('agentkontrakt v1', () => {
     expect(parseAgentOutput(a).ok).toBe(false);
   });
 });
+
+describe('agentkontrakt: scenarioer (basis + inntil to alternativer)', () => {
+  const withScenarios = JSON.parse(readFileSync('docs/eksempel-agent-analyse-scenarier.json', 'utf8'));
+  const ctxArgs = { propertyId: 'p', analysisId: 'a', snapshotId: 's', snapshotVersion: 1, version: 1, now: new Date('2026-10-16T08:00:00Z'), origin: 'demo' as const };
+
+  it('eksempel med scenarioer er gyldig og kan publiseres, med egen salgsverdi per scenario', () => {
+    const r = parseAgentOutput(withScenarios);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = adaptAgentOutput(r.value, ctxArgs);
+    expect(validateForPublish(out.analysis)).toEqual({ ok: true });
+    const sc = out.analysis.estimates.scenarios!;
+    expect(sc.map((x) => x.kind)).toEqual(['basis', 'alternativ', 'alternativ']);
+    expect(new Set(sc.map((x) => x.sale.base)).size).toBe(3);
+    expect(sc.every((x) => x.sale.includesMarketGrowth === false)).toBe(true);
+    expect(sc[0].items.every((i) => i.laborCategory)).toBe(true);
+  });
+
+  it('eldre eksempel uten scenarioer er fortsatt gyldig', () => {
+    const r = parseAgentOutput(example);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.estimates.scenarios).toBeUndefined();
+  });
+
+  const bad = (mutate: (a: any) => void) => {
+    const a = structuredClone(withScenarios);
+    mutate(a);
+    return parseAgentOutput(a);
+  };
+
+  it('krever nøyaktig ett basisscenario og høyst to alternativer', () => {
+    expect(bad((a) => (a.estimates.scenarios[1].kind = 'basis')).ok).toBe(false);
+    expect(bad((a) => a.estimates.scenarios.push({ ...structuredClone(a.estimates.scenarios[1]), id: 'ekstra' })).ok).toBe(false);
+    expect(bad((a) => (a.estimates.scenarios = a.estimates.scenarios.slice(1))).ok).toBe(false); // uten basis
+  });
+
+  it('krever unike scenario-ID-er og gyldige referanser', () => {
+    expect(bad((a) => (a.estimates.scenarios[2].id = a.estimates.scenarios[1].id)).ok).toBe(false);
+    expect(bad((a) => a.estimates.scenarios[0].referenceIds.push('finnes-ikke')).ok).toBe(false);
+    expect(bad((a) => (a.estimates.defaultScenarioId = 'finnes-ikke')).ok).toBe(false);
+  });
+
+  it('et scenario som krever godkjenning kan ikke være «gjennomførbart»', () => {
+    const r = bad((a) => (a.estimates.scenarios[1].feasibility = 'klar'));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.issues.some((i) => i.path.includes('feasibility'))).toBe(true);
+  });
+
+  it('økonomiske nøkkeltall i et scenario avvises (strengt skjema)', () => {
+    expect(bad((a) => (a.estimates.scenarios[0].profit = 500_000)).ok).toBe(false);
+  });
+});

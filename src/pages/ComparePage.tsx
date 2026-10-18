@@ -41,7 +41,22 @@ const METRICS: Metric[] = [
   { label: 'Samlede kontantkostnader', value: (_r, ev) => ev?.evaluation.base?.C ?? null },
   { label: 'Fortjeneste før skatt', hint: 'Normalt scenario', value: (r) => r.profit, better: 'high' },
   { label: 'Fortjeneste ved lavt salg', value: (_r, ev) => ev?.evaluation.cases.low?.profit ?? null, better: 'high' },
-  { label: 'Etter verdsatt eget arbeid', value: (r) => r.profitAfterOwnWork, better: 'high' },
+  {
+    label: 'Fortjeneste per egeninnsatstime',
+    hint: 'Egen tid er ikke en kostnad. Mot ditt minimumskrav.',
+    value: (r) => r.profitPerOwnHour,
+    format: (v) => (v === null ? 'Ingen egne timer' : `${formatNOK(v)}/t`),
+    render: (r) =>
+      r.profitPerOwnHour === null ? (
+        'Ingen egne timer'
+      ) : (
+        <>
+          {formatNOK(r.profitPerOwnHour)}/t
+          {r.meetsHourlyRequirement !== null && <span className={`block text-[11px] ${r.meetsHourlyRequirement ? 'text-pine-800' : 'text-amber-800'}`}>{r.meetsHourlyRequirement ? 'Oppfyller timekravet' : 'Under timekravet'}</span>}
+        </>
+      ),
+    better: 'high',
+  },
   { label: 'Prosjektavkastning', value: (r) => r.projectReturn, format: (v) => formatPct(v, NO_BASIS), better: 'high' },
   {
     label: 'Modellert maksbud',
@@ -52,7 +67,14 @@ const METRICS: Metric[] = [
   { label: 'Maksbud minus kjøpspris', hint: 'Positivt = rom under maksbudet', value: (r) => (r.maxBid !== null && r.purchase !== null ? r.maxBid - r.purchase : null), better: 'high' },
   { label: 'Nullpunkt for salg', value: (_r, ev) => ev?.evaluation.breakEven?.salePrice ?? null },
   { label: 'Stresstest kombinert', hint: 'Salg −10 %, oppussing +100 000, +3 mnd', value: (_r, ev) => ev?.evaluation.stress.find((s) => s.id === 'combined')?.result.profit ?? null, better: 'high' },
-  { label: 'Egenkapitalbehov', value: (_r, ev) => ev?.evaluation.base?.equityNeed ?? null },
+  { label: 'Egenkapitalbehov', value: (r) => r.equityNeed, better: 'low' },
+  {
+    label: 'Finansieringsgap',
+    hint: 'Egenkapitalbehov minus tilgjengelig egenkapital',
+    value: (r) => r.equityGap,
+    render: (r) => (r.equityGap === null ? 'Ikke avklart' : r.equityGap > 0 ? formatNOK(r.equityGap) : 'Ingen'),
+    better: 'low',
+  },
   { label: 'Prosjekttid', value: (r) => r.months, format: (v) => formatMonths(v) },
   { label: 'Egne timer', value: (r) => r.ownHours, format: (v) => formatHours(v) },
   { label: 'Risiko', value: (r) => r.riskScore, render: (r) => <RiskBadge score={r.riskScore} band={r.riskBand} unknown={r.riskUnknown} />, better: 'low' },

@@ -481,7 +481,8 @@ export function buildProperty(
 
   // Agentscenarioer: basis og inntil to alternativer med egne tiltak og egen salgsverdi.
   const scenarios: AnalysisScenario[] | undefined = a.scenarios?.map((sc, si) => ({
-    id: `scn-${aKey}-${si}`,
+    // Stabil per objekt og posisjon (basis, alternativ 1, alternativ 2), slik at et valgt scenario kan følges mellom analyseversjoner.
+    id: `scn-${spec.finnId}-${si}`,
     kind: sc.kind,
     level: sc.level,
     title: sc.title,

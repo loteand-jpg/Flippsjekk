@@ -26,10 +26,12 @@ export interface PropertyContext {
   locked?: boolean;
   profile: Profile | null;
   now: Date;
+  /** Oppretter et nytt privat scenario (kalkyle) basert på et agentscenario (basis eller alternativ). */
+  createScenarioFrom?: (analysisScenarioId: string, name: string) => Promise<void>;
 }
 
 export const EXPLAIN = {
-  profit: 'Kontantsalg minus alle kontantkostnader i prosjektet: kjøpspris, kjøpskostnader, oppussing med reserve, renter på prosjektlånet, månedlige kostnader og salgskostnader. Før skatt og før verdsetting av eget arbeid.',
+  profit: 'Kontantsalg minus alle kontantkostnader i prosjektet: kjøpspris, kjøpskostnader, oppussing med reserve, renter på prosjektlånene, månedlige kostnader og salgskostnader. Før skatt. Egen tid er ikke trukket som kostnad – den vises som fortjeneste per egeninnsatstime.',
   maxBid: 'Høyeste kontante kjøpspris der resultatet før skatt og eget arbeid fortsatt minst når fortjenestemålet ditt i normalt scenario. Beregnet baklengs med samme motor (biseksjon, toleranse 1 kr) – kjøpsavgift og renter beregnes på nytt for hver pris. Ikke en budfullmakt eller garanti.',
   renovation: 'Valgt oppussingssum pluss reserve. Anslag er ikke pristilbud.',
   basis: 'Kontantpris er prisen uten fellesgjeld. Totalpris er inkludert fellesgjeld, men uten kjøpskostnader. Ved totalpris trekkes fellesgjeld ved salg fra nøyaktig én gang for å finne kontantsalget.',
@@ -58,7 +60,13 @@ export function KeyFigures({ ctx }: { ctx: PropertyContext }) {
         info={<InfoTip label="Fortjeneste før skatt og eget arbeid">{EXPLAIN.profit}</InfoTip>}
         value={b ? formatNOK(b.profit) : NO_BASIS}
         emphasis={b ? (b.profit < 0 ? 'negative' : 'positive') : 'unknown'}
-        sub={b ? `${formatPct(b.projectReturn)} prosjektavkastning · normalt scenario` : `${missing} inngangsverdi${missing === 1 ? '' : 'er'} mangler`}
+        sub={
+          b
+            ? `${formatPct(b.projectReturn)} prosjektavkastning · ${
+                b.profitPerOwnHour !== null ? `${formatNOK(b.profitPerOwnHour)} per egeninnsatstime${b.meetsHourlyRequirement === false ? ' (under kravet)' : ''}` : b.ownHours === 0 ? 'ingen egne timer' : 'egne timer ikke avklart'
+              }`
+            : `${missing} inngangsverdi${missing === 1 ? '' : 'er'} mangler`
+        }
       />
       <Stat
         label={
@@ -88,7 +96,7 @@ export function KeyFigures({ ctx }: { ctx: PropertyContext }) {
         info={<InfoTip label="Oppussing inkl. reserve">{EXPLAIN.renovation}</InfoTip>}
         value={b ? formatNOK(b.RB) : result.renovation.total !== null ? formatNOK(result.renovation.total) : NO_BASIS}
         emphasis={b || result.renovation.total !== null ? null : 'unknown'}
-        sub={b ? `${formatNOK(b.R)} + ${formatNOK(b.reserve)} reserve` : result.renovation.unknownItems.length ? 'Kostnad mangler for minst ett tiltak' : undefined}
+        sub={b ? `${formatNOK(b.R)} + ${formatNOK(b.reserve)} reserve${b.equityGap !== null && b.equityGap > 0 ? ` · finansieringsgap ${formatNOK(b.equityGap)}` : ''}` : result.renovation.unknownItems.length ? 'Kostnad mangler for minst ett tiltak' : undefined}
       />
       <Stat
         label={

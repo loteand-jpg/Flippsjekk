@@ -104,7 +104,22 @@ export const COLUMNS: ColumnDef[] = [
       </div>
     ),
   },
-  { id: 'profitOwn', label: 'Etter eget arbeid', help: 'Fortjeneste minus egne timer × timeverdi.', defaultVisible: false, align: 'right', render: (r) => <MoneyCell value={r.profitAfterOwnWork} row={r} unknown={UNKNOWN} /> },
+  {
+    id: 'profitPerHour',
+    label: 'Fortjeneste per time',
+    help: 'Resultat før skatt delt på egne timer. Egen tid er ikke en kostnad. Mot ditt minimumskrav per egeninnsatstime.',
+    defaultVisible: false,
+    align: 'right',
+    render: (r) => (r.profitPerOwnHour === null ? <span className="text-slate-500">Ingen egne timer</span> : <span className={r.meetsHourlyRequirement === false ? 'text-amber-800' : undefined}>{formatNOK(r.profitPerOwnHour)}/t</span>),
+  },
+  {
+    id: 'equityGap',
+    label: 'Finansieringsgap',
+    help: 'Egenkapitalbehov minus tilgjengelig egenkapital. Ingen = egenkapitalen dekker behovet.',
+    defaultVisible: false,
+    align: 'right',
+    render: (r) => (r.equityGap === null ? UNKNOWN : r.equityGap > 0 ? <span className="text-amber-800">{formatNOK(r.equityGap)}</span> : 'Ingen'),
+  },
   { id: 'return', label: 'Prosjektavkastning', help: '(S − C) / (C + fellesgjeld ved kjøp). Ikke egenkapitalavkastning.', defaultVisible: false, sortKey: 'return', align: 'right', render: (r) => formatPct(r.projectReturn, NO_BASIS) },
   { id: 'months', label: 'Prosjekttid', defaultVisible: false, sortKey: 'months', align: 'right', render: (r) => formatMonths(r.months) },
   { id: 'hours', label: 'Egne timer', defaultVisible: false, align: 'right', render: (r) => formatHours(r.ownHours) },

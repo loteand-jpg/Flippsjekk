@@ -20,6 +20,8 @@ import { Field, ScenarioNumberField, Segmented, Select, Switch } from '../ui/for
 import { InfoTip } from '../ui/overlay';
 import { Alert } from '../ui/primitives';
 import { BarList, SensitivityChart } from './charts';
+import { ScenarioPanel } from './ScenarioPanel';
+import { ScenarioRankingPanel } from './ScenarioRankingPanel';
 import { BasisNote, EXPLAIN, Panel, type PropertyContext } from './shared';
 
 type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | null ? K : never }[keyof ScenarioValues];
@@ -349,6 +351,44 @@ export function BreakdownTable({ b }: { b: Breakdown }) {
   );
 }
 
+function HourlyAndEquity({ ctx }: { ctx: PropertyContext }) {
+  const b = ctx.result.evaluation.base;
+  if (!b) return null;
+  const hourly =
+    b.profitPerOwnHour === null ? (
+      <p className="text-sm text-slate-700">{b.ownHours === 0 ? 'Ingen egne timer i dette scenarioet, så fortjeneste per time kan ikke beregnes.' : 'Egne timer er ikke avklart, så fortjeneste per time kan ikke beregnes.'}</p>
+    ) : (
+      <p className="text-sm">
+        Fortjeneste per egeninnsatstime: <strong className="num">{formatNOK(b.profitPerOwnHour)}/t</strong>
+        {b.minProfitPerOwnHour !== null ? (
+          <>
+            {' '}
+            mot ditt krav på <span className="num">{formatNOK(b.minProfitPerOwnHour)}/t</span> –{' '}
+            <strong className={b.meetsHourlyRequirement ? 'text-pine-800' : 'text-amber-900'}>{b.meetsHourlyRequirement ? 'kravet er oppfylt' : 'kravet er ikke oppfylt'}</strong>.
+          </>
+        ) : (
+          '. Du har ikke satt et minimumskrav.'
+        )}
+      </p>
+    );
+  return (
+    <Panel title="Egeninnsats og finansiering" sub="Egen tid er ikke en kostnad i kalkylen. Egenkapitalbehovet er uten salgskostnader.">
+      <div className="space-y-2">
+        {hourly}
+        <p className="text-sm">
+          Egenkapitalbehov: <strong className="num">{formatNOK(b.equityNeed)}</strong> mot tilgjengelig <span className="num">{formatNOK(b.availableEquity, UNKNOWN)}</span>
+          {b.equityGap === null ? ' – tilgjengelig egenkapital er ikke avklart.' : b.equityGap > 0 ? '' : ' – egenkapitalen dekker behovet.'}
+        </p>
+        {b.equityGap !== null && b.equityGap > 0 && (
+          <Alert tone="warning" title={`Finansieringsgap ${formatNOK(b.equityGap)}`}>
+            Egenkapitalen dekker ikke behovet. Vurder lavere kjøpspris, høyere låneandel på oppussing, delt innsats eller mer egenkapital. Dette er en forutsetning – ikke et finansieringstilbud.
+          </Alert>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function Results({ ctx }: { ctx: PropertyContext }) {
   const r = ctx.result;
   const ev = r.evaluation;
@@ -408,6 +448,10 @@ function Results({ ctx }: { ctx: PropertyContext }) {
           {w.message}
         </Alert>
       ))}
+
+      <HourlyAndEquity ctx={ctx} />
+
+      <ScenarioRankingPanel ctx={ctx} />
 
       <Panel title="Grunnanalyse og mitt scenario">
         <table className="num w-full text-sm">
@@ -617,6 +661,9 @@ export function CalculatorTab({ ctx }: { ctx: PropertyContext }) {
             </Alert>
           )
         )}
+        <div className="mb-4">
+          <ScenarioPanel ctx={ctx} stack onCreate={ctx.createScenarioFrom ? (d) => ctx.createScenarioFrom!(d.id, d.title) : undefined} />
+        </div>
         <fieldset disabled={!ctx.editable} className="min-w-0">
           <legend className="sr-only">Forutsetninger i mitt scenario</legend>
           <Inputs ctx={ctx} />

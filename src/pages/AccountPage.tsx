@@ -237,7 +237,7 @@ export function AccountPage() {
             Standardforutsetninger
           </SectionTitle>
 
-          <fieldset className="mb-5">
+          <fieldset className="mb-5 min-w-0">
             <legend className="mb-2 text-sm font-semibold">Kjøper og prosjekt</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {(['buyerTypeApartment', 'buyerTypeHouse'] as const).map((k) => (
@@ -262,7 +262,7 @@ export function AccountPage() {
             </div>
           </fieldset>
 
-          <fieldset className="mb-5">
+          <fieldset className="mb-5 min-w-0">
             <legend className="mb-2 text-sm font-semibold">Finansiering</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Rente">{(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.interestPct} onChange={(v) => v !== null && setD('interestPct', v)} />}</Field>
@@ -291,7 +291,7 @@ export function AccountPage() {
             </div>
           </fieldset>
 
-          <fieldset className="mb-5">
+          <fieldset className="mb-5 min-w-0">
             <legend className="mb-2 text-sm font-semibold">Salg og kjøp</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Salgskostnader (fast sum)" hint="Enkel standard. Trekkes fullt fra resultatet, men ikke fra egenkapitalbehovet.">
@@ -304,7 +304,7 @@ export function AccountPage() {
             </div>
           </fieldset>
 
-          <fieldset>
+          <fieldset className="min-w-0">
             <legend className="mb-1 text-sm font-semibold">Egeninnsats</legend>
             <p className="mb-3 text-xs text-slate-600">
               Egen tid regnes ikke som en kostnad. I stedet setter du et lønnsomhetskrav: minimum ønsket fortjeneste per egeninnsatstime. Antall timer per uke gjelder samlet team.

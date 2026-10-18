@@ -311,8 +311,9 @@ export type ScenarioEndProduct = z.infer<typeof ScenarioEndProductSchema>;
 /**
  * Agentdefinert scenario: basis eller et alternativ (inntil to) med egne oppussingstiltak og egen salgsverdi.
  * Eksisterende analyser uten `scenarios` virker via fallback (se `resolveAnalysisScenarios`).
+ * Strengt skjema: økonomiske nøkkeltall (fortjeneste, maksbud osv.) kan ikke ligge i et scenario – de beregnes av motoren.
  */
-export const AnalysisScenarioSchema = z.object({
+export const AnalysisScenarioSchema = z.strictObject({
   id,
   kind: z.enum(SCENARIO_KINDS),
   level: z.enum(RENOVATION_LEVELS),

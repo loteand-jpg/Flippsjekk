@@ -1,4 +1,4 @@
-import type { ComparableKind, PriceBasis } from './enums';
+import type { ComparableKind, DataQualityLevel, LayoutMatch, LocationLevel, PriceBasis, PropertyType, StandardClass, Tenure } from './enums';
 
 /** Felt som er felles for grunnlagets og brukerens egne sammenlignbare objekter. */
 export interface ComparableFields {
@@ -17,7 +17,27 @@ export interface ComparableFields {
   /** Lokal dato 'YYYY-MM-DD' (solgt-/annonsedato). */
   date: string | null;
   notes: string;
+  // Valgfrie egenskaper til markedsvektingen. Mangler de, regnes egenskapen som ukjent (aldri 0/«nei»).
+  bedrooms?: number | null;
+  propertyType?: PropertyType | null;
+  tenure?: Tenure | null;
+  /** Fellesgjeld ved salget (kr). Brukes til å normalisere kontantpris mot totalpris. */
+  sharedDebt?: number | null;
+  locationLevel?: LocationLevel | null;
+  standardClass?: StandardClass | null;
+  layoutMatch?: LayoutMatch | null;
+  floor?: number | null;
+  elevator?: boolean | null;
+  balcony?: boolean | null;
+  parking?: boolean | null;
+  viewNote?: string | null;
+  dataQuality?: DataQualityLevel | null;
+  /** Manuell markedsjusteringsfaktor (1 = ingen). */
+  marketAdjustment?: number | null;
 }
+
+/** Nøkler for de valgfrie markedsvektingsfeltene. */
+export const COMPARABLE_EXTRA_KEYS = ['bedrooms', 'propertyType', 'tenure', 'sharedDebt', 'locationLevel', 'standardClass', 'layoutMatch', 'floor', 'elevator', 'balcony', 'parking', 'viewNote', 'dataQuality', 'marketAdjustment'] as const;
 
 export interface LegacyPrice {
   kind: ComparableKind;
@@ -99,6 +119,9 @@ export function validateComparable(c: ComparableInput): ComparableIssue[] {
   money('commonCosts', 'Felleskostnader');
   money('soldTotalPrice', 'Solgt totalpris');
   if (c.area !== null && (!Number.isFinite(c.area) || c.area <= 0)) out.push({ field: 'area', message: 'Areal må være større enn 0.' });
+  if (c.bedrooms != null && (!Number.isInteger(c.bedrooms) || c.bedrooms < 0 || c.bedrooms > 20)) out.push({ field: 'bedrooms', message: 'Antall soverom må være et helt tall fra 0 til 20.' });
+  if (c.marketAdjustment != null && (!Number.isFinite(c.marketAdjustment) || c.marketAdjustment <= 0 || c.marketAdjustment > 3)) out.push({ field: 'marketAdjustment', message: 'Markedsjustering må være en faktor over 0 (f.eks. 1,05 for +5 %).' });
+  if (c.sharedDebt != null && (!Number.isFinite(c.sharedDebt) || c.sharedDebt < 0)) out.push({ field: 'sharedDebt', message: 'Fellesgjeld kan ikke være negativ.' });
   if (c.date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(c.date)) out.push({ field: 'date', message: 'Dato må være på formatet ÅÅÅÅ-MM-DD.' });
   const hasSold = c.soldPrice !== null || c.soldTotalPrice !== null;
   if (c.kind === 'solgt' && !hasSold) out.push({ field: 'kind', message: 'Faktisk salg krever solgt pris eller solgt totalpris. Uten dokumentert salgssum: velg «Solgt – salgssum ikke dokumentert».' });

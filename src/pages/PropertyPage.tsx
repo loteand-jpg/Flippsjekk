@@ -79,8 +79,8 @@ export function PropertyPage() {
   const defaults = profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;
   const baseSnapshot = item.data && analysis ? snapshotFor(item.data, analysis) : null;
   const base = useMemo(
-    () => (item.data && analysis && baseSnapshot ? buildBaseValues({ property: item.data.property, snapshot: baseSnapshot, analysis, defaults }) : null),
-    [item.data, analysis, baseSnapshot, defaults],
+    () => (item.data && analysis && baseSnapshot ? buildBaseValues({ property: item.data.property, snapshot: baseSnapshot, analysis, defaults, analysisScenarioId: draft?.analysisScenarioId ?? selected?.values.analysisScenarioId ?? null }) : null),
+    [item.data, analysis, baseSnapshot, defaults, draft?.analysisScenarioId, selected?.values.analysisScenarioId],
   );
   const result = useMemo(() => (draft ? evaluateScenario(draft) : null), [draft]);
   const baseResult = useMemo(() => (base ? evaluateScenario(base.values) : null), [base]);
@@ -202,6 +202,16 @@ export function PropertyPage() {
     locked,
     profile,
     now,
+    createScenarioFrom: async (analysisScenarioId, name) => {
+      const snapshot = baseSnapshot ?? it.snapshot;
+      if (!snapshot) return;
+      const values = buildBaseValues({ property: it.property, snapshot, analysis, defaults, analysisScenarioId }).values;
+      let created: { id: string } | null = null;
+      const ok = await run('create', async () => {
+        created = await services.scenarios.create(it.property.id, { name: name.slice(0, 80), analysisId: analysis.id, values });
+      }, 'Nytt scenario er opprettet');
+      if (ok && created) switchTo((created as { id: string }).id);
+    },
   };
 
   const save = async () => {
@@ -534,7 +544,7 @@ export function PropertyPage() {
           onApply={async (mode) => {
             const newSnap = snapshotFor(it, latest);
             if (!newSnap) return;
-            const newBase = buildBaseValues({ property: it.property, snapshot: newSnap, analysis: latest, defaults }).values;
+            const newBase = buildBaseValues({ property: it.property, snapshot: newSnap, analysis: latest, defaults, analysisScenarioId: draft.analysisScenarioId }).values;
             const values = base ? rebaseValues(base.values, newBase, draft, mode) : newBase;
             const ok = await run('rebase', async () => {
               await services.scenarios.update(selected.id, { analysisId: latest.id, values });
@@ -616,7 +626,7 @@ function RebaseDialog({
 }) {
   const defaults = ctx.profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;
   const newSnap = snapshotFor(ctx.item, newAnalysis);
-  const newBase = newSnap ? buildBaseValues({ property: ctx.item.property, snapshot: newSnap, analysis: newAnalysis, defaults }).values : null;
+  const newBase = newSnap ? buildBaseValues({ property: ctx.item.property, snapshot: newSnap, analysis: newAnalysis, defaults, analysisScenarioId: ctx.draft.analysisScenarioId }).values : null;
   const baseChanges = ctx.base && newBase ? diffValues(ctx.base.values, newBase) : [];
   const myChanges = ctx.base ? diffValues(ctx.base.values, ctx.draft) : [];
   const newRisks = newAnalysis.risks.filter((r) => !oldAnalysis.risks.some((o) => o.title === r.title));
