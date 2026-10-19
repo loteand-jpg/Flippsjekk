@@ -553,7 +553,7 @@ const ScenarioValuesObject = z.object({
   settlementMonths: z.number().finite().nullable(),
   monthlyCost: nullableMoney,
   interestPct: z.number().finite().nullable(),
-  /** Låneandel (prosentpoeng) av kjøpesum og kjøpskostnader. */
+  /** Låneandel (prosentpoeng) av kontant kjøpesum P (fra modell 1.2; kjøpskostnadene lånefinansieres ikke). */
   purchaseFinancingPct: z.number().finite().nullable(),
   /** Låneandel (prosentpoeng) av oppussing inkl. reserve. Gradvis trekk, snitt halvveis. */
   renovationFinancingPct: z.number().finite().nullable(),

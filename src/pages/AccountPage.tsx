@@ -266,7 +266,7 @@ export function AccountPage() {
             <legend className="mb-2 text-sm font-semibold">Finansiering</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Rente">{(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.interestPct} onChange={(v) => v !== null && setD('interestPct', v)} />}</Field>
-              <Field label="Låneandel kjøpesum" hint="Andel av kjøpesum og kjøpskostnader.">
+              <Field label="Låneandel kjøpesum" hint="Andel av kjøpesummen. Kjøpskostnader (avgift, gebyrer) dekkes av egenkapital.">
                 {(p) => <NumberInput {...p} unit="%" value={defaults.purchaseFinancingPct} onChange={(v) => v !== null && setD('purchaseFinancingPct', v)} />}
               </Field>
               <Field label="Låneandel oppussing" hint="Trekkes gradvis. Standard 0 %.">

@@ -179,7 +179,7 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
             hint="Hele felleskostnaden (også renter/avdrag på fellesgjeld), strøm, forsikring og kommunale avgifter."
           />
           <ScenarioNumberField label="Rente" unit="%" decimals={2} formatBase={pct} slider={{ min: 0, max: 15, step: 0.05 }} {...f('interestPct')} />
-          <ScenarioNumberField label="Låneandel kjøpesum" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('purchaseFinancingPct')} hint="Andel av kjøpesum og kjøpskostnader som lånefinansieres." />
+          <ScenarioNumberField label="Låneandel kjøpesum" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('purchaseFinancingPct')} hint="Andel av kjøpesummen som lånefinansieres. Kjøpskostnader (avgift, gebyrer) dekkes av egenkapital." />
           <ScenarioNumberField label="Låneandel oppussing" unit="%" decimals={0} formatBase={pct} slider={{ min: 0, max: 100, step: 5 }} {...f('renovationFinancingPct')} hint="Trekkes gradvis – renter beregnes på snitt halvveis uttrekk." />
           <div>
             <p className="mb-1 text-sm font-medium text-slate-800">Lånefinansiere øvrige løpende utgifter</p>

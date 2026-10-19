@@ -543,7 +543,8 @@ export function ReportTab({ ctx }: { ctx: PropertyContext }) {
         <ul className="space-y-1 text-sm text-slate-700">
           <li>Kjøpskostnader K = dokumentavgiftsgrunnlag × sats + øvrige gebyrer. Grunnlaget følger kjøpsprisen du legger inn.</li>
           <li>Oppussing med reserve RB = R × (1 + reserve).</li>
-          <li>Renter I = låneandel × ((P + K) + RB/2) × rente × måneder/12. Avdragsfritt prosjektlån; oppussing trekkes i snitt halvveis. Ingen renter av fellesgjelden.</li>
+          <li>Renter I = (kjøpslån + oppussingslån/2) × rente × måneder/12, der kjøpslån = låneandel × kjøpesum P (ikke kjøpskostnadene K) og oppussingslån = låneandel × oppussing med reserve. Avdragsfritt prosjektlån; oppussing trekkes i snitt halvveis. Ingen renter av fellesgjelden.</li>
+          <li>Egenkapitalbehov = (P − kjøpslån) + K + (RB − oppussingslån) + ikke lånefinansierte renter og drift. Kjøpskostnadene lånefinansieres ikke.</li>
           <li>Drift O = månedlige kostnader × måneder. Inkluderer hele felleskostnaden – gjeldsbetjening legges ikke til på nytt.</li>
           <li>Kontantsalg S = salgspris − fellesgjeld ved salg (totalpris) eller salgspris (kontantpris). Provisjon beregnes av kontantsalget.</li>
           <li>Resultat før skatt og eget arbeid = S − C. Prosjektavkastning = (S − C) / (C + fellesgjeld ved kjøp).</li>
