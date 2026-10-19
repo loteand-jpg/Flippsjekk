@@ -1441,3 +1441,24 @@ describe('30-dagersregelen: grundig markedsoppfriskning, ikke automatisk full an
     expect(JSON.stringify((await s.scenarios.list(item.property.id)).map((x) => x.values))).toBe(mineBefore); // private kalkyler er uendret
   });
 });
+
+describe('profil: manglende rad skjuler ikke standardforutsetningene', () => {
+  it('en manglende profil gjenopprettes med standardverdiene, og brukerens øvrige data er uendret', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const scenariosBefore = s.db.read((st) => st.scenarios.length);
+    s.db.transaction((d) => {
+      d.profiles = d.profiles.filter((p) => p.userId !== DEMO_USERS.ada.id);
+    });
+    expect(s.db.read((st) => st.profiles.some((p) => p.userId === DEMO_USERS.ada.id))).toBe(false);
+    const p = await s.profile.get();
+    expect(p.userId).toBe(DEMO_USERS.ada.id);
+    expect(p.defaults).toMatchObject({ purchaseFinancingPct: 90, renovationFinancingPct: 0, minProfitPerOwnHour: 500, weeklyOwnHours: 10, availableEquity: 300_000 });
+    expect(p.defaults.regulatedCompetence).toEqual({ ror: false, elektro: false, bad_vatrom: false });
+    expect(s.db.read((st) => st.profiles.filter((x) => x.userId === DEMO_USERS.ada.id).length)).toBe(1);
+    expect(s.db.read((st) => st.scenarios.length)).toBe(scenariosBefore);
+    // Og den kan lagres
+    const upd = await s.profile.update({ defaults: { minProfitPerOwnHour: 700 } });
+    expect(upd.defaults.minProfitPerOwnHour).toBe(700);
+  });
+});

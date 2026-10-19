@@ -43,7 +43,7 @@ function UsageBar({ used, limit, label }: { used: number; limit: number; label: 
 
 export function AccountPage() {
   const services = useServices();
-  const { session, profile, subscription, entitlements } = useSession();
+  const { session, profile, subscription, entitlements, refresh: refreshSession } = useSession();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -230,6 +230,13 @@ export function AccountPage() {
           </div>
         </Card>
       </div>
+
+      {!defaults && (
+        <Card className="p-5" data-testid="defaults-missing">
+          <SectionTitle sub="Profilen din kunne ikke leses, så standardforutsetningene vises ikke.">Standardforutsetninger</SectionTitle>
+          <Button onClick={() => void refreshSession()}>Prøv å laste inn på nytt</Button>
+        </Card>
+      )}
 
       {defaults && (
         <Card className="p-5">
