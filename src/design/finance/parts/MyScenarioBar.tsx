@@ -112,7 +112,7 @@ export function MyScenarioBar({ p }: { p: PropertyViewProps }) {
               title="Sett alle forutsetninger til grunnlaget i analysen"
             >
               <span className="hidden sm:inline">
-                Tilbakestill til grunnlag
+                Tilbakestill<span className="sr-only"> til grunnlag</span>
               </span>
               <span className="sr-only sm:hidden">
                 Tilbakestill til grunnlag
