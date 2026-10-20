@@ -1,7 +1,9 @@
+import { scenarioModelDefaults } from '../../domain/migrate';
 import type { ScenarioValues } from '../../domain/schemas';
 
 /** Fiktivt eksempel som illustrasjon – beregnet med den samme motoren som appen bruker. */
 export const EXAMPLE: ScenarioValues = {
+  ...scenarioModelDefaults(),
   buyerType: 'privat',
   purchasePrice: 2_850_000,
   debtAtPurchase: 0,
@@ -20,7 +22,8 @@ export const EXAMPLE: ScenarioValues = {
   months: 6,
   monthlyCost: 4_900,
   interestPct: 7,
-  financingPct: 100,
+  purchaseFinancingPct: 100,
+  renovationFinancingPct: 100,
   saleBasis: 'kontant',
   saleLow: 3_850_000,
   saleBase: 4_100_000,

@@ -5,13 +5,13 @@ import { useLiveQuery } from '../app/hooks';
 import { useServices } from '../app/services';
 import { useSession } from '../app/session';
 import { useToast } from '../app/toast';
-import { Field, NumberInput, Select, TextInput } from '../components/ui/forms';
+import { Field, NumberInput, Segmented, Select, Switch, TextInput } from '../components/ui/forms';
 import { VippsCheckout } from '../components/account/VippsCheckout';
 import { Dialog } from '../components/ui/overlay';
 import { Alert, Badge, Button, buttonClass, Card, SectionTitle } from '../components/ui/primitives';
 import { getCourse } from '../config/courses';
 import { PRIMARY_PLAN } from '../config/plans';
-import { BUYER_TYPE_LABEL, SUBSCRIPTION_STATUS_LABEL, type BuyerType } from '../domain/enums';
+import { BUYER_TYPE_LABEL, isRegulatedLabor, LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, SUBSCRIPTION_STATUS_LABEL, WORK_MODE_LABEL, WORK_MODES, type BuyerType, type WorkMode } from '../domain/enums';
 import type { ProfileDefaults } from '../domain/schemas';
 import { formatDate, formatNOK } from '../lib/format';
 
@@ -43,7 +43,7 @@ function UsageBar({ used, limit, label }: { used: number; limit: number; label: 
 
 export function AccountPage() {
   const services = useServices();
-  const { session, profile, subscription, entitlements } = useSession();
+  const { session, profile, subscription, entitlements, refresh: refreshSession } = useSession();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -231,33 +231,146 @@ export function AccountPage() {
         </Card>
       </div>
 
+      {!defaults && (
+        <Card className="p-5" data-testid="defaults-missing">
+          <SectionTitle sub="Profilen din kunne ikke leses, så standardforutsetningene vises ikke.">Standardforutsetninger</SectionTitle>
+          <Button onClick={() => void refreshSession()}>Prøv å laste inn på nytt</Button>
+        </Card>
+      )}
+
       {defaults && (
         <Card className="p-5">
-          <SectionTitle sub="Eksempelforutsetninger fra tidligere arbeid. De er redigerbare antakelser – ikke verifiserte markedsvilkår eller finansieringstilbud. Endringer gjelder nye scenarioer; lagrede scenarioer endres ikke.">
+          <SectionTitle sub="Redigerbare antakelser – ikke verifiserte markedsvilkår eller finansieringstilbud. Endringer gjelder nye scenarioer; lagrede scenarioer endres ikke.">
             Standardforutsetninger
           </SectionTitle>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {(['buyerTypeApartment', 'buyerTypeHouse'] as const).map((k) => (
-              <Field key={k} label={k === 'buyerTypeApartment' ? 'Kjøpertype for leiligheter' : 'Kjøpertype for hus'} hint="Profilstandard – kan endres per scenario.">
-                {(p) => (
-                  <Select {...p} value={defaults[k]} onChange={(e) => setD(k, e.target.value as BuyerType)}>
-                    <option value="privat">{BUYER_TYPE_LABEL.privat}</option>
-                    <option value="as">{BUYER_TYPE_LABEL.as}</option>
-                  </Select>
-                )}
+
+          <fieldset className="mb-5 min-w-0">
+            <legend className="mb-2 text-sm font-semibold">Kjøper og prosjekt</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {(['buyerTypeApartment', 'buyerTypeHouse'] as const).map((k) => (
+                <Field key={k} label={k === 'buyerTypeApartment' ? 'Kjøpertype for leiligheter' : 'Kjøpertype for hus'} hint="Profilstandard – kan endres per scenario.">
+                  {(p) => (
+                    <Select {...p} value={defaults[k]} onChange={(e) => setD(k, e.target.value as BuyerType)}>
+                      <option value="privat">{BUYER_TYPE_LABEL.privat}</option>
+                      <option value="as">{BUYER_TYPE_LABEL.as}</option>
+                    </Select>
+                  )}
+                </Field>
+              ))}
+              <Field label="Prosjektvarighet totalt" hint="Oppussing pluss tid til økonomisk oppgjør.">
+                {(p) => <NumberInput {...p} unit="mnd" decimals={1} value={defaults.months} onChange={(v) => v !== null && setD('months', v)} />}
               </Field>
-            ))}
-            <Field label="Prosjektvarighet">{(p) => <NumberInput {...p} unit="mnd" decimals={1} value={defaults.months} onChange={(v) => v !== null && setD('months', v)} />}</Field>
-            <Field label="Rente">{(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.interestPct} onChange={(v) => v !== null && setD('interestPct', v)} />}</Field>
-            <Field label="Låneandel">{(p) => <NumberInput {...p} unit="%" value={defaults.financingPct} onChange={(v) => v !== null && setD('financingPct', v)} />}</Field>
-            <Field label="Oppussingsreserve">{(p) => <NumberInput {...p} unit="%" value={defaults.reservePct} onChange={(v) => v !== null && setD('reservePct', v)} />}</Field>
-            <Field label="Timeverdi eget arbeid">{(p) => <NumberInput {...p} unit="kr/t" value={defaults.hourValue} onChange={(v) => v !== null && setD('hourValue', v)} />}</Field>
-            <Field label="Fortjenestemål">{(p) => <NumberInput {...p} unit="kr" value={defaults.profitTarget} onChange={(v) => v !== null && setD('profitTarget', v)} />}</Field>
-            <Field label="Faste salgskostnader">{(p) => <NumberInput {...p} unit="kr" value={defaults.saleFixedCost} onChange={(v) => v !== null && setD('saleFixedCost', v)} />}</Field>
-            <Field label="Meglerprovisjon">{(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.saleCommissionPct} onChange={(v) => v !== null && setD('saleCommissionPct', v)} />}</Field>
-            <Field label="Øvrige kjøpsgebyrer">{(p) => <NumberInput {...p} unit="kr" value={defaults.buyFees} onChange={(v) => v !== null && setD('buyFees', v)} />}</Field>
-            <Field label="Hjemområde">{(p) => <TextInput {...p} value={defaults.homeArea} onChange={(e) => setD('homeArea', e.target.value)} />}</Field>
-          </div>
+              <Field label="Tid fra ferdig oppussing til økonomisk oppgjør" hint="Typisk 3–4 måneder.">
+                {(p) => <NumberInput {...p} unit="mnd" decimals={1} value={defaults.saleSettlementMonths} onChange={(v) => v !== null && setD('saleSettlementMonths', v)} />}
+              </Field>
+              <Field label="Oppussingsreserve">{(p) => <NumberInput {...p} unit="%" value={defaults.reservePct} onChange={(v) => v !== null && setD('reservePct', v)} />}</Field>
+              <Field label="Fortjenestemål">{(p) => <NumberInput {...p} unit="kr" value={defaults.profitTarget} onChange={(v) => v !== null && setD('profitTarget', v)} />}</Field>
+              <Field label="Hjemområde">{(p) => <TextInput {...p} value={defaults.homeArea} onChange={(e) => setD('homeArea', e.target.value)} />}</Field>
+            </div>
+          </fieldset>
+
+          <fieldset className="mb-5 min-w-0">
+            <legend className="mb-2 text-sm font-semibold">Finansiering</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Rente">{(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.interestPct} onChange={(v) => v !== null && setD('interestPct', v)} />}</Field>
+              <Field label="Låneandel kjøpesum" hint="Andel av kjøpesummen. Kjøpskostnader (avgift, gebyrer) dekkes av egenkapital.">
+                {(p) => <NumberInput {...p} unit="%" value={defaults.purchaseFinancingPct} onChange={(v) => v !== null && setD('purchaseFinancingPct', v)} />}
+              </Field>
+              <Field label="Låneandel oppussing" hint="Trekkes gradvis. Standard 0 %.">
+                {(p) => <NumberInput {...p} unit="%" value={defaults.renovationFinancingPct} onChange={(v) => v !== null && setD('renovationFinancingPct', v)} />}
+              </Field>
+              <Field label="Tilgjengelig egenkapital" hint="Brukes til å vise finansieringsgap.">
+                {(p) => <NumberInput {...p} unit="kr" value={defaults.availableEquity} onChange={(v) => v !== null && setD('availableEquity', v)} />}
+              </Field>
+              <div className="sm:col-span-2">
+                <p className="mb-1 text-sm font-medium text-slate-800">Finansiering av øvrige løpende utgifter</p>
+                <Segmented
+                  label="Finansiering av øvrige løpende utgifter"
+                  value={defaults.financeRunningCosts ? 'ja' : 'nei'}
+                  onChange={(v) => setD('financeRunningCosts', v === 'ja')}
+                  options={[
+                    { value: 'nei', label: 'Nei' },
+                    { value: 'ja', label: 'Ja' },
+                  ]}
+                />
+                <p className="mt-1 text-xs text-slate-600">Drift og renter dekkes av egenkapital som standard.</p>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset className="mb-5 min-w-0">
+            <legend className="mb-2 text-sm font-semibold">Salg og kjøp</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Salgskostnader (fast sum)" hint="Enkel standard. Trekkes fullt fra resultatet, men ikke fra egenkapitalbehovet.">
+                {(p) => <NumberInput {...p} unit="kr" value={defaults.saleFixedCost} onChange={(v) => v !== null && setD('saleFixedCost', v)} />}
+              </Field>
+              <Field label="Meglerprovisjon i tillegg" hint="Prosent av salgssummen. Standard 0 %.">
+                {(p) => <NumberInput {...p} unit="%" decimals={2} value={defaults.saleCommissionPct} onChange={(v) => v !== null && setD('saleCommissionPct', v)} />}
+              </Field>
+              <Field label="Øvrige kjøpsgebyrer">{(p) => <NumberInput {...p} unit="kr" value={defaults.buyFees} onChange={(v) => v !== null && setD('buyFees', v)} />}</Field>
+            </div>
+          </fieldset>
+
+          <fieldset className="min-w-0">
+            <legend className="mb-1 text-sm font-semibold">Egeninnsats</legend>
+            <p className="mb-3 text-xs text-slate-600">
+              Egen tid regnes ikke som en kostnad. I stedet setter du et lønnsomhetskrav: minimum ønsket fortjeneste per egeninnsatstime. Antall timer per uke gjelder samlet team.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Arbeidstimer egeninnsats per uke">
+                {(p) => <NumberInput {...p} unit="t/uke" value={defaults.weeklyOwnHours} onChange={(v) => v !== null && setD('weeklyOwnHours', v)} />}
+              </Field>
+              <Field label="Minimum fortjeneste per egeninnsatstime">
+                {(p) => <NumberInput {...p} unit="kr/t" value={defaults.minProfitPerOwnHour} onChange={(v) => v !== null && setD('minProfitPerOwnHour', v)} />}
+              </Field>
+              <div className="sm:col-span-2">
+                <Switch checked={defaults.maxOwnWork} onChange={(v) => setD('maxOwnWork', v)} label="Maks egeninnsats" />
+                <p className="mt-1 text-xs text-slate-600">Regner alt ikke-regulert arbeid som utført selv. Rør, elektro og bad/våtrom regnes aldri som gratis automatisk – heller ikke med maks egeninnsats.</p>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[28rem] text-sm">
+                <caption className="sr-only">Hvem som utfører hvilket arbeid</caption>
+                <thead className="text-left text-xs text-slate-600">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Arbeidskategori</th>
+                    <th className="py-1 pr-3 font-medium">Utføres</th>
+                    <th className="py-1 font-medium">Kompetanse og ansvar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {LABOR_CATEGORIES.map((c) => (
+                    <tr key={c}>
+                      <th scope="row" className="py-1.5 pr-3 text-left font-normal">
+                        {LABOR_CATEGORY_LABEL[c]}
+                        {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-amber-800">regulert</span>}
+                      </th>
+                      <td className="py-1.5 pr-3">
+                        <Select aria-label={`Hvem utfører ${LABOR_CATEGORY_LABEL[c].toLowerCase()}`} className="max-w-40" value={defaults.laborModes[c]} onChange={(e) => setD('laborModes', { ...defaults.laborModes, [c]: e.target.value as WorkMode })}>
+                          {WORK_MODES.map((m) => (
+                            <option key={m} value={m}>
+                              {WORK_MODE_LABEL[m]}
+                            </option>
+                          ))}
+                        </Select>
+                      </td>
+                      <td className="py-1.5">
+                        {isRegulatedLabor(c) ? (
+                          <Switch
+                            checked={defaults.regulatedCompetence[c]}
+                            onChange={(v) => setD('regulatedCompetence', { ...defaults.regulatedCompetence, [c]: v })}
+                            label={<span className="text-xs">Relevant kompetanse/ansvar bekreftet for {LABOR_CATEGORY_LABEL[c].toLowerCase()}</span>}
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-500">Ikke påkrevd</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </fieldset>
           <div className="mt-4 flex gap-2">
             <Button variant="primary" icon={<Save className="size-4" aria-hidden />} disabled={!defaultsDirty} loading={busy === 'defaults'} onClick={() => run('defaults', () => services.profile.update({ defaults }), 'Forutsetningene er lagret')}>
               Lagre forutsetninger

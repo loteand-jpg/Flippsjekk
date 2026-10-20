@@ -16,6 +16,7 @@ import {
   canReadAnalysis,
   computeEntitlements,
   ensureDefaultScenario,
+  decideRefreshFor,
   ensureLink,
   isModelCompatible,
   latestSharedAnalysis,
@@ -79,31 +80,78 @@ export class MockAnalysisService implements AnalysisService {
           .sort((x, y) => y.startedAt.localeCompare(x.startedAt));
         const running = ownJobs.find((j) => j.status === 'running' || j.status === 'queued');
         if (running) return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job: running, charged: false };
-        // Har brukeren allerede analysert boligen (ligger i listen eller er betalt før), åpnes den uten ny belastning.
+        // Én samlet beslutning (domain/refreshPolicy.ts): hendelser, 24 timer og 30 dager vurderes i samme funksjon for alle brukere.
+        // Analyse eldre enn 30 dager gir en grundig MARKEDSOPPFRISKNING – også for brukere som allerede har objektet – og full
+        // teknisk analyse bare ved manglende/inkompatibel analyse eller nye/endrede kritiske dokumenter og fakta.
+        const decision = decideRefreshFor(d, property.id, now);
+        // Har brukeren allerede analysert boligen (ligger i listen eller er betalt før), åpnes den uten ny belastning for analysen.
         const paidBefore = d.usageEvents.some((u) => u.userId === uid && u.propertyId === property!.id && u.kind === 'new_analysis' && u.chargeable);
-        if (latest && compatible && (inList || paidBefore)) {
+        if (latest && compatible && (inList || paidBefore) && decision.kind !== 'full_analysis') {
           ensureLink(d, uid, property.id, now);
           ensureDefaultScenario(d, uid, property.id, latest, now);
-          // Har det gått over ett døgn siden forrige analyse/oppfriskning, oppfriskes annonsen først
-          // (pris, visninger og salgsstatus). Er oppfriskingskvoten brukt opp, åpnes objektet som det er.
-          const snap = latestSnapshot(d, property.id);
-          if (snap && now.getTime() - Date.parse(snap.observedAt) > FRESHNESS.volatileMaxAgeHours * 3_600_000) {
+          const canRefresh = computeEntitlements(d, uid, now).canRefresh;
+          const opened = (): AnalysisRequestResult => ({ outcome: 'reused', propertyId: property!.id, finnId: property!.finnId, analysis: latest, staleness: staleness(d, latest, now), alreadyInList: true, charged: false });
+          if (decision.kind === 'market_refresh') {
+            // Grundigere markedsoppfriskning (inkluderer den enkle). Belastes som oppfriskning. Er kvoten brukt opp, åpnes objektet som det er.
+            const activeMarket = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'market_refresh' && (j.status === 'running' || j.status === 'queued'));
+            if (activeMarket) {
+              if (!canRefresh && !activeMarket.requestedBy.includes(uid)) return opened();
+              if (!activeMarket.requestedBy.includes(uid)) {
+                activeMarket.requestedBy.push(uid);
+                activeMarket.charges = { ...activeMarket.charges, [uid]: 'refresh' };
+              }
+              return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: activeMarket, joinedOtherUser: activeMarket.createdBy !== uid, charged: false };
+            }
+            if (canRefresh) {
+              const job = createJob(d, { property, type: 'market_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: latest.version + 1, charge: 'refresh' });
+              job.simulatedFailure = null;
+              return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
+            }
+            return opened();
+          }
+          if (decision.kind === 'lightweight_refresh') {
+            // Enkel oppfriskning: pris, visninger og salgsstatus. Utløses også av en visningshendelse selv om siste kontroll er under 24 timer gammel.
             const activeRefresh = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'light_refresh' && (j.status === 'running' || j.status === 'queued'));
             if (activeRefresh) {
               if (!activeRefresh.requestedBy.includes(uid)) activeRefresh.requestedBy.push(uid);
               return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: activeRefresh, joinedOtherUser: activeRefresh.createdBy !== uid, charged: false };
             }
-            if (computeEntitlements(d, uid, now).canRefresh) {
+            if (canRefresh) {
               const job = createJob(d, { property, type: 'light_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: null });
               job.simulatedFailure = null;
               return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
             }
           }
-          return { outcome: 'reused', propertyId: property.id, finnId: property.finnId, analysis: latest, staleness: staleness(d, latest, now), alreadyInList: true, charged: false };
+          return opened();
         }
-        // Grunnlaget er ferskt nok: brukeren får sin egen analyse som ser ut og belastes som en ny analyse.
-        const ageDays = latest ? (now.getTime() - Date.parse(latest.publishedAt ?? latest.createdAt)) / 86_400_000 : Infinity;
-        if (latest && compatible && ageDays <= FRESHNESS.analysisMaxAgeDays) {
+        if (latest && decision.kind === 'market_refresh') {
+          const activeMarket = d.jobs.find((j) => j.propertyId === property!.id && j.type === 'market_refresh' && (j.status === 'running' || j.status === 'queued'));
+          if (activeMarket) {
+            if (!activeMarket.requestedBy.includes(uid)) {
+              const ent = computeEntitlements(d, uid, now);
+              if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+              activeMarket.requestedBy.push(uid);
+              activeMarket.charges = { ...activeMarket.charges, [uid]: 'new_analysis' };
+            }
+            ensureLink(d, uid, property.id, now);
+            return { outcome: 'job_joined', propertyId: property.id, finnId: property.finnId, job: activeMarket, joinedOtherUser: activeMarket.createdBy !== uid, charged: false };
+          }
+          const ent = computeEntitlements(d, uid, now);
+          if (!ent.canRequestNewAnalysis) throw quotaError(ent);
+          const failedMarket = d.jobs.find((j) => j.dedupeKey === dedupeKeyFor(property!.id, 'market_refresh', latest.version + 1) && j.status === 'failed' && j.createdBy === uid);
+          let job: AnalysisJob;
+          if (failedMarket) {
+            job = failedMarket;
+            this.restart(job, now);
+          } else {
+            job = createJob(d, { property, type: 'market_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.stepMs, targetVersion: latest.version + 1, charge: 'new_analysis' });
+          }
+          ensureLink(d, uid, property.id, now);
+          return { outcome: 'job_started', propertyId: property.id, finnId: property.finnId, job, charged: false };
+        }
+        // Grunnlaget er ferskt nok (eller annonsen er solgt): brukeren får sin egen analyse som ser ut og belastes som en ny analyse.
+        // Annonsen oppfriskes først når beslutningen sier det (se publishLinked).
+        if (latest && compatible && decision.kind !== 'full_analysis') {
           const ent = computeEntitlements(d, uid, now);
           const mine = ownJobs[0];
           if (!ent.canRequestNewAnalysis) throw quotaError(ent);
@@ -216,7 +264,7 @@ export class MockAnalysisService implements AnalysisService {
     );
   }
 
-  async requestRefresh(propertyId: string, kind: 'light' | 'full', idempotencyKey: string): Promise<RefreshResult> {
+  async requestRefresh(propertyId: string, kind: 'light' | 'market' | 'full', idempotencyKey: string): Promise<RefreshResult> {
     void idempotencyKey;
     await this.ctx.delay();
     const uid = this.ctx.uid();
@@ -224,27 +272,51 @@ export class MockAnalysisService implements AnalysisService {
     this.tick();
     return this.ctx.db.transaction((d): RefreshResult => {
       const ent = computeEntitlements(d, uid, now);
-      requireFullAccess(ent, kind === 'light' ? 'Oppfrisking av annonsen' : 'Ny analyse');
+      requireFullAccess(ent, kind === 'light' ? 'Oppfrisking av annonsen' : kind === 'market' ? 'Markedsoppfriskning' : 'Ny analyse');
       const property = d.properties.find((p) => p.id === propertyId);
       if (!property) throw new ServiceError('not_found', 'Fant ikke eiendommen.');
       if (!d.userProperties.some((l) => l.userId === uid && l.propertyId === propertyId)) {
         throw new ServiceError('forbidden', 'Objektet må være i din liste.');
       }
-      const type = kind === 'light' ? 'light_refresh' : 'full_analysis';
+      const type = kind === 'light' ? 'light_refresh' : kind === 'market' ? 'market_refresh' : 'full_analysis';
       const active = d.jobs.find((j) => j.propertyId === propertyId && j.type === type && (j.status === 'running' || j.status === 'queued'));
       if (active) {
-        if (!active.requestedBy.includes(uid)) active.requestedBy.push(uid);
+        if (!active.requestedBy.includes(uid)) {
+          active.requestedBy.push(uid);
+          if (type === 'market_refresh') active.charges = { ...active.charges, [uid]: 'refresh' };
+        }
         return { outcome: 'job_joined', propertyId, job: active };
       }
+      // Samme samlede beslutning som ved forespørsel om analyse. En enkel oppfriskning er unødvendig bare når `lightDue` er falsk
+      // (nylig kontrollert og ingen visningshendelse siden) – også når 30-dagersregelen gjør markedsoppfriskning aktuell.
+      // En visningshendelse gjør oppfriskning mulig selv når siste kontroll er under 24 timer gammel.
+      const decision = decideRefreshFor(d, propertyId, now);
       if (kind === 'light') {
         const snap = latestSnapshot(d, propertyId);
-        if (snap && now.getTime() - Date.parse(snap.observedAt) < FRESHNESS.volatileMaxAgeHours * 3_600_000) {
+        if (snap && !decision.lightDue) {
           return { outcome: 'already_fresh', propertyId, observedAt: snap.observedAt };
         }
         if (!ent.canRefresh) throw new ServiceError('quota_exceeded', `Du har brukt alle ${ent.limits.refreshes} oppfriskingene i denne perioden.`);
         const job = createJob(d, { property, type: 'light_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: null });
         job.simulatedFailure = null;
         return { outcome: 'job_started', propertyId, job };
+      }
+      if (kind === 'market') {
+        const latestForMarket = latestSharedAnalysis(d, propertyId);
+        if (!latestForMarket) throw new ServiceError('conflict', 'Objektet har ingen analyse å oppfriske markedsdata for.');
+        const age = decision.thoroughAgeDays ?? Infinity;
+        if (age <= FRESHNESS.marketRefreshAfterDays) return { outcome: 'already_fresh', propertyId, observedAt: latestForMarket.publishedAt ?? latestForMarket.createdAt };
+        if (!ent.canRefresh) throw new ServiceError('quota_exceeded', `Du har brukt alle ${ent.limits.refreshes} oppfriskingene i denne perioden.`);
+        const job = createJob(d, { property, type: 'market_refresh', userId: uid, now, stepMs: this.ctx.jobTiming.refreshStepMs, targetVersion: latestForMarket.version + 1, charge: 'refresh' });
+        job.simulatedFailure = null;
+        return { outcome: 'job_started', propertyId, job };
+      }
+      // Full teknisk reanalyse er forbeholdt: manglende/inkompatibel analyse eller nye/endrede kritiske dokumenter og fakta.
+      if (decision.kind !== 'full_analysis') {
+        throw new ServiceError(
+          'conflict',
+          'En ny teknisk analyse er ikke nødvendig. Er markedsdataene gamle, bruk markedsoppfriskning. Full analyse gjøres bare ved nye eller endrede dokumenter, endrede kritiske fakta eller en inkompatibel modell.',
+        );
       }
       if (!ent.canRequestNewAnalysis) throw new ServiceError('quota_exceeded', `Du har brukt alle ${ent.limits.newAnalyses} nye analyser i denne perioden.`);
       const latest = latestSharedAnalysis(d, propertyId);

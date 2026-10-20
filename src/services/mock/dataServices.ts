@@ -1,6 +1,6 @@
 import { buildBaseValues } from '../../calc/scenario';
 import { NEW_ACCOUNT_DEFAULTS } from '../../config/defaults';
-import { validateComparable, type ComparableFields } from '../../domain/comparables';
+import { COMPARABLE_EXTRA_KEYS, validateComparable, type ComparableFields } from '../../domain/comparables';
 import { validateRisk, type RiskFields } from '../../domain/risks';
 import { ScenarioValuesSchema, type Scenario, type ScenarioValues, type UserComparable, type UserProperty, type UserRisk } from '../../domain/schemas';
 import type { DbState } from '../../data/db';
@@ -36,19 +36,21 @@ export class MockPropertyRepository implements PropertyRepository {
   async listMine(opts: { includeArchived?: boolean } = {}): Promise<MyPropertyItem[]> {
     await this.ctx.delay();
     const uid = this.ctx.uid();
+    const now = this.ctx.now();
     return this.ctx.db.read((s) =>
       s.userProperties
         .filter((l) => l.userId === uid && (opts.includeArchived || !l.archivedAt))
-        .map((l) => buildMyItem(s, uid, l))
+        .map((l) => buildMyItem(s, uid, l, now))
         .filter((x): x is MyPropertyItem => x !== null),
     );
   }
 
   async getMine(propertyId: string): Promise<MyPropertyItem | null> {
     const uid = this.ctx.uid();
+    const now = this.ctx.now();
     return this.ctx.db.read((s) => {
       const link = s.userProperties.find((l) => l.userId === uid && l.propertyId === propertyId);
-      return link ? buildMyItem(s, uid, link) : null;
+      return link ? buildMyItem(s, uid, link, now) : null;
     });
   }
 
@@ -160,6 +162,11 @@ export class MockComparableRepository implements ComparableRepository {
       date: input.date || null,
       notes: input.notes.trim().slice(0, 1000),
     };
+    // Valgfrie markedsvektingsfelt: bare tatt med når de er oppgitt (ukjent = utelatt).
+    for (const k of COMPARABLE_EXTRA_KEYS) {
+      const v = input[k];
+      if (v !== undefined && v !== null && v !== '') (c as unknown as Record<string, unknown>)[k] = v;
+    }
     const issues = validateComparable(c);
     if (issues.length) throw new ServiceError('validation', issues[0].message, issues);
     return c;
@@ -194,6 +201,8 @@ export class MockComparableRepository implements ComparableRepository {
       const row = d.userComparables.find((c) => c.id === id && c.userId === uid);
       if (!row) throw new ServiceError('not_found', 'Fant ikke det sammenlignbare objektet.');
       Object.assign(row, fields, { updatedAt: now.toISOString() });
+      // Felt som er tømt fjernes (ukjent = utelatt).
+      for (const k of COMPARABLE_EXTRA_KEYS) if (!(k in fields)) delete (row as unknown as Record<string, unknown>)[k];
       return row;
     });
   }

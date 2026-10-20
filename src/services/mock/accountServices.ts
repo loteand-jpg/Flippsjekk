@@ -277,8 +277,18 @@ export class MockProfileService implements ProfileService {
   async get(): Promise<Profile> {
     const uid = this.ctx.uid();
     const p = this.ctx.db.read((s) => s.profiles.find((x) => x.userId === uid) ?? null);
-    if (!p) throw new ServiceError('not_found', 'Fant ikke profilen.');
-    return p;
+    if (p) return p;
+    // Profilen kan mangle (f.eks. en lagret rad som ikke lot seg lese ved innlasting). Standardforutsetningene skal ikke
+    // forsvinne fra Konto uten forklaring, så en manglende profil gjenopprettes med standardverdiene.
+    return this.ctx.db.transaction((d) => {
+      const existing = d.profiles.find((x) => x.userId === uid);
+      if (existing) return existing;
+      const user = d.users.find((u) => u.id === uid);
+      if (!user) throw new ServiceError('not_found', 'Fant ikke profilen.');
+      const restored: Profile = { userId: uid, displayName: user.displayName, email: user.email, defaults: { ...NEW_ACCOUNT_DEFAULTS }, updatedAt: this.ctx.now().toISOString() };
+      d.profiles.push(restored);
+      return restored;
+    });
   }
 
   async update(patch: { displayName?: string; defaults?: Partial<Profile['defaults']> }): Promise<Profile> {

@@ -1,29 +1,48 @@
 import { z } from 'zod';
 import {
+  ANCHOR_ADJUSTMENT_CATEGORIES,
+  ANCHOR_ADJUSTMENT_MAX_PCT,
   BUYER_TYPES,
+  CHANGE_LEVELS,
   CHECK_STATUSES,
   CHECKLIST_KEYS,
   COMPARABLE_KINDS,
+  DATA_QUALITY_LEVELS,
   DUTY_BASES,
   FACT_STATUSES,
+  FEASIBILITY_STATUSES,
   JOB_STATUSES,
   JOB_TYPES,
+  LABOR_CATEGORIES,
+  LAYOUT_MATCHES,
+  LOCATION_LEVELS,
   PRICE_BASES,
   PRIORITIES,
   PROPERTY_TYPES,
   RECOMMENDATIONS,
+  REGULATED_LABOR_CATEGORIES,
   RENOVATION_LEVELS,
   RENOVATION_MODES,
   RISK_CATEGORIES,
   SALE_STATUSES,
+  SCENARIO_KINDS,
+  SCENARIO_SEARCH_STATUSES,
+  SCREENING_ASPECTS,
+  SCREENING_CONCEPTS,
+  SCREENING_RESULTS,
   SOURCE_KINDS,
+  STANDARD_CLASSES,
   SUBSCRIPTION_STATUSES,
   TAX_MODES,
   TENURES,
+  UNCERTAINTY_LEVELS,
   USAGE_KINDS,
   VIEWING_STATUSES,
+  WORK_MODES,
   WORK_STATUSES,
 } from './enums';
+import { validateScenarioSet } from './analysisScenarios';
+import { migrateProfileDefaultsRaw, migrateScenarioValuesRaw } from './migrate';
 
 /**
  * Internt, versjonert domeneskjema. Typene i appen utledes herfra, slik at
@@ -137,6 +156,26 @@ export const RenovationItemSchema = z.object({
   priority: z.enum(PRIORITIES),
   included: z.boolean(),
   note: z.string().optional(),
+  /**
+   * Arbeidsmodell (valgfri, bakoverkompatibel). Uten `laborCategory` gjelder eldre regler:
+   * `electrician`/`plumber`/`other` er innleide fag og `hours` er egne timer.
+   * Med `laborCategory` kan arbeid skilles fra materialer og fordeles på selv/delvis/innleid.
+   *
+   * ÉN kostnadsmodell per tiltak: et tiltak med `laborCategory` bruker `materials` + `laborCostHired`, og
+   * `electrician`/`plumber`/`other` skal da være null eller 0. Motoren ignorerer dem for slike tiltak (aldri
+   * dobbelttelling), og agentkontrakten avviser tiltak som fyller ut begge (se `laborModelIssues`).
+   */
+  laborCategory: z.enum(LABOR_CATEGORIES).nullable().optional(),
+  /** Totalt antall arbeidstimer for tiltaket, uavhengig av hvem som utfører det. */
+  laborHours: z.number().finite().nonnegative().nullable().optional(),
+  /** Pris for arbeidet dersom det er innleid (hele tiltaket). Ukjent = null. */
+  laborCostHired: nullableMoney.optional(),
+  /** Overstyrer profilens arbeidsmodell for dette tiltaket. */
+  workMode: z.enum(WORK_MODES).nullable().optional(),
+  /** Egenandel (0–1) når arbeidsmodus er «delvis». */
+  selfShare: z.number().min(0).max(1).nullable().optional(),
+  /** Hvor prisene kommer fra – klargjør for prisbank med versjon senere. */
+  priceSource: z.object({ kind: z.enum(['agent', 'prisbank', 'bruker']), version: z.string().nullable() }).optional(),
 });
 export type RenovationItem = z.infer<typeof RenovationItemSchema>;
 
@@ -188,6 +227,26 @@ const ComparableFieldShape = {
   area: z.number().positive().nullable(),
   date: isoDate.nullable(),
   notes: z.string(),
+  // Valgfrie felt for markedsvekting (modell 1.1). Mangler de, regnes egenskapen som ukjent.
+  bedrooms: z.number().int().nonnegative().nullable().optional(),
+  propertyType: z.enum(PROPERTY_TYPES).nullable().optional(),
+  tenure: z.enum(TENURES).nullable().optional(),
+  /** Fellesgjeld ved salget (kr). Brukes til å normalisere mellom kontant- og totalpris. */
+  sharedDebt: nullableMoney.optional(),
+  locationLevel: z.enum(LOCATION_LEVELS).nullable().optional(),
+  standardClass: z.enum(STANDARD_CLASSES).nullable().optional(),
+  layoutMatch: z.enum(LAYOUT_MATCHES).nullable().optional(),
+  floor: z.number().int().nullable().optional(),
+  elevator: z.boolean().nullable().optional(),
+  balcony: z.boolean().nullable().optional(),
+  parking: z.boolean().nullable().optional(),
+  /** Utsikt/sol eller annen generisk egenskapsmatch (tekst brukes bare til visning). */
+  viewNote: z.string().nullable().optional(),
+  dataQuality: z.enum(DATA_QUALITY_LEVELS).nullable().optional(),
+  /** Manuell markedsjusteringsfaktor for denne referansen (1 = ingen justering). */
+  marketAdjustment: z.number().positive().nullable().optional(),
+  /** Aktive annonser: opprinnelig prisantydning (kontant). Lavere nåværende pris betyr at annonsen er prisnedsatt. */
+  originalAskingPrice: nullableMoney.optional(),
 };
 
 /** Sammenlignbart objekt i den felles analysen (grunnlaget). */
@@ -253,6 +312,120 @@ export const SaleEstimateSchema = z.object({
 });
 export type SaleEstimate = z.infer<typeof SaleEstimateSchema>;
 
+/** Sluttproduktets egenskaper i et scenario. */
+export const ScenarioEndProductSchema = z.object({
+  bedrooms: z.number().int().nonnegative().nullable(),
+  /**
+   * Sluttstandard etter scenarioet. Brukes automatisk av markedsvektingen. null/mangler = ikke dokumentert; markedsvektingen
+   * bruker da en tydelig merket fallback utledet fra oppussingsnivået, og leder aldri til at verdien fremstår som dokumentert.
+   */
+  standardClass: z.enum(STANDARD_CLASSES).nullable().optional(),
+  layoutNote: z.string(),
+  kitchenChange: z.enum(CHANGE_LEVELS),
+  bathChange: z.enum(CHANGE_LEVELS),
+});
+export type ScenarioEndProduct = z.infer<typeof ScenarioEndProductSchema>;
+
+/**
+ * Scenarioets egen risiko. Kommer i tillegg til objektets generelle risiko og brukes i scenario-rangeringen.
+ * Enkelt og etterprøvbart: fire nivåer med kort begrunnelse – ingen egen risikomotor.
+ * Et nivå som ikke er vurdert regnes som «uavklart» (konservativt), ikke som «middels».
+ */
+export const ScenarioRiskSchema = z.object({
+  technical: z.enum(UNCERTAINTY_LEVELS),
+  cost: z.enum(UNCERTAINTY_LEVELS),
+  time: z.enum(UNCERTAINTY_LEVELS),
+  approval: z.enum(UNCERTAINTY_LEVELS),
+  note: z.string(),
+});
+export type ScenarioRisk = z.infer<typeof ScenarioRiskSchema>;
+
+/**
+ * Agentens begrunnede, begrensede justering av markedsankeret for kvalitative forhold modellen ikke fanger.
+ * Agenten leverer ikke en egen salgsverdi – koden bruker justeringen (maks ±5 %) på ankeret og fastsetter low/base/high.
+ */
+export const AnchorAdjustmentSchema = z.object({
+  pct: z.number().finite().min(-ANCHOR_ADJUSTMENT_MAX_PCT).max(ANCHOR_ADJUSTMENT_MAX_PCT),
+  category: z.enum(ANCHOR_ADJUSTMENT_CATEGORIES),
+  reason: z.string().min(20, 'Begrunn justeringen konkret (minst 20 tegn).'),
+});
+export type AnchorAdjustment = z.infer<typeof AnchorAdjustmentSchema>;
+
+/** Agentens klassifisering av en referanse mot DETTE scenarioets sluttprodukt (planløsningslikhet varierer per scenario). */
+export const ReferenceClassificationSchema = z.object({
+  comparableId: z.string().min(1),
+  layoutMatch: z.enum(LAYOUT_MATCHES).nullable(),
+  note: z.string(),
+});
+export type ReferenceClassification = z.infer<typeof ReferenceClassificationSchema>;
+
+/** Screening av et alternativt grep: hvert aspekt vurderes. Består ikke screeningen, tas grepet ikke med som scenario. */
+export const ScenarioScreeningSchema = z.object({
+  concept: z.enum(SCREENING_CONCEPTS),
+  /** Antall ekstra gode soverom grepet gir. */
+  addedBedrooms: z.number().int().nonnegative().nullable(),
+  /** Badflytting er bare aktuelt når eksisterende bad uansett må totalrenoveres. */
+  existingBathNeedsFullRenovation: z.boolean().nullable().optional(),
+  checks: z.array(z.object({ aspect: z.enum(SCREENING_ASPECTS), result: z.enum(SCREENING_RESULTS), note: z.string() })),
+});
+export type ScenarioScreening = z.infer<typeof ScenarioScreeningSchema>;
+
+/** Oversikt over scenariojakten: hva som ble vurdert og hvorfor det ble valgt eller avvist. */
+export const ScenarioSearchSchema = z.object({
+  status: z.enum(SCENARIO_SEARCH_STATUSES),
+  considered: z.array(
+    z.object({
+      concept: z.enum(SCREENING_CONCEPTS),
+      outcome: z.enum(['valgt', 'avvist']),
+      reason: z.string(),
+      scenarioId: z.string().nullable(),
+    }),
+  ),
+});
+export type ScenarioSearch = z.infer<typeof ScenarioSearchSchema>;
+
+/**
+ * Agentdefinert scenario: basis eller et alternativ (inntil to) med egne oppussingstiltak og sluttprodukt.
+ * Eksisterende analyser uten `scenarios` virker via fallback (se `resolveAnalysisScenarios`).
+ * Strengt skjema: økonomiske nøkkeltall (fortjeneste, maksbud osv.) kan ikke ligge i et scenario – de beregnes av motoren.
+ *
+ * Salgsverdi: koden fastsetter low/base/high (`resolveScenarioSale`) fra markedsreferanser, sluttprodukt og eventuell
+ * begrenset `anchorAdjustment`. `sale` er agentens/fellesanalysens HISTORISKE estimat. Det brukes ikke som fasit når
+ * markedsmotoren gir en verdi – bare som tydelig merket fallback når motoren ikke kan regne.
+ */
+export const AnalysisScenarioSchema = z.strictObject({
+  id,
+  kind: z.enum(SCENARIO_KINDS),
+  level: z.enum(RENOVATION_LEVELS),
+  title: z.string().min(1),
+  description: z.string(),
+  feasibility: z.enum(FEASIBILITY_STATUSES),
+  feasibilityRationale: z.string(),
+  /** Krav til avklaring/godkjenning før scenarioet kan regnes som gjennomførbart. */
+  requirements: z.array(z.string()),
+  requiresApproval: z.boolean(),
+  endProduct: ScenarioEndProductSchema,
+  items: z.array(RenovationItemSchema),
+  /** Foreslått varighet for selve oppussingen (uten tid til økonomisk oppgjør). */
+  suggestedMonths: z.number().positive().nullable(),
+  vatIncluded: z.boolean(),
+  /** Agentens/fellesanalysens historiske salgsestimat for sluttproduktet. Ikke fasit når markedsmotoren kan regne. */
+  sale: SaleEstimateSchema.nullable().optional(),
+  /** Begrenset, begrunnet justering av markedsankeret (maks ±5 %). */
+  anchorAdjustment: AnchorAdjustmentSchema.nullable().optional(),
+  /** Scenarioets egen risiko (teknisk, kostnad, tid, myndighet). Mangler = ikke vurdert (regnes som uavklart). */
+  risk: ScenarioRiskSchema.optional(),
+  uncertainty: z.object({ level: z.enum(UNCERTAINTY_LEVELS), note: z.string() }),
+  /** Referansegrunnlag: id-er på sammenlignbare objekter i analysen som støtter salgsverdien. */
+  referenceIds: z.array(z.string()),
+  referenceNote: z.string(),
+  /** Referanseklassifisering mot dette scenarioets sluttprodukt. */
+  referenceClassification: z.array(ReferenceClassificationSchema).optional(),
+  /** Screening av et alternativt grep (påkrevd i praksis for alternativer fra scenariojakten). */
+  screening: ScenarioScreeningSchema.optional(),
+});
+export type AnalysisScenario = z.infer<typeof AnalysisScenarioSchema>;
+
 export const BidStepSchema = z.object({
   title: z.string(),
   detail: z.string(),
@@ -283,6 +456,10 @@ export const SharedAnalysisSchema = z.object({
   visibility: z.enum(['shared', 'private']),
   ownerId: z.string().nullable(),
   origin: z.enum(['agent', 'demo', 'synthetic', 'import_v1']),
+  /** full = teknisk hovedanalyse. market_refresh = grundig markedsoppfriskning av en tidligere analyse (samme tekniske grunnlag). */
+  analysisKind: z.enum(['full', 'market_refresh']).optional(),
+  /** Hvilken analyseversjon en markedsoppfriskning bygger på. */
+  derivedFromVersion: z.number().int().positive().nullable().optional(),
   createdAt: isoDateTime,
   publishedAt: isoDateTime.nullable(),
   /** null = ikke vurdert (kun tillatt i private utkast; publisering krever verdi). */
@@ -302,6 +479,11 @@ export const SharedAnalysisSchema = z.object({
     debtAtSale: nullableMoney,
     suggestedPurchasePrice: nullableMoney,
     dutyRule: DutyRuleSchema,
+    /** Basis + inntil to alternativer. Mangler på eldre analyser (da brukes global `sale` som fallback). */
+    scenarios: z.array(AnalysisScenarioSchema).max(3).optional(),
+    defaultScenarioId: z.string().nullable().optional(),
+    /** Hva scenariojakten vurderte og avviste. */
+    scenarioSearch: ScenarioSearchSchema.optional(),
   }),
   risks: z.array(RiskSchema),
   checklist: z.array(ChecklistItemSchema),
@@ -335,9 +517,21 @@ export const PublishableAnalysisSchema = SharedAnalysisSchema.extend({
   publishedAt: isoDateTime,
   checklist: z.array(ChecklistItemSchema).length(12),
   sources: z.array(SourceSchema).min(1),
+}).superRefine((a, ctx) => {
+  for (const issue of validateScenarioSet(a.estimates.scenarios, new Set(a.comparables.map((c) => c.id)), a.estimates.scenarioSearch)) {
+    ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+  }
 });
 
-export const ScenarioValuesSchema = z.object({
+const LaborModesSchema = z.object(Object.fromEntries(LABOR_CATEGORIES.map((c) => [c, z.enum(WORK_MODES)])) as Record<(typeof LABOR_CATEGORIES)[number], z.ZodEnum<{ selv: 'selv'; delvis: 'delvis'; innleid: 'innleid' }>>);
+
+/** Kompetanse/ansvar for regulert arbeid, bekreftet per arbeidsområde. Ingen bekreftelse = arbeidet regnes som innleid. */
+export const RegulatedCompetenceSchema = z.object(
+  Object.fromEntries(REGULATED_LABOR_CATEGORIES.map((c) => [c, z.boolean()])) as Record<(typeof REGULATED_LABOR_CATEGORIES)[number], z.ZodBoolean>,
+);
+export type RegulatedCompetence = z.infer<typeof RegulatedCompetenceSchema>;
+
+const ScenarioValuesObject = z.object({
   buyerType: z.enum(BUYER_TYPES),
   purchasePrice: nullableMoney,
   debtAtPurchase: nullableMoney,
@@ -353,17 +547,39 @@ export const ScenarioValuesSchema = z.object({
   lumpSumHours: z.number().finite().nullable(),
   vatIncluded: z.boolean(),
   reservePct: z.number().finite().nullable(),
+  /** Total prosjektvarighet i måneder (oppussing + tid til økonomisk oppgjør). */
   months: z.number().finite().nullable(),
+  /** Hvor mye av `months` som er tid fra ferdig oppussing til økonomisk oppgjør. null = ikke delt opp. */
+  settlementMonths: z.number().finite().nullable(),
   monthlyCost: nullableMoney,
   interestPct: z.number().finite().nullable(),
-  financingPct: z.number().finite().nullable(),
+  /** Låneandel (prosentpoeng) av kontant kjøpesum P (fra modell 1.2; kjøpskostnadene lånefinansieres ikke). */
+  purchaseFinancingPct: z.number().finite().nullable(),
+  /** Låneandel (prosentpoeng) av oppussing inkl. reserve. Gradvis trekk, snitt halvveis. */
+  renovationFinancingPct: z.number().finite().nullable(),
+  /** Om løpende kostnader (drift og renter) lånefinansieres. Standard: nei. */
+  financeRunningCosts: z.boolean(),
+  /** Tilgjengelig egenkapital – brukes til å vise finansieringsgap. */
+  availableEquity: nullableMoney,
   saleBasis: z.enum(PRICE_BASES),
   saleLow: nullableMoney,
   saleBase: nullableMoney,
   saleHigh: nullableMoney,
   saleFixedCost: nullableMoney,
   saleCommissionPct: z.number().finite().nullable(),
+  /** @deprecated Timeverdi (eldre modell). Styrer ikke lenger hovedøkonomien; egen tid er ikke en kostnad. */
   hourValue: nullableMoney,
+  /** Minimum ønsket fortjeneste per egeninnsatstime (kr/t). */
+  minProfitPerOwnHour: nullableMoney,
+  /** Samlet team-innsats per uke (timer). */
+  weeklyOwnHours: z.number().finite().nullable(),
+  laborModes: LaborModesSchema,
+  /** Maks egeninnsats: oppgrader ikke-regulert arbeid til «selv». Regulert arbeid er aldri gratis automatisk. */
+  maxOwnWork: z.boolean(),
+  /** Relevant kompetanse/ansvar bekreftet for dette arbeidsområdet (rør, elektro, bad/våtrom). Gis per område. */
+  regulatedCompetence: RegulatedCompetenceSchema,
+  /** Hvilket agentscenario (basis/alternativ) kalkylen er basert på. null = analysens basis. */
+  analysisScenarioId: z.string().nullable(),
   profitTarget: nullableMoney,
   taxMode: z.enum(TAX_MODES),
   taxPct: z.number().finite().nullable(),
@@ -371,7 +587,9 @@ export const ScenarioValuesSchema = z.object({
   walkAway: nullableMoney,
   notes: z.string(),
 });
-export type ScenarioValues = z.infer<typeof ScenarioValuesSchema>;
+/** Eldre rader (med `financingPct` osv.) migreres eksplisitt før validering – se `migrateScenarioValuesRaw`. */
+export const ScenarioValuesSchema = z.preprocess((raw) => migrateScenarioValuesRaw(raw), ScenarioValuesObject);
+export type ScenarioValues = z.infer<typeof ScenarioValuesObject>;
 
 export const ScenarioSchema = z.object({
   id,
@@ -438,21 +656,34 @@ export const CalendarOverrideSchema = z.object({
 });
 export type CalendarOverride = z.infer<typeof CalendarOverrideSchema>;
 
-export const ProfileDefaultsSchema = z.object({
+const ProfileDefaultsObject = z.object({
   buyerTypeApartment: z.enum(BUYER_TYPES),
   buyerTypeHouse: z.enum(BUYER_TYPES),
+  /** Standard total prosjektvarighet (måneder), inkludert tid til økonomisk oppgjør. */
   months: z.number().positive(),
+  /** Tid fra ferdig oppussing til økonomisk oppgjør (måneder). Standard 3–4. */
+  saleSettlementMonths: z.number().min(0).max(12),
   interestPct: z.number().min(0),
-  financingPct: z.number().min(0).max(100),
+  purchaseFinancingPct: z.number().min(0).max(100),
+  renovationFinancingPct: z.number().min(0).max(100),
+  financeRunningCosts: z.boolean(),
+  availableEquity: z.number().min(0),
+  weeklyOwnHours: z.number().min(0).max(168),
+  minProfitPerOwnHour: z.number().min(0),
+  laborModes: LaborModesSchema,
+  maxOwnWork: z.boolean(),
+  regulatedCompetence: RegulatedCompetenceSchema,
   reservePct: z.number().min(0),
-  hourValue: z.number().min(0),
+  /** @deprecated Eldre timeverdi. Ikke i bruk i hovedøkonomien. */
+  hourValue: z.number().min(0).optional(),
   profitTarget: z.number(),
   saleFixedCost: z.number().min(0),
   saleCommissionPct: z.number().min(0),
   buyFees: z.number().min(0),
   homeArea: z.string(),
 });
-export type ProfileDefaults = z.infer<typeof ProfileDefaultsSchema>;
+export const ProfileDefaultsSchema = z.preprocess((raw) => migrateProfileDefaultsRaw(raw), ProfileDefaultsObject);
+export type ProfileDefaults = z.infer<typeof ProfileDefaultsObject>;
 
 export const ProfileSchema = z.object({
   userId: id,
@@ -526,6 +757,8 @@ export const AnalysisJobSchema = z.object({
   requestedBy: z.array(id),
   resultAnalysisId: z.string().nullable(),
   resultSnapshotId: z.string().nullable(),
+  /** Hvordan hver bruker belastes når jobben er ferdig (markedsoppfriskning). Mangler = ny analyse. */
+  charges: z.record(z.string(), z.enum(['new_analysis', 'refresh'])).optional(),
   /** Kun demo: planlagt feil for et bestemt forsøk. */
   simulatedFailure: z
     .object({ attempt: z.number().int(), atStep: z.number().int(), mode: z.enum(['fetch_error', 'invalid_result']) })

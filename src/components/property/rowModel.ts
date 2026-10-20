@@ -2,6 +2,7 @@ import { effectiveRisks } from '../../domain/risks';
 import { aggregateRisk, dataQuality, preliminaryReasons, type QualityGrade, type RiskBand } from '../../domain/assessment';
 import type { BuyerType, PriceBasis, PropertyType, Recommendation, SaleStatus, Tenure, WorkStatus } from '../../domain/enums';
 import type { ProfileDefaults, PropertySnapshot, ScenarioValues, SharedAnalysis } from '../../domain/schemas';
+import { recommendedBidOf } from '../../calc/engine';
 import { buildBaseValues, diffValues, evaluateScenario, type ScenarioEvaluation } from '../../calc/scenario';
 import type { MyPropertyItem } from '../../services/types';
 
@@ -30,7 +31,11 @@ export interface PropertyRow {
   saleBase: number | null;
   saleBasis: PriceBasis | null;
   profit: number | null;
-  profitAfterOwnWork: number | null;
+  /** Fortjeneste før skatt per egeninnsatstime. Egen tid er ikke en kostnad. */
+  profitPerOwnHour: number | null;
+  meetsHourlyRequirement: boolean | null;
+  equityNeed: number | null;
+  equityGap: number | null;
   projectReturn: number | null;
   months: number | null;
   ownHours: number | null;
@@ -68,11 +73,12 @@ export function snapshotFor(item: Pick<MyPropertyItem, 'snapshots' | 'snapshot'>
   return item.snapshots.find((s) => s.id === analysis.snapshotId) ?? item.snapshot;
 }
 
-export function baseValuesFor(item: MyPropertyItem, analysis: SharedAnalysis | null, defaults: ProfileDefaults) {
+export function baseValuesFor(item: MyPropertyItem, analysis: SharedAnalysis | null, defaults: ProfileDefaults, analysisScenarioId: string | null = item.primaryScenario?.values.analysisScenarioId ?? null) {
   if (!analysis) return null;
   const snap = snapshotFor(item, analysis);
   if (!snap) return null;
-  return buildBaseValues({ property: item.property, snapshot: snap, analysis, defaults });
+  // Grunnverdiene følger agentscenarioet (basis/alternativ) som kalkylen er bygget på.
+  return buildBaseValues({ property: item.property, snapshot: snap, analysis, defaults, analysisScenarioId });
 }
 
 export function buildRow(item: MyPropertyItem, defaults: ProfileDefaults, now: Date): PropertyRow {
@@ -118,13 +124,17 @@ export function buildRow(item: MyPropertyItem, defaults: ProfileDefaults, now: D
     sharedDebt: snap?.sharedDebt ?? null,
     askingInclDebt,
     purchase: values?.purchasePrice ?? null,
-    maxBid: ev?.evaluation.maxBid?.price ?? null,
-    maxBidStatus: ev?.evaluation.maxBid?.status ?? null,
+    // Anbefalt maksbud = laveste av grensene (fortjenestemål og timekrav). Samme tall som på objektsiden.
+    maxBid: ev ? recommendedBidOf(ev.evaluation).price : null,
+    maxBidStatus: ev ? recommendedBidOf(ev.evaluation).status : null,
     renovationWithReserve: b?.RB ?? null,
     saleBase: values?.saleBase ?? null,
     saleBasis: values?.saleBasis ?? null,
     profit: b?.profit ?? null,
-    profitAfterOwnWork: b?.profitAfterOwnWork ?? null,
+    profitPerOwnHour: b?.profitPerOwnHour ?? null,
+    meetsHourlyRequirement: b?.meetsHourlyRequirement ?? null,
+    equityNeed: b?.equityNeed ?? null,
+    equityGap: b?.equityGap ?? null,
     projectReturn: b?.projectReturn ?? null,
     months: values?.months ?? null,
     ownHours: ev?.renovation.hours ?? null,

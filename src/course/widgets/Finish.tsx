@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { Field, NumberInput, Segmented, TextInput } from '../../components/ui/forms';
 import { Alert, Button, buttonClass } from '../../components/ui/primitives';
 import { CASE_LABEL, solveMaxBid } from '../../calc/engine';
-import { evaluateScenario } from '../../calc/scenario';
+import { evaluateCourseScenario as evaluateScenario } from '../evaluate';
 import type { PriceBasis } from '../../domain/enums';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatNOK, UNKNOWN } from '../../lib/format';
@@ -85,7 +85,8 @@ export function finalCaseValues(fc: FinalCaseState, basis: PriceBasis, purchase:
     months: MONTHS,
     monthlyCost: MONTHLY,
     interestPct: fc.interestPct,
-    financingPct: fc.financingPct,
+    purchaseFinancingPct: fc.financingPct,
+    renovationFinancingPct: fc.financingPct,
     saleBasis: basis,
     saleLow: fc.low,
     saleBase: fc.base,

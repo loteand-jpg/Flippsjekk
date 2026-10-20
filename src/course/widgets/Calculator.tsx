@@ -6,7 +6,8 @@ import { BarList } from '../../components/analysis/charts';
 import { Field, NumberInput, Segmented, Select } from '../../components/ui/forms';
 import { Alert, Button } from '../../components/ui/primitives';
 import { CASE_LABEL, solveMaxBid, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
-import { evaluateScenario, type ScenarioEvaluation } from '../../calc/scenario';
+import type { ScenarioEvaluation } from '../../calc/scenario';
+import { evaluateCourseScenario as evaluateScenario } from '../evaluate';
 import { DUTY_BASES, DUTY_BASIS_LABEL, type DutyBasis } from '../../domain/enums';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatHours, formatNOK, formatNOKSigned, formatPct, NO_BASIS, UNKNOWN } from '../../lib/format';
@@ -40,7 +41,7 @@ function CalcField({ label, k, unit, decimals, hint, tag }: { label: string; k: 
   const { calc, setCalc } = useCalc();
   return (
     <Field label={label} hint={hint} labelAside={tag ? <EvidenceTag kind={tag} /> : undefined}>
-      {(p) => <NumberInput {...p} value={calc[k] as number | null} onChange={(v) => setCalc({ [k]: v } as Partial<ScenarioValues>)} unit={unit} decimals={decimals} />}
+      {(p) => <NumberInput {...p} value={calc[k] as number | null} onChange={(v) => setCalc({ [k]: v, ...(k === 'purchaseFinancingPct' ? { renovationFinancingPct: v } : {}) } as Partial<ScenarioValues>)} unit={unit} decimals={decimals} />}
     </Field>
   );
 }
@@ -172,7 +173,7 @@ export function FlippCalculator() {
             <CalcField label="Prosjektmåneder (m)" k="months" unit="mnd" decimals={1} tag="mine" />
             <CalcField label="Månedlige kostnader (M)" k="monthlyCost" unit="kr" tag="analyse" hint="Felleskostnader, strøm, forsikring, avgifter m.m." />
             <CalcField label="Årlig rente (r)" k="interestPct" unit="%" decimals={2} tag="mine" />
-            <CalcField label="Finansiert andel (f)" k="financingPct" unit="%" decimals={0} tag="mine" />
+            <CalcField label="Finansiert andel (f)" k="purchaseFinancingPct" unit="%" decimals={0} tag="mine" />
           </Group>
 
           <Group title="Salg" sub="Lav, base og høy – ikke én magisk salgspris.">

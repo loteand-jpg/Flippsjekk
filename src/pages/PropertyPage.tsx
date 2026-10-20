@@ -17,7 +17,7 @@ import { snapshotFor } from '../components/property/rowModel';
 import { Field, Select, TextInput } from '../components/ui/forms';
 import { Dialog, TabPanel, Tabs } from '../components/ui/overlay';
 import { Alert, Badge, Button, EmptyState, PageLoading } from '../components/ui/primitives';
-import { FRESHNESS } from '../config/freshness';
+import { REFRESH_REASON_LABEL, TECHNICAL_REASON_LABEL } from '../domain/refreshPolicy';
 import { NEW_ACCOUNT_DEFAULTS } from '../config/defaults';
 import { preliminaryReasons } from '../domain/assessment';
 import { PROPERTY_TYPE_LABEL, RECOMMENDATION_LABEL, TENURE_LABEL, WORK_STATUS_LABEL, WORK_STATUSES, type WorkStatus } from '../domain/enums';
@@ -79,8 +79,8 @@ export function PropertyPage() {
   const defaults = profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;
   const baseSnapshot = item.data && analysis ? snapshotFor(item.data, analysis) : null;
   const base = useMemo(
-    () => (item.data && analysis && baseSnapshot ? buildBaseValues({ property: item.data.property, snapshot: baseSnapshot, analysis, defaults }) : null),
-    [item.data, analysis, baseSnapshot, defaults],
+    () => (item.data && analysis && baseSnapshot ? buildBaseValues({ property: item.data.property, snapshot: baseSnapshot, analysis, defaults, analysisScenarioId: draft?.analysisScenarioId ?? selected?.values.analysisScenarioId ?? null }) : null),
+    [item.data, analysis, baseSnapshot, defaults, draft?.analysisScenarioId, selected?.values.analysisScenarioId],
   );
   const result = useMemo(() => (draft ? evaluateScenario(draft) : null), [draft]);
   const baseResult = useMemo(() => (base ? evaluateScenario(base.values) : null), [base]);
@@ -202,6 +202,16 @@ export function PropertyPage() {
     locked,
     profile,
     now,
+    createScenarioFrom: async (analysisScenarioId, name) => {
+      const snapshot = baseSnapshot ?? it.snapshot;
+      if (!snapshot) return;
+      const values = buildBaseValues({ property: it.property, snapshot, analysis, defaults, analysisScenarioId }).values;
+      let created: { id: string } | null = null;
+      const ok = await run('create', async () => {
+        created = await services.scenarios.create(it.property.id, { name: name.slice(0, 80), analysisId: analysis.id, values });
+      }, 'Nytt scenario er opprettet');
+      if (ok && created) switchTo((created as { id: string }).id);
+    },
   };
 
   const save = async () => {
@@ -217,11 +227,11 @@ export function PropertyPage() {
     if (dirty) setPendingSwitch(sid);
     else setSelectedId(sid);
   };
-  const refresh = (kind: 'light' | 'full') =>
+  const refresh = (kind: 'light' | 'market' | 'full') =>
     run(`refresh-${kind}`, async () => {
       const r = await services.analysis.requestRefresh(it.property.id, kind, uuid());
-      if (r.outcome === 'already_fresh') toast({ tone: 'info', title: 'Annonseopplysningene er allerede ferske', body: 'Ingen oppfrisking ble belastet.' });
-      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : 'Ny analyse startet' });
+      if (r.outcome === 'already_fresh') toast({ tone: 'info', title: kind === 'market' ? 'Markedsdataene er allerede oppdaterte' : 'Annonseopplysningene er allerede ferske', body: 'Ingen oppfrisking ble belastet.' });
+      else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : kind === 'market' ? 'Markedsoppfriskning startet' : 'Ny analyse startet' });
     });
 
   return (
@@ -301,20 +311,39 @@ export function PropertyPage() {
             Scenarioet bygger på ditt importerte utkast.
           </Alert>
         )}
-        {analysis.visibility === 'shared' && analysisAge > FRESHNESS.analysisMaxAgeDays && (
+        {analysis.visibility === 'shared' && it.refreshDecision.kind === 'market_refresh' && !it.technicalReanalysis.needed && (
           <Alert
             tone="warning"
-            title={`Analysen er ${Math.floor(analysisAge)} dager gammel`}
+            title={`Markedsdataene er ${Math.floor(it.refreshDecision.thoroughAgeDays ?? analysisAge)} dager gamle`}
             action={
-              <Button size="sm" loading={busy === 'refresh-full'} disabled={!entitlements?.canRequestNewAnalysis || Boolean(it.activeJob)} onClick={() => refresh('full')}>
-                Bestill full ny analyse
+              <Button size="sm" loading={busy === 'refresh-market'} disabled={!entitlements?.canRefresh || Boolean(it.activeJob)} onClick={() => refresh('market')}>
+                Oppdater markedsdata
               </Button>
             }
           >
-            Oppussing, salgsverdi og risiko bør vurderes på nytt. En full ny analyse belastes som én ny analyse.
+            <p>Vi henter ny prisantydning, visninger og salgsstatus, oppdaterer markedsreferansene og regner salgsverdien og økonomien på nytt for hvert scenario.</p>
+            <p>Det tekniske grunnlaget (dokumenter, risiko, oppussingsbehov og scenarioer) leses ikke på nytt. Belastes som én oppfriskning.</p>
           </Alert>
         )}
-        {volatileAgeH !== null && volatileAgeH > FRESHNESS.volatileMaxAgeHours && (
+        {analysis.visibility === 'shared' && it.technicalReanalysis.needed && (
+          <Alert
+            tone="warning"
+            title="Teknisk grunnlag bør analyseres på nytt"
+            action={
+              <Button size="sm" loading={busy === 'refresh-full'} disabled={!entitlements?.canRequestNewAnalysis || Boolean(it.activeJob)} onClick={() => refresh('full')}>
+                Bestill ny teknisk analyse
+              </Button>
+            }
+          >
+            <ul className="list-disc pl-4">
+              {it.technicalReanalysis.reasons.map((r) => (
+                <li key={r}>{TECHNICAL_REASON_LABEL[r]}</li>
+              ))}
+            </ul>
+            <p>En ny teknisk analyse belastes som én ny analyse.</p>
+          </Alert>
+        )}
+        {it.refreshDecision.kind === 'lightweight_refresh' && (
           <Alert
             tone="info"
             title="Pris, visninger og salgsstatus bør kontrolleres"
@@ -324,11 +353,12 @@ export function PropertyPage() {
               </Button>
             }
           >
-            Sist kontrollert for {Math.round(volatileAgeH)} timer siden. Oppfrisking endrer ikke dine lagrede forutsetninger.
+            {it.refreshDecision.reasons.map((r) => REFRESH_REASON_LABEL[r]).join('. ')}
+            {volatileAgeH !== null ? `. Sist kontrollert for ${Math.round(volatileAgeH)} timer siden` : ''}. Oppfrisking endrer ikke dine lagrede forutsetninger.
           </Alert>
         )}
         {it.activeJob && (
-          <Alert tone="info" title={it.activeJob.type === 'light_refresh' ? 'Oppfrisking pågår' : 'Ny analyse pågår'}>
+          <Alert tone="info" title={it.activeJob.type === 'light_refresh' ? 'Oppfrisking pågår' : it.activeJob.type === 'market_refresh' ? 'Markedsoppfriskning pågår' : 'Ny analyse pågår'}>
             <span className="inline-flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" aria-hidden /> {it.activeJob.steps[Math.min(it.activeJob.stepIndex, it.activeJob.steps.length - 1)]} …
             </span>
@@ -534,7 +564,7 @@ export function PropertyPage() {
           onApply={async (mode) => {
             const newSnap = snapshotFor(it, latest);
             if (!newSnap) return;
-            const newBase = buildBaseValues({ property: it.property, snapshot: newSnap, analysis: latest, defaults }).values;
+            const newBase = buildBaseValues({ property: it.property, snapshot: newSnap, analysis: latest, defaults, analysisScenarioId: draft.analysisScenarioId }).values;
             const values = base ? rebaseValues(base.values, newBase, draft, mode) : newBase;
             const ok = await run('rebase', async () => {
               await services.scenarios.update(selected.id, { analysisId: latest.id, values });
@@ -616,7 +646,7 @@ function RebaseDialog({
 }) {
   const defaults = ctx.profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;
   const newSnap = snapshotFor(ctx.item, newAnalysis);
-  const newBase = newSnap ? buildBaseValues({ property: ctx.item.property, snapshot: newSnap, analysis: newAnalysis, defaults }).values : null;
+  const newBase = newSnap ? buildBaseValues({ property: ctx.item.property, snapshot: newSnap, analysis: newAnalysis, defaults, analysisScenarioId: ctx.draft.analysisScenarioId }).values : null;
   const baseChanges = ctx.base && newBase ? diffValues(ctx.base.values, newBase) : [];
   const myChanges = ctx.base ? diffValues(ctx.base.values, ctx.draft) : [];
   const newRisks = newAnalysis.risks.filter((r) => !oldAnalysis.risks.some((o) => o.title === r.title));

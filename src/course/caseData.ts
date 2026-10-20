@@ -1,7 +1,9 @@
+import { scenarioModelDefaults } from '../domain/migrate';
 import type { ScenarioValues } from '../domain/schemas';
 
 /** Tomt utgangspunkt: alle tall er uavklart (null), aldri 0. */
 export const EMPTY_CALC: ScenarioValues = {
+  ...scenarioModelDefaults(),
   buyerType: 'privat',
   purchasePrice: null,
   debtAtPurchase: null,
@@ -20,7 +22,8 @@ export const EMPTY_CALC: ScenarioValues = {
   months: null,
   monthlyCost: null,
   interestPct: null,
-  financingPct: null,
+  purchaseFinancingPct: null,
+  renovationFinancingPct: null,
   saleBasis: 'kontant',
   saleLow: null,
   saleBase: null,
@@ -38,6 +41,7 @@ export const EMPTY_CALC: ScenarioValues = {
 
 /** Case A – 54 m² selveier i Trondheim. ALLE TALL ER FIKTIVE. */
 export const CASE_A: ScenarioValues = {
+  ...scenarioModelDefaults(),
   ...EMPTY_CALC,
   purchasePrice: 3_000_000,
   debtAtPurchase: 0,
@@ -51,7 +55,8 @@ export const CASE_A: ScenarioValues = {
   months: 6,
   monthlyCost: 5_000,
   interestPct: 5.8,
-  financingPct: 90,
+  purchaseFinancingPct: 90,
+  renovationFinancingPct: 90,
   saleBasis: 'kontant',
   saleLow: 3_300_000,
   saleBase: 3_500_000,
@@ -64,6 +69,7 @@ export const CASE_A: ScenarioValues = {
 
 /** Case B – billig borettslagsleilighet? Bare tallene fra kurset. Resten er uavklart. */
 export const CASE_B: ScenarioValues = {
+  ...scenarioModelDefaults(),
   ...EMPTY_CALC,
   purchasePrice: 2_200_000,
   debtAtPurchase: 800_000,
@@ -79,6 +85,7 @@ export const CASE_B: ScenarioValues = {
  * Rente, finansiering og salgskostnader er EKSEMPELINNSTILLINGER (ikke fasit). Resten er uavklart.
  */
 export const CASE_C: ScenarioValues = {
+  ...scenarioModelDefaults(),
   ...EMPTY_CALC,
   purchasePrice: 3_800_000,
   debtAtPurchase: 0,
@@ -89,7 +96,8 @@ export const CASE_C: ScenarioValues = {
   saleBasis: 'kontant',
   saleBase: 4_900_000,
   interestPct: 7,
-  financingPct: 100,
+  purchaseFinancingPct: 100,
+  renovationFinancingPct: 100,
   saleFixedCost: 55_000,
   saleCommissionPct: 1.5,
   buyFees: 6_000,

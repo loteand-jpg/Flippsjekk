@@ -1,3 +1,4 @@
+import type { RefreshDecision, TechnicalReason } from '../domain/refreshPolicy';
 import type { PlanConfig } from '../config/plans';
 import type {
   AnalysisJob,
@@ -258,6 +259,10 @@ export interface MyPropertyItem extends PropertyBundle {
   privateEvents: PrivateEvent[];
   /** Brukerens private risikoer og endringer av grunnlagets risikoer. */
   riskEdits: UserRisk[];
+  /** Samlet beslutning om oppfriskning (`decideRefresh`): hendelser, 24 timer og 30 dager. Brukes til varsler på objektsiden. */
+  refreshDecision: RefreshDecision;
+  /** Er teknisk reanalyse nødvendig? Bare ved inkompatibel modell, nye/endrede dokumenter eller endrede kritiske fakta – aldri bare fordi tiden har gått. */
+  technicalReanalysis: { needed: boolean; reasons: TechnicalReason[] };
 }
 
 export interface PersonalStatusPatch {
@@ -328,7 +333,12 @@ export interface RiskRepository {
 
 export interface Staleness {
   analysisAgeDays: number;
-  analysisStale: boolean;
+  /** Samlet oppfriskingsbeslutning (`decideRefresh`): reuse, enkel oppfriskning, markedsoppfriskning eller full analyse. */
+  refresh: RefreshDecision;
+  /** Analysen er eldre enn 30 dager: grundig markedsoppfriskning er aktuelt (ikke full teknisk analyse). */
+  marketRefreshDue: boolean;
+  /** Teknisk reanalyse trengs bare ved inkompatibel modell, nye/endrede dokumenter eller endrede kritiske fakta. */
+  technicalReanalysis: { needed: boolean; reasons: TechnicalReason[] };
   volatileAgeHours: number | null;
   volatileStale: boolean;
 }
@@ -359,7 +369,11 @@ export interface AnalysisService {
   getPublishedAnalysis(propertyId: string, version?: number): Promise<SharedAnalysis | null>;
   getAnalysis(analysisId: string): Promise<SharedAnalysis | null>;
   listVersions(propertyId: string): Promise<AnalysisMeta[]>;
-  requestRefresh(propertyId: string, kind: 'light' | 'full', idempotencyKey: string): Promise<RefreshResult>;
+  /**
+   * light = pris, visninger og salgsstatus. market = grundig markedsoppfriskning (analyse > 30 dager).
+   * full = teknisk reanalyse – tillatt bare når analysen mangler, er inkompatibel, eller kilden melder nye dokumenter/endrede kritiske fakta.
+   */
+  requestRefresh(propertyId: string, kind: 'light' | 'market' | 'full', idempotencyKey: string): Promise<RefreshResult>;
 }
 
 // ---------------------------------------------------------------------------

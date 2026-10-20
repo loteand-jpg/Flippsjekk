@@ -2,12 +2,14 @@ import { z } from 'zod';
 import { CALC_MODEL_VERSION } from '../calc/engine';
 import { canonicalFinnUrl } from '../lib/finn';
 import {
+  AnalysisScenarioSchema,
   BidStepSchema,
   ChecklistItemSchema,
   ComparableSaleSchema,
   DutyRuleSchema,
   PublishableAnalysisSchema,
   RenovationOptionSchema,
+  ScenarioSearchSchema,
   ReportSectionSchema,
   RiskSchema,
   SourceSchema,
@@ -16,6 +18,7 @@ import {
   type SharedAnalysis,
   type Viewing,
 } from './schemas';
+import { validateScenarioSet } from './analysisScenarios';
 import { FACT_STATUSES, PRICE_BASES, PROPERTY_TYPES, RECOMMENDATIONS, SALE_STATUSES, TENURES, VIEWING_STATUSES } from './enums';
 
 /**
@@ -116,6 +119,11 @@ export const AgentAnalysisSchema = z
       debtAtSale: z.number().nullable(),
       suggestedPurchasePrice: z.number().nullable(),
       dutyRule: DutyRuleSchema,
+      /** Valgfritt: basis + inntil to alternative planløsninger med egne tiltak og egen salgsverdi. */
+      scenarios: z.array(AnalysisScenarioSchema).max(3).optional(),
+      defaultScenarioId: z.string().nullable().optional(),
+      /** Valgfritt: hva scenariojakten vurderte, valgte og avviste (inkl. at jakten ble stoppet uten treff). */
+      scenarioSearch: ScenarioSearchSchema.optional(),
     }),
     risks: z.array(RiskSchema),
     checklist: z.array(ChecklistItemSchema).length(12),
@@ -138,6 +146,12 @@ export const AgentAnalysisSchema = z
     o.risks.forEach((r, i) => check(r.sourceId, ['risks', i, 'sourceId']));
     o.checklist.forEach((c, i) => check(c.sourceId, ['checklist', i, 'sourceId']));
     o.comparables.forEach((c, i) => check(c.sourceId, ['comparables', i, 'sourceId']));
+    for (const issue of validateScenarioSet(o.estimates.scenarios, new Set(o.comparables.map((c) => c.id)), o.estimates.scenarioSearch)) {
+      ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+    }
+    if (o.estimates.defaultScenarioId && !o.estimates.scenarios?.some((x) => x.id === o.estimates.defaultScenarioId)) {
+      ctx.addIssue({ code: 'custom', path: ['estimates', 'defaultScenarioId'], message: 'Peker på et scenario som ikke finnes.' });
+    }
     if (o.estimates.defaultRenovationOptionId && !o.estimates.renovationOptions.some((x) => x.id === o.estimates.defaultRenovationOptionId)) {
       ctx.addIssue({ code: 'custom', path: ['estimates', 'defaultRenovationOptionId'], message: 'Peker på et oppussingsalternativ som ikke finnes.' });
     }

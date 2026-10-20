@@ -1,4 +1,4 @@
-import { CALC_MODEL_VERSION } from '../calc/engine';
+import { CALC_MODEL_VERSION, recommendedBidOf } from '../calc/engine';
 import { evaluateScenario } from '../calc/scenario';
 import type { Property, Scenario, ScenarioValues } from '../domain/schemas';
 
@@ -30,9 +30,18 @@ export interface ScenarioExportV1 {
       status: 'complete' | 'incomplete' | 'invalid';
       profitBeforeTaxAndOwnWork: number | null;
       projectReturn: number | null;
+      /** Modell 1.1: fortjeneste per egeninnsatstime (egen tid er ikke en kostnad). */
+      profitPerOwnHour: number | null;
+      /** Modell 1.1: egenkapitalbehov og eventuelt gap mot tilgjengelig egenkapital. */
+      equityNeed: number | null;
+      equityGap: number | null;
       cashSale: number | null;
       totalCosts: number | null;
       maxBid: number | null;
+      /** Hva som begrenser maksbudet (fortjenestemål eller timekrav). */
+      maxBidLimitedBy: 'profit' | 'hourly' | null;
+      maxBidProfitTarget: number | null;
+      maxBidHourlyRequirement: number | null;
       missing: string[];
     };
   }[];
@@ -64,9 +73,15 @@ export function buildScenarioExport(
           status: ev.evaluation.status,
           profitBeforeTaxAndOwnWork: b?.profit ?? null,
           projectReturn: b?.projectReturn ?? null,
+          profitPerOwnHour: b?.profitPerOwnHour ?? null,
+          equityNeed: b?.equityNeed ?? null,
+          equityGap: b?.equityGap ?? null,
           cashSale: b?.S ?? null,
           totalCosts: b?.C ?? null,
-          maxBid: ev.evaluation.maxBid?.price ?? null,
+          maxBid: recommendedBidOf(ev.evaluation).price,
+          maxBidLimitedBy: recommendedBidOf(ev.evaluation).limitedBy,
+          maxBidProfitTarget: ev.evaluation.maxBid?.price ?? null,
+          maxBidHourlyRequirement: ev.evaluation.maxBidHourly?.price ?? null,
           missing: ev.missing.map((m) => m.label),
         },
       };

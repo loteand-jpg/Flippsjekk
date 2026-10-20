@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { BarList } from '../../components/analysis/charts';
 import { Button } from '../../components/ui/primitives';
 import { CASE_LABEL, solveMaxBid } from '../../calc/engine';
-import { evaluateScenario } from '../../calc/scenario';
+import { evaluateCourseScenario as evaluateScenario } from '../evaluate';
 import { formatNOK, UNKNOWN } from '../../lib/format';
 import { CASE_A, CASE_B, CASE_C } from '../caseData';
 import { EvidenceTag, FactBox } from '../components';

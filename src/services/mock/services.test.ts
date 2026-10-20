@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { evaluateScenario } from '../../calc/scenario';
+import { DEFAULT_LABOR_MODES as NEW_DEFAULTS_FOR_TEST } from '../../config/defaultLabor';
 import { DB_FORMAT, DB_STORAGE_KEY, type DbState } from '../../data/db';
 import { DEMO_USERS } from '../../data/seed';
 import { DEMO_FINN } from '../../data/seedProperties';
@@ -203,6 +204,11 @@ describe('FINN-lenke → gjenbruk og deduplisering', () => {
 
   it('objekt i egen liste: annonsen oppfriskes hvis det har gått over ett døgn siden forrige analyse/oppfriskning', async () => {
     const pid = s.db.read((st) => st.properties.find((p) => p.finnId === DEMO_FINN.stale)!.id);
+    // Egen analyse som er yngre enn 30 dager (30-dagersregelen har egne tester): bare 24-timersregelen gjelder her.
+    const recent = new Date(clock.now().getTime() - 5 * 86_400_000).toISOString();
+    s.db.transaction((d) => {
+      for (const an of d.analyses) if (an.propertyId === pid) Object.assign(an, { createdAt: recent, publishedAt: recent });
+    });
     const before = (await s.properties.getMine(pid))!;
     const snapsBefore = before.versions.length;
     const askingBefore = before.snapshot!.askingPrice;
@@ -289,6 +295,10 @@ describe('feil og retry', () => {
     const item = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.sharedAB)!;
     const existing = item.latestAnalysis!;
     await s.demo.setFailNextJob('invalid_result');
+    // Full teknisk analyse krever nye dokumenter, endrede kritiske fakta eller inkompatibel modell
+    s.db.transaction((d) => {
+      d.demo.technicalChangeSignals = { [DEMO_FINN.sharedAB]: { newOrChangedDocuments: true } };
+    });
     const r = await s.analysis.requestRefresh(item.property.id, 'full', 'full1');
     if (r.outcome === 'already_fresh') throw new Error('forventet jobb');
     await runJob(s, clock);
@@ -564,6 +574,51 @@ describe('import v1', () => {
     // Bjørn ser ikke Adas importerte utkast
     await signIn(s, 'bjorn');
     expect(await s.analysis.getAnalysis(draft.id)).toBeNull();
+  });
+
+  it('bakoverkompatibel: v1-filens låneandel og timesats bevares, og nye felt hentes fra profilen', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const text = file([obj({ financing: 80, hourRate: 400 })]);
+    const p = await s.imports.preview(text, text.length);
+    expect(p.objects[0].errors).toEqual([]);
+    const v = p.objects[0].mapped!.values;
+    expect(v.purchaseFinancingPct).toBe(80);
+    expect(v.renovationFinancingPct).toBe(80); // eldre `financing` gjaldt alt
+    expect(v.hourValue).toBe(400); // beholdt som utfaset felt, ikke i hovedøkonomien
+    expect(v.minProfitPerOwnHour).toBe(500); // fra profilen
+    expect(v.availableEquity).toBe(300_000);
+    expect(v.laborModes.elektro).toBe('innleid');
+    expect(evaluateScenario(v).evaluation.status).toBe('complete');
+    // Eldre `financing: 100` gir samme låneandel som før (ingen stille endring)
+    const text100 = file([obj()]);
+    const p100 = await s.imports.preview(text100, text100.length);
+    expect(p100.objects[0].mapped!.values.purchaseFinancingPct).toBe(100);
+  });
+
+  it('eksport av scenarioer inneholder nye felt og nøkkeltall, og beholder formatnavnet', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const { content } = await s.imports.exportScenarios();
+    const data = JSON.parse(content);
+    expect(data.format).toBe('flipprom-scenarios');
+    expect(data.version).toBe(1);
+    expect(data.calcModelVersion).toBe('1.2.0');
+    const row = data.scenarios.find((x: any) => x.result.status === 'complete');
+    expect(row.values).toHaveProperty('purchaseFinancingPct');
+    expect(row.values).toHaveProperty('renovationFinancingPct');
+    expect(row.values).toHaveProperty('minProfitPerOwnHour');
+    expect(row.values).not.toHaveProperty('financingPct');
+    expect(row.result).toHaveProperty('profitPerOwnHour');
+    expect(row.result).toHaveProperty('equityGap');
+    expect(row.result).toHaveProperty('equityNeed');
+    expect(row.values).toHaveProperty('regulatedCompetence');
+    expect(row.values).not.toHaveProperty('regulatedSelfWorkConfirmed');
+    // Maksbud: anbefalt (laveste grense) og hver grense for seg
+    expect(row.result).toHaveProperty('maxBid');
+    expect(row.result).toHaveProperty('maxBidLimitedBy');
+    expect(row.result).toHaveProperty('maxBidProfitTarget');
+    expect(row.result).toHaveProperty('maxBidHourlyRequirement');
   });
 
   it('avviser feil rotformat, for mange objekter og for stor fil', async () => {
@@ -1066,5 +1121,576 @@ describe('kurskjøp: betalingsmur, engangsbetaling og varig tilgang', () => {
     clock.advance(6 * 60_000);
     await expectError(s.demo.vipps.decide(b.paymentId, 'approved'), 'conflict');
     expect((await s.courses.getAccess('flipping-privat')).owned).toBe(false);
+  });
+});
+
+describe('migrering av mockdatabase v3 → v5 (modell 1.1 og 1.2)', () => {
+  const NEW_SCENARIO_KEYS = ['analysisScenarioId', 'purchaseFinancingPct', 'renovationFinancingPct', 'financeRunningCosts', 'availableEquity', 'settlementMonths', 'weeklyOwnHours', 'minProfitPerOwnHour', 'laborModes', 'maxOwnWork', 'regulatedCompetence'];
+  const NEW_PROFILE_KEYS = ['purchaseFinancingPct', 'renovationFinancingPct', 'financeRunningCosts', 'availableEquity', 'weeklyOwnHours', 'minProfitPerOwnHour', 'saleSettlementMonths', 'laborModes', 'maxOwnWork', 'regulatedCompetence'];
+
+  /** Lager en lagret database slik den så ut i versjon 3 (eldre kalkylemodell). */
+  function legacyEnvelope(storage: StorageLike) {
+    const raw = JSON.parse(storage.getItem(DB_STORAGE_KEY)!) as { state: Record<string, any[]> };
+    const state = structuredClone(raw.state);
+    state.profiles = state.profiles.map((p: any) => {
+      const d = { ...p.defaults, financingPct: 85, regulatedSelfWorkConfirmed: true };
+      for (const k of NEW_PROFILE_KEYS) delete d[k];
+      return { ...p, defaults: d };
+    });
+    state.scenarios = state.scenarios.map((sc: any) => {
+      const v = { ...sc.values, financingPct: sc.values.purchaseFinancingPct ?? 100, regulatedSelfWorkConfirmed: true };
+      for (const k of NEW_SCENARIO_KEYS) delete v[k];
+      return { ...sc, values: v };
+    });
+    return { legacy: { format: DB_FORMAT, schemaVersion: 3, savedAt: new Date().toISOString(), state }, before: raw.state };
+  }
+
+  it('migrerer profiler og scenarioer, dropper ingen rader og gir uendrede resultater', () => {
+    const storage = memoryStorage();
+    setup(storage);
+    const { legacy, before } = legacyEnvelope(storage);
+    storage.setItem(DB_STORAGE_KEY, JSON.stringify(legacy));
+
+    const { services: s } = setup(storage);
+    expect(s.demo.loadReport().status).toBe('migrated');
+    const after = s.db.read((st) => st);
+    expect(after.scenarios.length).toBe(before.scenarios.length);
+    expect(after.profiles.length).toBe(before.profiles.length);
+    expect(after.analyses.length).toBe(before.analyses.length);
+    expect(after.userProperties.length).toBe(before.userProperties.length);
+
+    const profile = after.profiles[0];
+    expect(profile.defaults).toMatchObject({ purchaseFinancingPct: 85, renovationFinancingPct: 85, financeRunningCosts: false, availableEquity: 300_000, weeklyOwnHours: 10, minProfitPerOwnHour: 500 });
+    expect('financingPct' in profile.defaults).toBe(false);
+
+    for (const sc of after.scenarios) {
+      const v = sc.values as unknown as Record<string, unknown>;
+      expect('financingPct' in v).toBe(false);
+      for (const k of NEW_SCENARIO_KEYS) expect(k in v, k).toBe(true);
+      expect(v.renovationFinancingPct).toBe(v.purchaseFinancingPct);
+      expect(v.minProfitPerOwnHour).toBe(500);
+      expect(v.availableEquity).toBe(300_000);
+    }
+    // Renten følger modell 1.2: f × (P + RB/2) × r × m/12 med f = gammel låneandel. Kjøpskostnadene K er ikke lenger med i lånet,
+    // så eldre kalkyler gir bevisst IKKE lenger nøyaktig samme renter som i modell 1.0 når K > 0.
+    for (const sc of after.scenarios) {
+      const old = legacy.state.scenarios.find((x: any) => x.id === sc.id)!;
+      const f = (old.values.financingPct as number | null) ?? null;
+      const m = evaluateScenario(sc.values).evaluation.base;
+      const viaSchema = evaluateScenario(old.values).evaluation.base; // eldre rad leses direkte via skjemaet
+      expect(m?.profit).toBe(viaSchema?.profit);
+      if (m && f !== null && sc.values.interestPct !== null && sc.values.months !== null) {
+        const expectedI = Math.round(((f / 100) * (m.P + m.RB / 2) * (sc.values.interestPct / 100) * (sc.values.months / 12)) * 100) / 100;
+        expect(m.I).toBeCloseTo(expectedI, 1);
+      }
+    }
+  });
+
+  it('regulert kompetanse: det gamle samlede flagget nullstilles konservativt til «ikke bekreftet» per område', () => {
+    const storage = memoryStorage();
+    setup(storage);
+    const { legacy } = legacyEnvelope(storage);
+    storage.setItem(DB_STORAGE_KEY, JSON.stringify(legacy));
+    const { services: s } = setup(storage);
+    const after = s.db.read((st) => st);
+    for (const p of after.profiles) {
+      expect(p.defaults.regulatedCompetence).toEqual({ ror: false, elektro: false, bad_vatrom: false });
+      expect('regulatedSelfWorkConfirmed' in p.defaults).toBe(false);
+    }
+    for (const sc of after.scenarios) {
+      expect(sc.values.regulatedCompetence).toEqual({ ror: false, elektro: false, bad_vatrom: false });
+      expect('regulatedSelfWorkConfirmed' in sc.values).toBe(false);
+    }
+  });
+
+  it('v4 → v5: kompetanse per område, tiltak uten dobbelttelling av arbeid, og ingen rader droppes', () => {
+    const storage = memoryStorage();
+    setup(storage);
+    const raw = JSON.parse(storage.getItem(DB_STORAGE_KEY)!) as { state: Record<string, any[]> };
+    const state = structuredClone(raw.state);
+    // Slik en v4-database så ut: ett samlet flagg, og et tiltak med både arbeidsmodell og eldre fagbeløp
+    state.profiles = state.profiles.map((p: any) => {
+      const { regulatedCompetence: _c, ...d } = p.defaults;
+      void _c;
+      return { ...p, defaults: { ...d, regulatedSelfWorkConfirmed: true } };
+    });
+    let patched = 0;
+    state.scenarios = state.scenarios.map((sc: any) => {
+      const { regulatedCompetence: _c, ...v } = sc.values;
+      void _c;
+      const items = (sc.values.renovationItems as any[]).map((it) => {
+        if (!it.laborCategory || patched > 0) return it;
+        patched++;
+        return { ...it, laborCostHired: null, electrician: 20_000, plumber: 5_000, other: 5_000 };
+      });
+      return { ...sc, values: { ...v, renovationItems: items, regulatedSelfWorkConfirmed: true } };
+    });
+    expect(patched).toBe(1);
+    storage.setItem(DB_STORAGE_KEY, JSON.stringify({ format: DB_FORMAT, schemaVersion: 4, savedAt: new Date().toISOString(), state }));
+
+    const { services: s } = setup(storage);
+    expect(s.demo.loadReport().status).toBe('migrated');
+    const after = s.db.read((st) => st);
+    expect(after.scenarios.length).toBe(raw.state.scenarios.length);
+    expect(after.profiles.length).toBe(raw.state.profiles.length);
+    const items = after.scenarios.flatMap((sc) => sc.values.renovationItems).filter((i) => i.laborCategory);
+    const moved = items.find((i) => i.laborCostHired === 30_000);
+    expect(moved).toMatchObject({ electrician: 0, plumber: 0, other: 0 }); // fagbeløpene er flyttet til innleid arbeid, ikke talt to ganger
+    for (const sc of after.scenarios) {
+      expect(sc.values.regulatedCompetence).toEqual({ ror: false, elektro: false, bad_vatrom: false });
+      expect('regulatedSelfWorkConfirmed' in sc.values).toBe(false);
+    }
+  });
+
+  it('en fersk database har versjon 5 og nye standarder', () => {
+    const { services: s } = setup();
+    const defaults = s.db.read((st) => st.profiles.find((p) => p.userId === DEMO_USERS.ada.id)!.defaults);
+    expect(defaults).toMatchObject({ purchaseFinancingPct: 90, renovationFinancingPct: 0, minProfitPerOwnHour: 500, weeklyOwnHours: 10, availableEquity: 300_000, saleFixedCost: 120_000 });
+  });
+
+  it('profilstandarder kan lagres og valideres', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const upd = await s.profile.update({ defaults: { minProfitPerOwnHour: 750, weeklyOwnHours: 14, availableEquity: 450_000, renovationFinancingPct: 20, financeRunningCosts: true, laborModes: { ...NEW_DEFAULTS_FOR_TEST, gulv: 'selv' } } });
+    expect(upd.defaults).toMatchObject({ minProfitPerOwnHour: 750, weeklyOwnHours: 14, availableEquity: 450_000, renovationFinancingPct: 20, financeRunningCosts: true });
+    expect(upd.defaults.laborModes.gulv).toBe('selv');
+    await expectError(s.profile.update({ defaults: { purchaseFinancingPct: 150 } }), 'validation');
+    await expectError(s.profile.update({ defaults: { weeklyOwnHours: -3 } }), 'validation');
+  });
+
+  it('nye scenarioer får profilens standarder, og private overstyringer endrer ikke felles analyse', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    await s.profile.update({ defaults: { minProfitPerOwnHour: 650, availableEquity: 123_000 } });
+    const item = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.sharedAB)!;
+    const analysisBefore = JSON.stringify(item.latestAnalysis);
+    const sc = await s.scenarios.create(item.property.id, {
+      name: 'Alternativ med mine tall',
+      analysisId: item.latestAnalysis!.id,
+      values: { ...item.primaryScenario!.values, saleBase: 9_999_999, minProfitPerOwnHour: 650, availableEquity: 123_000, renovationFinancingPct: 50 },
+    });
+    expect(sc.values).toMatchObject({ saleBase: 9_999_999, minProfitPerOwnHour: 650, availableEquity: 123_000, renovationFinancingPct: 50 });
+    const again = (await s.properties.getMine(item.property.id))!;
+    expect(JSON.stringify(again.latestAnalysis)).toBe(analysisBefore);
+  });
+});
+
+describe('30-dagersregelen: grundig markedsoppfriskning, ikke automatisk full analyse', () => {
+  const stalePid = (s: MockServices) => s.db.read((st) => st.properties.find((p) => p.finnId === DEMO_FINN.stale)!.id);
+  const technical = (a: any) => ({ risks: a.risks, checklist: a.checklist, facts: a.facts, sources: a.sources, conditions: a.conditions, summary: a.summary, strategy: a.strategy, scenarios: a.estimates.scenarios, renovationOptions: a.estimates.renovationOptions, comparables: a.comparables });
+
+  it('analysen er eldre enn 30 dager: en bruker uten objektet får en markedsoppfriskning (ikke full analyse), belastet som ny analyse', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'bjorn');
+    const pid = stalePid(s);
+    expect(s.db.read((st) => st.userProperties.some((u) => u.userId === DEMO_USERS.bjorn.id && u.propertyId === pid))).toBe(false);
+    const before = (await s.analysis.getPublishedAnalysis(pid))!;
+    expect((clock.now().getTime() - Date.parse(before.publishedAt!)) / 86_400_000).toBeGreaterThan(30);
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 'm1' });
+    expect(r.outcome).toBe('job_started');
+    if (r.outcome !== 'job_started') return;
+    expect(r.job.type).toBe('market_refresh');
+    expect(r.job.type).not.toBe('full_analysis');
+    // Brukeren ser samme dialog og trinn som ved en ny analyse
+    expect(r.job.steps).toEqual(['Henter annonse', 'Kontrollerer grunnlag', 'Vurderer oppussing', 'Vurderer salgsverdi', 'Klargjør analyse']);
+    await runJob(s, clock);
+    expect((await s.analysis.getJob(r.job.id))?.status).toBe('succeeded');
+    const after = (await s.analysis.getPublishedAnalysis(pid))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.analysisKind).toBe('market_refresh');
+    expect(after.derivedFromVersion).toBe(before.version);
+    expect(Date.parse(after.publishedAt!)).toBeGreaterThan(Date.parse(before.publishedAt!));
+    expect(after.assumptions[0]).toContain('Markedsoppfriskning');
+    // Teknisk grunnlag er uendret: ikke lest på nytt, og ingen nye scenarioer er laget
+    expect(technical(after)).toEqual(technical(before));
+    expect((await s.analysis.listVersions(pid)).find((v) => v.version === before.version)?.status).toBe('superseded');
+    expect(usageOf(s, DEMO_USERS.bjorn.id, 'new_analysis').filter((u) => u.propertyId === pid && u.chargeable)).toHaveLength(1);
+    expect(s.db.read((st) => st.jobs.filter((j) => j.propertyId === pid && j.type === 'full_analysis'))).toHaveLength(0);
+  });
+
+  it('samtidige forespørsler kobles til samme markedsoppfriskning, og hver bruker belastes som ny analyse', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'bjorn');
+    const a = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 'a' });
+    await signIn(s, 'ada');
+    // Ada har allerede objektet i listen og får det åpnet (ingen ny jobb for henne)
+    const b = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 'b' });
+    if (a.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(['reused', 'job_started', 'job_joined']).toContain(b.outcome);
+    await runJob(s, clock);
+    expect((await s.analysis.getJob(a.job.id))?.status ?? (s.db.read((st) => st.jobs.find((j) => j.id === a.job.id)!.status))).toBe('succeeded');
+  });
+
+  it('i egen liste: «Oppdater markedsdata» starter markedsoppfriskning som belastes som oppfriskning, ikke ny analyse', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = stalePid(s);
+    const before = (await s.analysis.getPublishedAnalysis(pid))!;
+    const newBefore = usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length;
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await s.analysis.requestRefresh(pid, 'market', 'm');
+    expect(r.outcome).toBe('job_started');
+    if (r.outcome !== 'job_started') return;
+    expect(r.job.type).toBe('market_refresh');
+    expect(r.job.steps).toEqual(['Henter annonse', 'Oppdaterer visninger og salgsstatus', 'Oppdaterer markedsreferanser', 'Beregner salgsverdi per scenario', 'Kjører økonomimotoren']);
+    // Pågående markedsoppfriskning teller ikke mot analysekvoten
+    const ent = await s.subscription.getEntitlements();
+    expect(ent.used.pendingNewAnalyses).toBe(0);
+    await runJob(s, clock);
+    const after = (await s.analysis.getPublishedAnalysis(pid))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.analysisKind).toBe('market_refresh');
+    expect(technical(after)).toEqual(technical(before));
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(newBefore);
+    // Rett etterpå er markedsdataene oppdaterte
+    const again = await s.analysis.requestRefresh(pid, 'market', 'm2');
+    expect(again.outcome).toBe('already_fresh');
+    // Brukerens private scenarioer er uendret og ikke slettet
+    expect((await s.scenarios.list(pid)).length).toBeGreaterThan(0);
+  });
+
+  it('markedsoppfriskning er ikke aktuelt for en fersk analyse', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const item = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.sharedAB)!;
+    const r = await s.analysis.requestRefresh(item.property.id, 'market', 'x');
+    expect(r.outcome).toBe('already_fresh');
+    expect(s.db.read((st) => st.jobs.length)).toBe(0);
+  });
+
+  it('full teknisk analyse tilbys ikke bare fordi det har gått tid', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const pid = stalePid(s);
+    const e = await expectError(s.analysis.requestRefresh(pid, 'full', 'f'), 'conflict');
+    expect(e.message).toContain('markedsoppfriskning');
+    const mine = (await s.properties.getMine(pid))!;
+    expect(mine.technicalReanalysis).toEqual({ needed: false, reasons: [] });
+  });
+
+  it('full teknisk analyse når kilden melder nye dokumenter eller endrede kritiske fakta', async () => {
+    for (const signal of [{ newOrChangedDocuments: true }, { criticalFactsChanged: true }]) {
+      const { services: s, clock } = setup();
+      await signIn(s, 'ada');
+      const pid = stalePid(s);
+      s.db.transaction((d) => {
+        d.demo.technicalChangeSignals = { [DEMO_FINN.stale]: signal };
+      });
+      const mine = (await s.properties.getMine(pid))!;
+      expect(mine.technicalReanalysis.needed).toBe(true);
+      expect(mine.technicalReanalysis.reasons).toEqual([signal.newOrChangedDocuments ? 'nye_dokumenter' : 'kritiske_fakta_endret']);
+      const r = await s.analysis.requestRefresh(pid, 'full', 'f');
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      expect(r.job.type).toBe('full_analysis');
+      await runJob(s, clock);
+      expect((await s.analysis.getJob(r.job.id))?.status).toBe('succeeded');
+      const latest = (await s.analysis.getPublishedAnalysis(pid))!;
+      expect(latest.analysisKind ?? 'full').toBe('full');
+      // Signalene er behandlet av den nye tekniske analysen
+      expect(s.db.read((st) => st.demo.technicalChangeSignals?.[DEMO_FINN.stale])).toBeUndefined();
+    }
+  });
+
+  it('nye dokumenter gir full analyse også for en bruker som ber om en fersk analyse (ikke linked/market)', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    s.db.transaction((d) => {
+      d.demo.technicalChangeSignals = { [DEMO_FINN.cacheHit]: { newOrChangedDocuments: true } };
+    });
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'x' });
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('full_analysis');
+  });
+
+  it('inkompatibel modell gir full analyse (ikke bare alder)', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'bjorn');
+    s.db.transaction((d) => {
+      for (const a of d.analyses) if (a.propertyId === stalePid(s)) a.modelVersion = '2.0.0';
+    });
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.stale}`, idempotencyKey: 'x' });
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('full_analysis');
+    const mine = (await s.properties.getMine(stalePid(s)))!;
+    expect(mine.technicalReanalysis.reasons).toContain('inkompatibel');
+  });
+
+  it('en ferskere analyse (≤ 30 dager) går fortsatt som koblet analyse – uendret', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const r = await s.analysis.requestAnalysis({ url: `finn.no/${DEMO_FINN.cacheHit}`, idempotencyKey: 'x' });
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('linked_analysis');
+  });
+
+  it('markedsoppfriskningen regner salgsverdi per scenario på nytt per ny analysedato – og private tall røres ikke', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const item = (await s.properties.listMine()).find((i) => i.property.finnId === DEMO_FINN.sharedAB)!;
+    // Gjør p01-analysen gammel
+    s.db.transaction((d) => {
+      for (const a of d.analyses) if (a.propertyId === item.property.id) {
+        a.createdAt = '2026-08-01T08:00:00.000Z';
+        a.publishedAt = '2026-08-01T08:00:00.000Z';
+      }
+    });
+    const mineBefore = JSON.stringify((await s.scenarios.list(item.property.id)).map((x) => x.values));
+    const before = (await s.analysis.getPublishedAnalysis(item.property.id))!;
+    const r = await s.analysis.requestRefresh(item.property.id, 'market', 'x');
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    await runJob(s, clock);
+    const after = (await s.analysis.getPublishedAnalysis(item.property.id))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.estimates.scenarios).toEqual(before.estimates.scenarios); // ingen nye scenarioer
+    expect(JSON.stringify((await s.scenarios.list(item.property.id)).map((x) => x.values))).toBe(mineBefore); // private kalkyler er uendret
+  });
+});
+
+describe('profil: manglende rad skjuler ikke standardforutsetningene', () => {
+  it('en manglende profil gjenopprettes med standardverdiene, og brukerens øvrige data er uendret', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const scenariosBefore = s.db.read((st) => st.scenarios.length);
+    s.db.transaction((d) => {
+      d.profiles = d.profiles.filter((p) => p.userId !== DEMO_USERS.ada.id);
+    });
+    expect(s.db.read((st) => st.profiles.some((p) => p.userId === DEMO_USERS.ada.id))).toBe(false);
+    const p = await s.profile.get();
+    expect(p.userId).toBe(DEMO_USERS.ada.id);
+    expect(p.defaults).toMatchObject({ purchaseFinancingPct: 90, renovationFinancingPct: 0, minProfitPerOwnHour: 500, weeklyOwnHours: 10, availableEquity: 300_000 });
+    expect(p.defaults.regulatedCompetence).toEqual({ ror: false, elektro: false, bad_vatrom: false });
+    expect(s.db.read((st) => st.profiles.filter((x) => x.userId === DEMO_USERS.ada.id).length)).toBe(1);
+    expect(s.db.read((st) => st.scenarios.length)).toBe(scenariosBefore);
+    // Og den kan lagres
+    const upd = await s.profile.update({ defaults: { minProfitPerOwnHour: 700 } });
+    expect(upd.defaults.minProfitPerOwnHour).toBe(700);
+  });
+});
+
+describe('samlet oppfriskingsbeslutning i tjenestene (hendelser → 24 timer → 30 dager)', () => {
+  const HOUR = 3_600_000;
+  const url = `finn.no/${DEMO_FINN.sharedAB}`;
+  type Prep = { analysisDays?: number; checkHours?: number; saleStatus?: 'aktiv' | 'solgt' | 'trukket'; viewingStartHoursAgo?: number | null };
+  const technical = (a: any) => ({ risks: a.risks, checklist: a.checklist, sources: a.sources, scenarios: a.estimates.scenarios, comparables: a.comparables, summary: a.summary });
+
+  /** Setter alder på analysen og på siste kontroll av annonsen, og eventuelt en offisiell visning som har funnet sted. */
+  function prepare(s: MockServices, clock: ManualClock, p: Prep) {
+    const now = clock.now().getTime();
+    const pid = s.db.read((st) => st.properties.find((x) => x.finnId === DEMO_FINN.sharedAB)!.id);
+    s.db.transaction((d) => {
+      if (p.analysisDays !== undefined) {
+        const at = new Date(now - p.analysisDays * 24 * HOUR).toISOString();
+        for (const a of d.analyses) if (a.propertyId === pid) Object.assign(a, { createdAt: at, publishedAt: at });
+      }
+      const snaps = d.snapshots.filter((x) => x.propertyId === pid);
+      const latest = snaps.sort((x, y) => y.version - x.version)[0];
+      if (p.checkHours !== undefined) Object.assign(latest, { observedAt: new Date(now - p.checkHours * HOUR).toISOString(), fetchedAt: new Date(now - p.checkHours * HOUR).toISOString() });
+      if (p.saleStatus) latest.saleStatus = p.saleStatus;
+      // Fjern fremtidige visninger fra utgangspunktet, så bare det testen legger inn teller
+      d.viewings = d.viewings.filter((v) => v.propertyId !== pid);
+      if (p.viewingStartHoursAgo !== undefined && p.viewingStartHoursAgo !== null) {
+        const start = new Date(now - p.viewingStartHoursAgo * HOUR);
+        d.viewings.push({ id: 'v-test', propertyId: pid, kind: 'official', start: start.toISOString(), end: new Date(start.getTime() + HOUR).toISOString(), status: 'planlagt', sourceId: null, sourceLabel: 'Test', verifiedAt: new Date(now - 10 * HOUR).toISOString(), replacesViewingId: null, note: null });
+      }
+    });
+    return pid;
+  }
+  const jobsOf = (s: MockServices, pid: string) => s.db.read((st) => st.jobs.filter((j) => j.propertyId === pid));
+
+  async function started(s: MockServices) {
+    const r = await s.analysis.requestAnalysis({ url, idempotencyKey: 'k' + Math.random() });
+    return r;
+  }
+
+  it('A: eksisterende bruker, hovedanalysen er 31 dager gammel → grundig markedsoppfriskning (belastet som oppfriskning)', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 31, checkHours: 6 });
+    const before = (await s.analysis.getPublishedAnalysis(pid))!;
+    const scenariosBefore = JSON.stringify((await s.scenarios.list(pid)).map((x) => x.values));
+    const newBefore = usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length;
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await started(s);
+    expect(r.outcome).toBe('job_started');
+    if (r.outcome !== 'job_started') return;
+    expect(r.job.type).toBe('market_refresh');
+    expect(r.job.charges).toEqual({ [DEMO_USERS.ada.id]: 'refresh' });
+    expect(r.job.steps).toEqual(['Henter annonse', 'Oppdaterer visninger og salgsstatus', 'Oppdaterer markedsreferanser', 'Beregner salgsverdi per scenario', 'Kjører økonomimotoren']);
+    expect(jobsOf(s, pid).some((j) => j.type === 'full_analysis')).toBe(false); // ingen unødvendig full teknisk analyse
+    // Samtidig forespørsel kobles til samme jobb
+    const again = await started(s);
+    expect(again.outcome === 'job_joined' && again.job.id === r.job.id).toBe(true);
+    await runJob(s, clock);
+    expect((await s.analysis.getJob(r.job.id))?.status).toBe('succeeded');
+    const after = (await s.analysis.getPublishedAnalysis(pid))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.analysisKind).toBe('market_refresh');
+    expect(technical(after)).toEqual(technical(before)); // hovedanalyse og scenarioer beholdes
+    expect(JSON.stringify((await s.scenarios.list(pid)).map((x) => x.values))).toBe(scenariosBefore); // private brukerdata beholdes
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(newBefore);
+    // Rett etterpå er alt fersk: objektet åpnes uten ny jobb
+    expect((await started(s)).outcome).toBe('reused');
+  });
+
+  it('24-timersregelen blokkerer ikke 30-dagersregelen: gammel analyse og helt fersk kontroll gir likevel markedsoppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    prepare(s, clock, { analysisDays: 31, checkHours: 2 });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('market_refresh');
+  });
+
+  it('B: kontrollert for 6 timer siden, men en offisiell visning har funnet sted etter det → enkel oppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 5, checkHours: 6, viewingStartHoursAgo: 2 });
+    const snapsBefore = s.db.read((st) => st.snapshots.filter((x) => x.propertyId === pid).length);
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('light_refresh');
+    await runJob(s, clock, 3);
+    expect(s.db.read((st) => st.snapshots.filter((x) => x.propertyId === pid).length)).toBe(snapsBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    // Hendelsen er behandlet (kontrollen er nyere enn visningen): ingen ny oppfriskning
+    expect((await started(s)).outcome).toBe('reused');
+    // Ingen full analyse og ingen ny analyseversjon
+    expect(jobsOf(s, pid).some((j) => j.type === 'full_analysis' || j.type === 'market_refresh')).toBe(false);
+    expect((await s.analysis.listVersions(pid)).length).toBe(1);
+  });
+
+  it('B: endret, avlyst eller ny visning (signal fra kilden) gir enkel oppfriskning under 24 timer, og signalet fjernes etterpå', async () => {
+    for (const signal of [{ changed: true }, { cancelled: true }, { added: true }]) {
+      const { services: s, clock } = setup();
+      await signIn(s, 'ada');
+      const pid = prepare(s, clock, { analysisDays: 5, checkHours: 3 });
+      s.db.transaction((d) => {
+        d.demo.viewingChangeSignals = { [DEMO_FINN.sharedAB]: signal };
+      });
+      const mine = (await s.properties.getMine(pid))!;
+      expect(mine.refreshDecision.kind).toBe('lightweight_refresh');
+      const r = await started(s);
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      expect(r.job.type).toBe('light_refresh');
+      await runJob(s, clock, 3);
+      expect(s.db.read((st) => st.demo.viewingChangeSignals?.[DEMO_FINN.sharedAB])).toBeUndefined();
+      expect((await started(s)).outcome).toBe('reused');
+    }
+  });
+
+  it('C: kontrollert for 6 timer siden og ingen relevante endringer → gjenbruk uten jobb og uten belastning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 5, checkHours: 6 });
+    const usageBefore = s.db.read((st) => st.usageEvents.length);
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    expect(jobsOf(s, pid)).toHaveLength(0);
+    expect(s.db.read((st) => st.usageEvents.length)).toBe(usageBefore);
+    expect((await s.properties.getMine(pid))!.refreshDecision).toMatchObject({ kind: 'reuse', reasons: ['fersk'] });
+  });
+
+  it('D: grundig analyse 20 dager gammel og siste kontroll over 24 timer, uten særhendelse → enkel oppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 20, checkHours: 30 });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('light_refresh');
+    expect(jobsOf(s, pid).some((j) => j.type === 'market_refresh' || j.type === 'full_analysis')).toBe(false);
+  });
+
+  it('E: ingen tidligere hovedanalyse → full analyse (også for en bruker som har objektet i listen)', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const pid = s.db.read((st) => st.properties.find((x) => x.finnId === DEMO_FINN.sharedAB)!.id);
+    s.db.transaction((d) => {
+      d.analyses = d.analyses.filter((a) => a.propertyId !== pid);
+    });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('full_analysis');
+  });
+
+  it('F: nytt kritisk dokument eller endrede kritiske fakta gir aldri vanlig gjenbruk – også ved helt fersk kontroll', async () => {
+    for (const signal of [{ newOrChangedDocuments: true }, { criticalFactsChanged: true }]) {
+      const { services: s, clock } = setup();
+      await signIn(s, 'ada');
+      const pid = prepare(s, clock, { analysisDays: 2, checkHours: 1 });
+      s.db.transaction((d) => {
+        d.demo.technicalChangeSignals = { [DEMO_FINN.sharedAB]: signal };
+      });
+      const mine = (await s.properties.getMine(pid))!;
+      expect(mine.refreshDecision.kind).toBe('full_analysis');
+      const r = await started(s);
+      expect(r.outcome).not.toBe('reused');
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      expect(r.job.type).toBe('full_analysis');
+      // Eksplisitt full analyse (delvis teknisk reanalyse støttes ikke ennå) – eksisterende scenarioer slettes aldri
+      expect((await s.scenarios.list(pid)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('G: solgt annonse starter ingen full analyse eller oppfriskning, selv med gammel analyse og gammel kontroll', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 60, checkHours: 24 * 20, saleStatus: 'solgt' });
+    const decision = (await s.properties.getMine(pid))!.refreshDecision;
+    expect(decision).toMatchObject({ kind: 'reuse', reasons: ['objekt_solgt'] });
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    expect(jobsOf(s, pid)).toHaveLength(0);
+    await expectError(s.analysis.requestRefresh(pid, 'full', 'x'), 'conflict');
+    expect((await s.analysis.requestRefresh(pid, 'light', 'y')).outcome).toBe('already_fresh');
+    expect((await s.analysis.requestRefresh(pid, 'market', 'z')).outcome).toBe('job_started'); // eksplisitt valg er fortsatt mulig
+    // En bruker uten objektet får sin analyse (koblet) uten ny teknisk analyse eller markedsoppfriskning
+    await signIn(s, 'bjorn');
+    s.db.transaction((d) => {
+      d.userProperties = d.userProperties.filter((u) => !(u.userId === DEMO_USERS.bjorn.id && u.propertyId === pid));
+      d.usageEvents = d.usageEvents.filter((u) => !(u.userId === DEMO_USERS.bjorn.id && u.propertyId === pid));
+    });
+    const b = await started(s);
+    if (b.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(b.job.type).toBe('linked_analysis');
+  });
+
+  it('visningshendelse og over 30 dager: markedsoppfriskningen behandler hendelsen, og signalene fjernes', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 40, checkHours: 3, viewingStartHoursAgo: 1 });
+    s.db.transaction((d) => {
+      d.demo.viewingChangeSignals = { [DEMO_FINN.sharedAB]: { cancelled: true } };
+    });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('market_refresh');
+    await runJob(s, clock);
+    expect(s.db.read((st) => st.demo.viewingChangeSignals?.[DEMO_FINN.sharedAB])).toBeUndefined();
+    expect((await s.analysis.getPublishedAnalysis(pid))!.analysisKind).toBe('market_refresh');
+  });
+
+  it('er oppfriskingskvoten brukt opp, åpnes objektet som det er (ingen jobb, ingen feil)', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    prepare(s, clock, { analysisDays: 45, checkHours: 6 });
+    const e = await s.subscription.getEntitlements();
+    s.db.transaction((d) => {
+      d.usageEvents.push(...Array.from({ length: e.limits.refreshes }, (_, i) => ({ id: `q-${i}`, userId: DEMO_USERS.ada.id, kind: 'refresh' as const, propertyId: 'x', jobId: null, analysisId: null, idempotencyKey: `q-${i}`, chargeable: true, createdAt: clock.now().toISOString() })));
+    });
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    if (r.outcome === 'reused') expect(r.staleness.refresh.kind).toBe('market_refresh');
+  });
+
+  it('eksplisitt «lett oppfrisking»: tillatt under 24 timer bare ved visningshendelse, ellers «allerede fersk» – også når markedsoppfriskning er aktuell', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 45, checkHours: 2 });
+    expect((await s.analysis.requestRefresh(pid, 'light', 'a')).outcome).toBe('already_fresh');
+    prepare(s, clock, { checkHours: 2, viewingStartHoursAgo: 1 });
+    expect((await s.analysis.requestRefresh(pid, 'light', 'b')).outcome).toBe('job_started');
   });
 });

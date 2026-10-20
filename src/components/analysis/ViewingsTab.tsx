@@ -2,6 +2,7 @@ import { CalendarPlus, Eye, Gavel, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useServices } from '../../app/services';
 import { useToast } from '../../app/toast';
+import { MAX_BID_LIMIT_LABEL, recommendedBidOf } from '../../calc/engine';
 import { capFirst, formatDateKey, formatDateKeyLong, formatDateTime, formatNOK, formatRelative, formatTime } from '../../lib/format';
 import { addDaysToKey, isoToOsloInput, localDateKey, osloInputToIso } from '../../lib/time';
 import { Field, TextInput } from '../ui/forms';
@@ -21,6 +22,7 @@ export function ViewingsTab({ ctx }: { ctx: PropertyContext }) {
   const [pv, setPv] = useState({ start: `${tomorrow}T17:00`, end: `${tomorrow}T17:45`, note: '' });
   const [busy, setBusy] = useState<string | null>(null);
   const ev = ctx.result.evaluation;
+  const bid = recommendedBidOf(ev);
 
   const act = async (key: string, fn: () => Promise<unknown>, ok: string) => {
     setBusy(key);
@@ -187,7 +189,8 @@ export function ViewingsTab({ ctx }: { ctx: PropertyContext }) {
           <dl className="num mb-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-lg bg-slate-50 p-2">
               <dt className="text-xs text-slate-600">Modellert maksbud</dt>
-              <dd className="font-semibold">{ev.maxBid?.price != null ? formatNOK(ev.maxBid.price) : ev.maxBid?.status === 'none' ? 'Ingen løsning' : 'Mangler grunnlag'}</dd>
+              <dd className="font-semibold">{bid.price !== null ? formatNOK(bid.price) : bid.status === 'none' ? 'Ingen løsning' : 'Mangler grunnlag'}</dd>
+              {bid.limitedBy && <dd className="text-[11px] text-slate-600">Begrenset av {MAX_BID_LIMIT_LABEL[bid.limitedBy].toLowerCase()}</dd>}
             </div>
             <div className="rounded-lg bg-slate-50 p-2">
               <dt className="text-xs text-slate-600">Min smertegrense</dt>
@@ -202,7 +205,7 @@ export function ViewingsTab({ ctx }: { ctx: PropertyContext }) {
               <dd className="font-semibold">{ev.maxBidLow?.price != null ? formatNOK(ev.maxBidLow.price) : '–'}</dd>
             </div>
           </dl>
-          {ctx.draft.walkAway !== null && ev.maxBid?.price != null && ctx.draft.walkAway > ev.maxBid.price && (
+          {ctx.draft.walkAway !== null && bid.price !== null && ctx.draft.walkAway > bid.price && (
             <Alert tone="warning" className="mb-3">
               Smertegrensen er høyere enn modellert maksbud.
             </Alert>

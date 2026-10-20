@@ -50,7 +50,7 @@ Knappen **Testkontroller** i den lilla demostripen øverst åpner et panel for �
   - **Cachetreff** `finn.no/900000113`: grunnlaget finnes fra før, men brukeren ser og belastes som ved en ny analyse (fremdriftsdialog, «Analysen er klar», én ny analyse i kvoten)
   - **Samme objekt, annet format**: `…/ad.html?finnkode=900000113&utm_source=…` normaliseres til samme FINN-ID
   - **Cachemiss** `finn.no/478027403`: ny simulert analyse med fem steg. Ukjente FINN-ID-er gir et deterministisk syntetisk objekt merket «Demodata – ingen annonse hentet».
-  - **Gammel analyse** `finn.no/900000110`: over 30 dager, med valg mellom lett oppfrisking og full reanalyse
+  - **Gammel analyse** `finn.no/900000110`: over 30 dager. Eieren (som limer inn lenken eller åpner objektet) får automatisk en **grundig markedsoppfriskning** («Oppdaterer markedsdata», belastet som oppfriskning), ikke full ny analyse; en bruker som ber om analysen uten å ha objektet får en markedsoppfriskning som ser ut som en ny analyse. Full teknisk analyse kun ved nye dokumenter, endrede kritiske fakta eller inkompatibel modell. Alle valg tas av én beslutningsfunksjon (`decideRefresh`): 30 dager vurderes før 24 timer, og en offisiell visningshendelse kan utløse enkel oppfriskning selv om siste kontroll er under 24 timer gammel
   - **Feil og nytt forsøk** `finn.no/900000999`: første forsøk feiler uten belastning, og retry er idempotent
   - **Pågående felles jobb**: den andre testbrukeren starter en analyse, og du kobles til samme jobb uten belastning
   - **Ugyldig lenke**: forståelig feilmelding
@@ -71,27 +71,33 @@ Testtilganger finnes bare med mocktjenestene. I produksjonsmodus (`VITE_FLIPPROM
 
 ## Beregningsmotor
 
-Rene funksjoner i [src/calc/engine.ts](src/calc/engine.ts). Objektside, tabell, sammenligning, kalender og eksport bruker samme motor. Alle mellomregninger gjøres i hele øre, og alle resultater merkes med modellversjon (`1.0.0`).
+Rene funksjoner i [src/calc/engine.ts](src/calc/engine.ts). Objektside, tabell, sammenligning, kalender og eksport bruker samme motor. Alle mellomregninger gjøres i hele øre, og alle resultater merkes med modellversjon (`1.2.0`). Detaljer om scenarioer, markedsvekting, rangering og migrering: [docs/scenarier-og-marked.md](docs/scenarier-og-marked.md).
 
 ```
 K      = A × d + F                         kjøpskostnader
 RB     = R × (1 + b)                       oppussing med reserve
-I      = f × ((P + K) + RB/2) × r × m/12   avdragsfritt prosjektlån; oppussing trekkes i snitt halvveis
+I      = r × m/12 × (fP × P + fR × RB/2)         avdragsfrie lån: kjøpslån (kun på kjøpesummen P) fra start, oppussingslån trekkes i snitt halvveis
 O      = M × m                             M = hele felleskostnaden + drift (gjeldsbetjening legges ikke til på nytt)
 S      = V − D1 (totalpris) | V (kontant)  fellesgjeld ved salg trekkes nøyaktig én gang
-Csale  = Sf + s × S                        provisjon av kontantsalget
+Csale  = Sf + s × S                        fast sum + provisjon av kontantsalget
 C      = P + K + RB + I + O + Csale
-Resultat før skatt og eget arbeid = S − C
+Resultat før skatt = S − C                 egen tid er IKKE en kostnad
+Fortjeneste per egeninnsatstime = (S − C) / egne timer   mot ditt minimumskrav
 Prosjektavkastning = (S − C) / (C + D0)    ikke egenkapitalavkastning
+Egenkapitalbehov = (P − kjøpslån) + K + (RB − oppussingslån) + ikke lånefinansierte (I + O)   kjøpskostnadene K dekkes av egenkapital; uten salgskostnader
+Finansieringsgap = max(0, egenkapitalbehov − tilgjengelig egenkapital)
 ```
 
-- **Maksbud** løses baklengs med biseksjon (toleranse 1 kr). Kjøpsavgift og renter beregnes på nytt for hver pris. Grenser beregnes for 100–400 000 kr og 15/20 % avkastning. Finnes ingen løsning, vises «Ingen gjennomførbar pris innen søkeområdet».
+- **Maksbud** løses baklengs med biseksjon (toleranse 1 kr). Kjøpsavgift og renter beregnes på nytt for hver pris. Grensene beregnes hver for seg: fortjenestemålet og (med egne timer) **minimum fortjeneste per egeninnsatstime**. Anbefalt maksbud er den laveste, og det vises hva som begrenser. Tabellen viser i tillegg 100–400 000 kr og 15/20 % avkastning. Finnes ingen løsning, vises «Ingen gjennomførbar pris innen søkeområdet». Timekravet er et mål, ikke en kostnad og ikke en port for et scenario.
+- **Kjøpslånet gjelder kjøpesummen** (fra modell 1.2). Tidligere ble låneandelen også brukt på kjøpskostnadene; historiske tall er derfor ikke bit-for-bit identiske (se [docs/scenarier-og-marked.md](docs/scenarier-og-marked.md) §2.1).
 - **Stresstester:** salg −5/−10/−15 %, oppussing +100 000 kr (reserve og renter beregnes på nytt), tid +3 mnd, kombinasjon, og isolert økt gjeld ved salg.
 - **Ukjent er ukjent:** manglende inngangsverdier gir ufullstendig kalkyle med navngitte mangler, aldri 0 kr.
 - **Skatt** er uavklart som standard og vises bare som separat illustrasjon med din egen sats. Ingen automatisk skattefordel ved tap.
 - **Dokumentavgift** er en eksplisitt, overstyrbar regel etter eierform. Selveier: 2,5 % av kjøpesum + fellesgjeld (følger kjøpsprisen). Borettslag: 0.
 
-**Eksempelforutsetninger** (redigerbare på kontosiden, ikke verifiserte markedsvilkår): 6 måneder, 7 % rente, 100 % låneandel, 20 % reserve, 350 kr/t, 400 000 kr fortjenestemål, 55 000 kr faste salgskostnader, 1,5 % provisjon. Profilstandard for kjøpertype er leilighet → privat og hus → AS. Kjøpertype endrer ikke skattebehandlingen.
+**Standardforutsetninger** (redigerbare på kontosiden, ikke verifiserte markedsvilkår): 10 arbeidstimer per uke (samlet team), minimum 500 kr per egeninnsatstime, 300 000 kr tilgjengelig egenkapital, 6 % rente, 90 % låneandel på kjøpesum og 0 % på oppussing, ingen lånefinansiering av løpende utgifter, 20 % reserve, 400 000 kr fortjenestemål, 120 000 kr salgskostnader (fast sum, meglerprovisjon 0 % som tillegg), 3,5 måneder fra ferdig oppussing til økonomisk oppgjør og arbeidsmodus (selv/delvis/innleid) per kategori. Kjøpertype er leilighet → privat og hus → AS i eksempelprofilene. Kjøpertype endrer ikke skattebehandlingen.
+
+**Scenarioer:** en analyse kan ha basis og inntil to alternative planløsninger, hver med egne oppussingstiltak, egen salgsverdi og egen gjennomførbarhetsstatus. Eldre analyser med én global salgsverdi virker via fallback (ett basisscenario merket som global). Alle verdier kan overstyres privat per scenario, med grunnverdi, opprinnelse og «Tilbakestill». **Salgsverdien fastsettes av koden** (markedsmotoren) fra strukturerte referanser per scenario og sluttstandard; agentens estimat er en historisk referanse, ikke fasit. **Markedsvekting** vekter sammenlignbare objekter etter fysisk likhet, pålitelighet og alder; ukjente opplysninger er ikke «middels»; aktive annonser er aldri oppnådd salgspris, men kan flytte normalverdien moderat innenfor intervallet. Scenarioene rangeres på flere kriterier inkl. scenarioets egen risiko, og betingede scenarioer styrer aldri anbefalt maksbud. Regulert arbeid (rør, elektro, bad/våtrom) regnes aldri som gratis uten kompetanse bekreftet per område.
 
 Kontrollregnestykket fra kravspesifikasjonen (resultat 539 900 kr, totalpris-varianten og kapitalgrunnlag 2 760 100 kr) er dekket av tester i [src/calc/engine.test.ts](src/calc/engine.test.ts).
 

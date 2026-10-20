@@ -26,9 +26,9 @@ Det eksisterende Flippsjekk-formatet, i UTF-8 JSON:
 | `saleBasis`, `bear`, `base`, `bull` | `saleBasis` (`kontant`/`total`), `saleLow`/`saleBase`/`saleHigh` | Mangler grunnlag → kontant med merknad |
 | `rehab`, `hours` | rundsum og egne timer | Brukes bare når `tasks` er tom. Rundsum og tiltak summeres aldri sammen. |
 | `tasks[]` | oppussingstiltak (room, title, materials, electrician, plumber, other, hours, priority, included) | Prioritet: påkrevd, anbefalt, verdiøkende, valgfri |
-| `buffer`, `duty`, `salePercent`, `interest`, `financing`, `tax` | `reservePct`, `dutyPct`, `saleCommissionPct`, `interestPct`, `financingPct`, `taxPct` | **Prosentpoeng.** Verdier mellom 0 og 1 gir merknad (mente du ×100?). Konvertering til desimal skjer i motoren. |
+| `buffer`, `duty`, `salePercent`, `interest`, `financing`, `tax` | `reservePct`, `dutyPct`, `saleCommissionPct`, `interestPct`, `purchaseFinancingPct` **og** `renovationFinancingPct` (eldre `financing` gjaldt alt), `taxPct` | **Prosentpoeng.** Verdier mellom 0 og 1 gir merknad (mente du ×100?). Konvertering til desimal skjer i motoren. |
 | `dutyBase` | dokumentavgiftsregel | Lik kjøpesum (+ gjeld) → dynamisk regel. Ellers eget grunnlag med merknad. |
-| `buyFees`, `saleFixed`, `monthly`, `months`, `target`, `hourRate` | tilsvarende scenariofelt | |
+| `buyFees`, `saleFixed`, `monthly`, `months`, `target`, `hourRate` | tilsvarende scenariofelt | `hourRate` beholdes som utfaset `hourValue` og styrer ikke hovedøkonomien. Egenkapital, minimumskrav per time og arbeidsmodus hentes fra brukerens profil. |
 | `tax: null` | skatt uavklart | Tall → egen skatteforutsetning |
 | `viewing`, `confirmed` | privat «importert visning» | `confirmed:false` forblir false. Påvirker aldri buddagen. |
 | `bidDay` | privat overstyring (`origin: import_v1`) | Merket «ikke kildebekreftet». Overskriver ikke en eksisterende overstyring. |
@@ -64,7 +64,7 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
   "format": "flipprom-scenarios",
   "version": 1,
   "exportedAt": "2026-10-16T08:00:00.000Z",
-  "calcModelVersion": "1.0.0",
+  "calcModelVersion": "1.2.0",
   "units": { "percent": "prosentpoeng", "currency": "NOK" },
   "scenarios": [
     {
@@ -80,9 +80,15 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
         "status": "complete",
         "profitBeforeTaxAndOwnWork": 278627,
         "projectReturn": 0.0729,
+        "profitPerOwnHour": 1850,
+        "equityNeed": 574000,
+        "equityGap": 274000,
         "cashSale": 4100000,
         "totalCosts": 3821373,
         "maxBid": 2835590,
+        "maxBidLimitedBy": "profit",
+        "maxBidProfitTarget": 2835590,
+        "maxBidHourlyRequirement": 3100000,
         "missing": []
       }
     }
@@ -90,4 +96,4 @@ Kontosiden og oversikten eksporterer brukerens egne scenarioer ([src/import/scen
 }
 ```
 
-`values` følger `ScenarioValuesSchema`, og ukjente verdier er `null`. `result` er beregnet med motoren ved eksporttidspunktet og merket med `calcModelVersion`. Felles analyseinnhold eksporteres ikke.
+`values` følger `ScenarioValuesSchema` (fra modell 1.2 med `regulatedCompetence {ror, elektro, bad_vatrom}`), og ukjente verdier er `null`. `maxBid` er anbefalt maksbud (laveste av grensene), `maxBidLimitedBy` angir hva som begrenser (`profit` = fortjenestemål, `hourly` = minimum per egeninnsatstime), og de to grensene er oppgitt hver for seg. `result` er beregnet med motoren ved eksporttidspunktet og merket med `calcModelVersion`. Felles analyseinnhold eksporteres ikke.

@@ -34,7 +34,9 @@ import {
   type Viewing,
 } from '../domain/schemas';
 import { migrateLegacyComparable } from '../domain/comparables';
+import { migrateProfileDefaultsRaw, migrateRenovationItemRaw, migrateScenarioValuesRaw, type ProfileMigrationHints } from '../domain/migrate';
 import type { SaleStatus } from '../domain/enums';
+import type { TechnicalChangeSignals, ViewingChangeSignals } from '../domain/refreshPolicy';
 import type { Clock } from '../lib/clock';
 import type { StorageLike } from './storage';
 
@@ -45,7 +47,7 @@ import type { StorageLike } from './storage';
  * calendarOverrides, usageEvents, analyses (visibility=private), profiles, subscriptions.
  */
 export const DB_FORMAT = 'flipprom-mockdb';
-export const DB_SCHEMA_VERSION = 3;
+export const DB_SCHEMA_VERSION = 5;
 export const DB_STORAGE_KEY = 'flipprom.mockdb';
 
 export interface RefreshScript {
@@ -62,6 +64,10 @@ export interface DemoState {
   failNextJob: 'fetch_error' | 'invalid_result' | null;
   failFirstAttemptFinnIds: string[];
   refreshScripts: Record<string, RefreshScript>;
+  /** Simulerte signaler om endret teknisk grunnlag per FINN-ID (nye dokumenter / endrede kritiske fakta). */
+  technicalChangeSignals?: Record<string, TechnicalChangeSignals>;
+  /** Simulerte signaler om endrede/avlyste/nye offisielle visninger per FINN-ID siden siste kontroll. Fjernes når annonsen er hentet på nytt. */
+  viewingChangeSignals?: Record<string, ViewingChangeSignals>;
 }
 
 export interface DbState {
@@ -117,6 +123,56 @@ export interface LoadReport {
 
 /** Migreringer: nøkkel = versjon det migreres FRA. */
 export const MIGRATIONS: Record<number, (state: Record<string, unknown>) => Record<string, unknown>> = {
+  4: (s) => {
+    // v5 (modell 1.2): regulert arbeid bekreftes per arbeidsområde (rør, elektro, bad/våtrom) i stedet for med ett samlet flagg,
+    // og tiltak med arbeidsmodell har ikke lenger eldre fagbeløp i tillegg (hindrer dobbelttelling av arbeid).
+    // Det gamle samlede flagget nullstilles konservativt. Kjøpslånet gjelder nå kun kjøpesummen – verdiene (låneandel i %)
+    // er uendret, men resultatene regnes med den nye regelen. Ingen rader droppes.
+    const next: Record<string, unknown> = { ...s };
+    if (Array.isArray(s.profiles)) {
+      next.profiles = (s.profiles as Record<string, unknown>[]).map((p) => ({ ...p, defaults: migrateProfileDefaultsRaw(p.defaults) }));
+    }
+    if (Array.isArray(s.scenarios)) {
+      next.scenarios = (s.scenarios as Record<string, unknown>[]).map((sc) => ({ ...sc, values: migrateScenarioValuesRaw(sc.values) }));
+    }
+    if (Array.isArray(s.analyses)) {
+      next.analyses = (s.analyses as Record<string, unknown>[]).map((a) => {
+        const est = a.estimates as Record<string, unknown> | undefined;
+        if (!est || !Array.isArray(est.scenarios)) return a;
+        const scenarios = (est.scenarios as Record<string, unknown>[]).map((sc) => (Array.isArray(sc.items) ? { ...sc, items: (sc.items as unknown[]).map(migrateRenovationItemRaw) } : sc));
+        return { ...a, estimates: { ...est, scenarios } };
+      });
+    }
+    return next;
+  },
+  3: (s) => {
+    // v4 (modell 1.1): profilen får nye standarder (egeninnsats, egenkapital, separate lån), og scenarioer får
+    // separate kjøps-/oppussingslån. Eldre `financingPct` bevares som begge deler, så eldre kalkyler gir samme resultat.
+    // Ingen rader droppes. Eldre `hourValue` beholdes som utfaset felt.
+    const next: Record<string, unknown> = { ...s };
+    const hintsByUser = new Map<string, ProfileMigrationHints>();
+    if (Array.isArray(s.profiles)) {
+      next.profiles = (s.profiles as Record<string, unknown>[]).map((p) => {
+        const defaults = migrateProfileDefaultsRaw(p.defaults) as Record<string, unknown> | undefined;
+        if (typeof p.userId === 'string' && defaults) {
+          hintsByUser.set(p.userId, {
+            weeklyOwnHours: defaults.weeklyOwnHours as number,
+            minProfitPerOwnHour: defaults.minProfitPerOwnHour as number,
+            availableEquity: defaults.availableEquity as number,
+            laborModes: defaults.laborModes,
+          });
+        }
+        return { ...p, defaults };
+      });
+    }
+    if (Array.isArray(s.scenarios)) {
+      next.scenarios = (s.scenarios as Record<string, unknown>[]).map((sc) => ({
+        ...sc,
+        values: migrateScenarioValuesRaw(sc.values, hintsByUser.get(String(sc.ownerId)) ?? {}),
+      }));
+    }
+    return next;
+  },
   2: (s) => {
     // v3: sammenlignbare objekter har eksplisitte prisfelt, og brukere kan legge inn egne.
     const next: Record<string, unknown> = { ...s };
