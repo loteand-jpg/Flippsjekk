@@ -1,10 +1,14 @@
-import { Navigate, Outlet, createHashRouter, RouterProvider, Link, useRouteError } from 'react-router';
-import { AnalyzeFlowProvider } from './app/analyzeFlow';
+import { lazy, Suspense, useEffect, useRef, useSyncExternalStore } from 'react';
+import { Navigate, createHashRouter, RouterProvider } from 'react-router';
 import { ServicesProvider } from './app/services';
 import { SessionProvider } from './app/session';
 import { ToastProvider } from './app/toast';
-import { DemoFrame, Logo, RequireAuth } from './components/layout/AppShell';
-import { Alert, buttonClass } from './components/ui/primitives';
+import { Logo, RequireAuth } from './components/layout/AppShell';
+import { NotFound, RouteError, Root } from './app/routeParts';
+import { PageLoading } from './components/ui/primitives';
+import { DesignComingSoon, DesignGallery } from './design/DesignGallery';
+import { disposeRouter, getRouter } from './design/routerRegistry';
+import { routingVariantFromHash, type RoutingVariant } from './design/variants';
 import type { Services } from './services/types';
 import { AccountPage } from './pages/AccountPage';
 import { LoginPage, SignupPage } from './pages/AuthPages';
@@ -17,51 +21,7 @@ import { ImportPage } from './pages/ImportPage';
 import { LandingPage } from './pages/LandingPage';
 import { PropertyPage } from './pages/PropertyPage';
 
-function Root() {
-  return (
-    <AnalyzeFlowProvider>
-      <DemoFrame>
-        <Outlet />
-      </DemoFrame>
-    </AnalyzeFlowProvider>
-  );
-}
-
-function NotFound() {
-  return (
-    <div className="mx-auto max-w-lg px-4 py-20 text-center">
-      <Logo />
-      <h1 className="mt-6 text-xl font-semibold">Siden finnes ikke</h1>
-      <p className="mt-2 text-sm text-slate-600">Lenken kan være feil eller utdatert.</p>
-      <Link to="/oversikt" className={buttonClass('primary', 'md', 'mt-6')}>
-        Til oversikten
-      </Link>
-    </div>
-  );
-}
-
-/** Feilgrense for ruter: viser en forståelig melding i stedet for hvit skjerm. */
-function RouteError() {
-  const err = useRouteError() as Error | undefined;
-  return (
-    <div className="mx-auto max-w-lg px-4 py-16">
-      <Alert tone="danger" title="Noe gikk galt på denne siden">
-        <p>{err?.message ?? 'Ukjent feil.'}</p>
-        <p>Prøv å laste siden på nytt. Hvis feilen gjentar seg i demoen, kan du tilbakestille demodata fra testkontrollene.</p>
-      </Alert>
-      <div className="mt-4 flex gap-2">
-        <button type="button" className={buttonClass('primary')} onClick={() => window.location.reload()}>
-          Last inn på nytt
-        </button>
-        <a href="#/oversikt" className={buttonClass('secondary')}>
-          Til oversikten
-        </a>
-      </div>
-    </div>
-  );
-}
-
-const router = createHashRouter([
+const createOriginalRouter = () => createHashRouter([
   {
     element: <Root />,
     errorElement: <RouteError />,
@@ -71,6 +31,11 @@ const router = createHashRouter([
       { path: '/logg-inn', element: <LoginPage /> },
       { path: '/registrer', element: <SignupPage /> },
       { path: '/glemt-passord', element: <Navigate to="/logg-inn" replace /> },
+      // Designforslag (kun testing). Original = dagens ruter og utseende; Finance har eget rutertre under /design/finance.
+      { path: '/design', element: <DesignGallery /> },
+      { path: '/design/original', element: <Navigate to="/" replace /> },
+      { path: '/design/investment', element: <DesignComingSoon id="investment" /> },
+      { path: '/design/property', element: <DesignComingSoon id="property" /> },
       {
         element: <RequireAuth />,
         errorElement: <RouteError />,
@@ -90,12 +55,56 @@ const router = createHashRouter([
   },
 ]);
 
+/** Finance lastes først når varianten åpnes, så Original ikke blir tyngre. */
+const FinanceApp = lazy(() => import('./design/finance/FinanceApp'));
+
+function OriginalApp() {
+  return <RouterProvider router={getRouter('original', createOriginalRouter)} />;
+}
+
+const subscribeHash = (cb: () => void) => {
+  window.addEventListener('hashchange', cb);
+  return () => window.removeEventListener('hashchange', cb);
+};
+
+/**
+ * Velger rutertre ut fra adressen: `#/design/finance/...` åpner Finance, alt annet er Original. Ved bytte av variant
+ * kastes den forrige ruteren (ikke i en effect-opprydding, så StrictMode ikke river den ned i utvikling).
+ */
+function RoutedApp() {
+  const variant = useSyncExternalStore<RoutingVariant>(
+    subscribeHash,
+    () => routingVariantFromHash(window.location.hash),
+    () => 'original',
+  );
+  const current = useRef(variant);
+  useEffect(() => {
+    const onChange = () => {
+      const next = routingVariantFromHash(window.location.hash);
+      if (next !== current.current) {
+        disposeRouter(current.current);
+        current.current = next;
+      }
+    };
+    window.addEventListener('hashchange', onChange);
+    return () => window.removeEventListener('hashchange', onChange);
+  }, []);
+  if (variant === 'finance') {
+    return (
+      <Suspense fallback={<PageLoading label="Laster Finance …" />}>
+        <FinanceApp key="finance" />
+      </Suspense>
+    );
+  }
+  return <OriginalApp key="original" />;
+}
+
 export function App({ services }: { services: Services }) {
   return (
     <ServicesProvider services={services}>
       <SessionProvider>
         <ToastProvider>
-          <RouterProvider router={router} />
+          <RoutedApp />
         </ToastProvider>
       </SessionProvider>
     </ServicesProvider>

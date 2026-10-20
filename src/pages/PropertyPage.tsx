@@ -487,9 +487,8 @@ export function PropertyPage({ view }: { view?: (p: PropertyViewProps) => ReactN
   );
 
   if (view) {
-    return (
-      <>
-        {view({
+    const View = view;
+    const viewProps: PropertyViewProps = {
           ctx,
           it,
           analysis,
@@ -517,7 +516,10 @@ export function PropertyPage({ view }: { view?: (p: PropertyViewProps) => ReactN
                 await services.properties.archiveMine(it.property.id, archived);
               }, archived ? 'Fjernet fra listen – ligger i arkivet med scenarioene dine' : 'Flyttet til aktive'),
           },
-        })}
+    };
+    return (
+      <>
+        <View {...viewProps} />
         {dialogsEl}
       </>
     );

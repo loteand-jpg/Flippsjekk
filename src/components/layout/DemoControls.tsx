@@ -228,9 +228,14 @@ export function DemoBar({ onOpen }: { onOpen: () => void }) {
             <strong>Demo:</strong> simulert innlogging, abonnement og analyse. Fiktive data – ingen data hentes fra FINN.
           </span>
         </p>
-        <button type="button" onClick={onOpen} className="rounded-md bg-violet-800 px-2 py-0.5 font-medium hover:bg-violet-700">
-          Testkontroller
-        </button>
+        <span className="flex items-center gap-2">
+          <a href="#/design" className="rounded-md px-2 py-0.5 font-medium text-violet-100 underline-offset-2 hover:bg-violet-800 hover:underline">
+            Designforslag
+          </a>
+          <button type="button" onClick={onOpen} className="rounded-md bg-violet-800 px-2 py-0.5 font-medium hover:bg-violet-700">
+            Testkontroller
+          </button>
+        </span>
       </div>
     </div>
   );
