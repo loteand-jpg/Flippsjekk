@@ -80,7 +80,7 @@ src/
   pages/       Landing, HowItWorks, Auth (login/signup), Dashboard, Property, Calendar, Compare, Import, Account, Course, CoursePaywall
   course/      types.ts, content/ (m01-03, m04-06, m07-11, finalQuiz), progress.tsx, widgets/, glossary.ts, marketData.ts, caseData.ts, print.ts
 e2e/           kurs, innlogging, hovedflyt, demokontroller, sammenlignbare, risiko, forside
-docs/          datamodell.md, agentkontrakt.md, formater.md, integrasjoner.md, scenarier-og-marked.md + eksempelfiler (JSON)
+docs/          datamodell.md, agentkontrakt.md, formater.md, integrasjoner.md, scenarier-og-marked.md, design-varianter.md + eksempelfiler (JSON)
 .github/workflows/pages.yml   bygger og publiserer dist/ til GitHub Pages
 ```
 
@@ -512,6 +512,7 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 * **Modell 1.1/1.2 – kjente begrensninger:** markedsindeks/områdeprofil er ikke koblet til data (kun modell + fallback); markedsvektingen justerer ikke prisen for standardforskjeller (den vekter og begrenser); markedsoppfriskning i demoen henter ingen nye referanser (kun annonse og analysedato oppdateres); tekniske endringssignaler (nye dokumenter/kritiske fakta) og visningsendringer (endret/avlyst/ny) simuleres, mens «visning holdt» utledes av lagrede visninger; delvis teknisk reanalyse (`technical_partial_refresh`) finnes ikke, så kritiske signaler gir full analyse; `weeklyOwnHours` er team-nivå, ikke per person; scenariodemodata finnes bare for ett objekt (p01); `hourValue` finnes fortsatt for kurset; lånefinansierte løpende utgifter er forenklet (ingen rente på rente); rangeringsvekter og markedsparametere er heuristikker som ikke er validert mot reelle salg; ingen prisbank er koblet til.
 * Dev-server under Git-grenbytte: bytte gren mens `vite` kjører kan ødelegge `node_modules/.vite`; stopp serveren og slett `node_modules/.vite` ved rare feil.
 * Test-selektorer og tallformat: NBSP/U+2212 (se §8). Flere elementer med samme tekst gir strict-mode-feil i Playwright (bruk `.first()`/roller).
+* **Designvarianter** (`src/design`, `docs/design-varianter.md`): Original er dagens utseende og skal forbli uendret; Finance ligger på `#/design/finance` med eget rutertre (`basename`), egne tokens og en `view` for objektsiden. Varianter deler all domenelogikk, motor og tjenester og regner aldri selv. Baseline-tag `pre-design-baseline`; designgrener merges ikke til `main` uten egen beslutning.
 * `README.md` beskriver demo og kjøring; `docs/*.md` beskriver datamodell, agentkontrakt, formater og integrasjoner. Hold dem og denne filen i synk når regler endres.
 
 ## 16. Åpne spørsmål (trenger beslutning fra eier)

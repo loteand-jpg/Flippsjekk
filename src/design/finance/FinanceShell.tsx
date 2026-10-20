@@ -31,9 +31,9 @@ const NAV = [
 ];
 
 /** Lenke tilbake til designgalleriet. Kun for testing av designforslagene. */
-function GalleryLink({ className }: { className?: string }) {
+function GalleryLink({ className = 'inline-flex' }: { className?: string }) {
   return (
-    <a href="#/design" className={clsx('inline-flex items-center gap-1 text-xs text-slate-600 hover:text-ink hover:underline', className)}>
+    <a href="#/design" className={clsx('items-center gap-1 text-xs text-slate-600 hover:text-ink hover:underline', className)}>
       <Palette className="size-3.5" aria-hidden /> Designforslag
     </a>
   );
@@ -51,7 +51,7 @@ export function FinancePublicLayout() {
             <GalleryLink className="hidden sm:inline-flex" />
             <Link
               to={session ? '/oversikt' : '/logg-inn'}
-              className="inline-flex h-10 items-center rounded-lg bg-pine-800 px-4 text-sm font-medium text-white hover:bg-pine-900"
+              className="inline-flex h-11 items-center rounded-lg bg-pine-800 px-4 text-sm font-medium whitespace-nowrap text-white hover:bg-pine-900"
             >
               {session ? 'Til oversikten' : 'Logg inn'}
             </Link>

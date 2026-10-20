@@ -309,7 +309,7 @@ export function FinanceDashboard() {
                 },
               ]}
             />
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <div className="flex min-w-full flex-1 flex-wrap items-center justify-end gap-2 sm:min-w-0">
               <div className="relative w-full sm:w-64">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
                 <TextInput aria-label="Søk i mine objekter" placeholder="Søk adresse, område, FINN-kode" className="pl-9" value={filters.query} onChange={(e) => setFilters({ ...filters, query: e.target.value })} />
