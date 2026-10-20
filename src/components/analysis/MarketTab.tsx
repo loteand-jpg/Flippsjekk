@@ -545,7 +545,13 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
   );
 }
 
-export function MarketTab({ ctx }: { ctx: PropertyContext }) {
+export type MarketSection = 'saleValues' | 'valuation' | 'comparables';
+
+/**
+ * `sections` lar en annen designvariant vise bare deler av fanen (og lage resten selv). Standard er alle, som i Original.
+ */
+export function MarketTab({ ctx, sections = ['saleValues', 'valuation', 'comparables'] }: { ctx: PropertyContext; sections?: readonly MarketSection[] }) {
+  const show = (x: MarketSection) => sections.includes(x);
   const services = useServices();
   const toast = useToast();
   const { entitlements } = useSession();
@@ -583,6 +589,7 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
 
   return (
     <div className="space-y-5">
+      {show('saleValues') && (
       <Panel
         title={scen.saleSource === 'scenario' ? `Salgsverdi etter oppussing – ${scen.title}` : 'Salgsverdi etter oppussing'}
         sub={
@@ -667,9 +674,12 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
         )}
         <p className="mt-3 text-xs text-slate-600">Ingen udokumentert markedsvekst er lagt inn. Verdi av uavklart soverom, utleiedel eller seksjonering er ikke innregnet.</p>
       </Panel>
+      )}
 
-      <MarketValuation ctx={ctx} canEdit={canEdit} />
+      {show('valuation') && <MarketValuation ctx={ctx} canEdit={canEdit} />}
 
+      {show('comparables') && (
+        <>
       <Panel
         title="Sammenlignbare objekter fra analysen"
         sub="Sammenlignbare objekter i analysen din. Prisantydninger og salg uten dokumentert sum teller ikke som oppnådd pris."
@@ -711,6 +721,8 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
           <p className="text-sm text-slate-700">Ingen faktiske salg med dokumentert salgssum og areal ennå.</p>
         )}
       </Panel>
+        </>
+      )}
 
       <ComparableDialog
         open={dialog !== null}

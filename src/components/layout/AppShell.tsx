@@ -75,7 +75,7 @@ export function RequireAuth() {
   return <AppShell />;
 }
 
-function SubscriptionBanner() {
+export function SubscriptionBanner() {
   const { entitlements } = useSession();
   if (!entitlements || entitlements.access === 'full') return null;
   const text: Record<string, string> = {

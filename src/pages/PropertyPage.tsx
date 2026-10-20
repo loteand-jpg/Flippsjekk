@@ -1,5 +1,5 @@
 import { ArchiveRestore, ArrowLeft, Copy, ExternalLink, LoaderCircle, Pencil, RefreshCw, RotateCcw, Save, Star, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useBlocker, useParams, useSearchParams } from 'react-router';
 import { useLiveQuery, useNow } from '../app/hooks';
 import { useServices } from '../app/services';
@@ -21,7 +21,8 @@ import { REFRESH_REASON_LABEL, TECHNICAL_REASON_LABEL } from '../domain/refreshP
 import { NEW_ACCOUNT_DEFAULTS } from '../config/defaults';
 import { preliminaryReasons } from '../domain/assessment';
 import { PROPERTY_TYPE_LABEL, RECOMMENDATION_LABEL, TENURE_LABEL, WORK_STATUS_LABEL, WORK_STATUSES, type WorkStatus } from '../domain/enums';
-import type { ScenarioValues, SharedAnalysis } from '../domain/schemas';
+import type { Scenario, ScenarioValues, SharedAnalysis } from '../domain/schemas';
+import type { MyPropertyItem } from '../services/types';
 import { formatArea, formatDate, formatNOK, formatRelative } from '../lib/format';
 import { uuid } from '../lib/ids';
 
@@ -38,7 +39,42 @@ type TabId = (typeof TABS)[number]['id'];
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function PropertyPage() {
+/**
+ * Alt en annen designvariant trenger for å vise objektet med egen layout. All data, tilstand, lagring og dialoger ligger i
+ * `PropertyPage`; en variant bestemmer bare presentasjonen. Original bruker ikke `view` og er uendret.
+ */
+export interface PropertyViewProps {
+  ctx: PropertyContext;
+  it: MyPropertyItem;
+  analysis: SharedAnalysis;
+  selected: Scenario;
+  scenarios: Scenario[];
+  tab: PropertyTabId;
+  setTab: (t: PropertyTabId) => void;
+  /** Varsler om grunnlaget (oppfriskning, utdaterte data, jobb pågår, endret pris). Felles for alle varianter. */
+  alerts: ReactNode;
+  /** Brukerens private notater. */
+  notes: ReactNode;
+  state: { dirty: boolean; busy: string | null; canEdit: boolean; editable: boolean; locked: boolean; hasNewVersion: boolean; analysisDate: string; prelim: string[] };
+  actions: {
+    switchTo: (scenarioId: string) => void;
+    save: () => Promise<boolean>;
+    refresh: (kind: 'light' | 'market' | 'full') => Promise<unknown>;
+    run: (key: string, fn: () => Promise<unknown>, ok?: string) => Promise<boolean>;
+    setPrimary: () => Promise<unknown>;
+    openSaveAs: () => void;
+    openRename: () => void;
+    resetToBase: () => void;
+    openDelete: () => void;
+    toggleFavorite: () => Promise<unknown>;
+    setWorkStatus: (s: WorkStatus) => Promise<unknown>;
+    setArchived: (archived: boolean) => Promise<unknown>;
+  };
+}
+export type PropertyTabId = TabId;
+export const PROPERTY_TABS = TABS;
+
+export function PropertyPage({ view }: { view?: (p: PropertyViewProps) => ReactNode } = {}) {
   const { id = '' } = useParams();
   const services = useServices();
   const { profile, entitlements } = useSession();
@@ -234,72 +270,8 @@ export function PropertyPage() {
       else toast({ tone: 'info', title: kind === 'light' ? 'Oppfrisking startet' : kind === 'market' ? 'Markedsoppfriskning startet' : 'Ny analyse startet' });
     });
 
-  return (
-    <div className="space-y-5">
-      <BackLink />
-      {/* Hode */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">{it.link.label ?? it.property.address}</h1>
-            <button
-              type="button"
-              aria-pressed={it.link.favorite}
-              aria-label={it.link.favorite ? 'Fjern som favoritt' : 'Marker som favoritt'}
-              onClick={() => run('fav', () => services.properties.updatePersonalStatus(it.property.id, { favorite: !it.link.favorite }))}
-              className="rounded-md p-1 hover:bg-amber-50"
-            >
-              <Star className={`size-5 ${it.link.favorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400'}`} aria-hidden />
-            </button>
-          </div>
-          <p className="mt-0.5 text-sm text-slate-600">
-            {[it.property.district, it.property.city].filter(Boolean).join(', ')} · {PROPERTY_TYPE_LABEL[it.property.propertyType]} · {TENURE_LABEL[it.property.tenure]} · {formatArea(it.snapshot?.areaBRAi ?? null)}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <RecommendationBadge value={analysis.recommendation} />
-            <PreliminaryBadge reasons={prelim} />
-            <SaleStatusBadge value={it.snapshot?.saleStatus ?? null} note={it.snapshot?.saleStatusNote} />
-            {(it.property.dataOrigin === 'demo' || it.property.dataOrigin === 'synthetic') && <DemoBadge synthetic={it.property.dataOrigin === 'synthetic'} />}
-            <a href={it.property.canonicalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-pine-800 underline">
-              FINN-kode {it.property.finnId} <ExternalLink className="size-3" aria-hidden />
-            </a>
-          </div>
-          <p className="mt-1 text-xs text-slate-600">
-            {analysis.visibility === 'private' ? 'Privat importert utkast' : 'Analyse'} fra {formatDate(analysisDate)} · annonse kontrollert{' '}
-            {it.snapshot ? formatRelative(it.snapshot.observedAt, now) : 'aldri'}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="Min status" className="w-48">
-            {(p) => (
-              <Select {...p} value={it.link.workStatus} onChange={(e) => run('ws', () => services.properties.updatePersonalStatus(it.property.id, { workStatus: e.target.value as WorkStatus }))}>
-                {WORK_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {WORK_STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          {it.link.archivedAt ? (
-            <Button icon={<ArchiveRestore className="size-4" aria-hidden />} onClick={() => run('arch', () => services.properties.archiveMine(it.property.id, false), 'Flyttet til aktive')}>
-              Gjenopprett
-            </Button>
-          ) : (
-            <Button
-              onClick={() =>
-                run('arch', async () => {
-                  await services.properties.archiveMine(it.property.id, true);
-                }, 'Fjernet fra listen – ligger i arkivet med scenarioene dine')
-              }
-            >
-              Fjern fra min liste
-            </Button>
-          )}
-        </div>
-      </header>
-
-      {/* Varsler om grunnlaget */}
+  // Varsler og dialoger er felles for alle designvarianter. Original setter dem sammen som før; andre varianter får dem via `view`.
+  const alertsEl = (
       <div className="space-y-2">
         {hasNewVersion && (
           <Alert tone="warning" title="Dataene kan være utdatert" action={<Button size="sm" variant="primary" onClick={() => setRebaseOpen(true)}>Oppfrisk analysen</Button>}>
@@ -380,72 +352,9 @@ export function PropertyPage() {
           </Alert>
         )}
       </div>
-
-      {/* Scenariolinje */}
-      <div className="sticky top-14 z-20 -mx-4 border-y border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="scenario-select" className="text-sm font-medium">
-            Scenario
-          </label>
-          <div className="w-full max-w-xs sm:w-72">
-          <Select id="scenario-select" className="h-9" value={selected.id} onChange={(e) => switchTo(e.target.value)}>
-            {(scenarios.data ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.locked ? ' (låst)' : ''}
-                {s.id === it.link.primaryScenarioId ? ' (primært)' : ''}
-              </option>
-            ))}
-          </Select>
-          </div>
-          {selected.id === it.link.primaryScenarioId ? (
-            <Badge tone="pine">Primært – brukes i oversikt og kalender</Badge>
-          ) : (
-            <Button size="sm" variant="ghost" onClick={() => run('primary', () => services.scenarios.setPrimary(it.property.id, selected.id), 'Satt som primært scenario')}>
-              Sett som primært
-            </Button>
-          )}
-          <span className="ml-auto flex flex-wrap items-center gap-2">
-            {dirty && (
-              <span className="text-xs font-medium text-amber-800" role="status">
-                Ulagrede endringer
-              </span>
-            )}
-            <Button size="sm" variant="primary" icon={<Save className="size-4" aria-hidden />} disabled={!dirty || !editable} loading={busy === 'save'} onClick={save}>
-              Lagre
-            </Button>
-            <Button size="sm" variant={locked ? 'primary' : 'secondary'} icon={<Copy className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => setNameDialog({ mode: 'saveAs', name: locked ? 'Mitt scenario' : `${selected.name} (kopi)` })}>
-              Lagre som nytt
-            </Button>
-            <Button size="sm" icon={<Pencil className="size-4" aria-hidden />} disabled={!editable} onClick={() => setNameDialog({ mode: 'rename', name: selected.name })} aria-label="Gi nytt navn">
-              <span className="hidden sm:inline">Navn</span>
-            </Button>
-            <Button size="sm" icon={<RotateCcw className="size-4" aria-hidden />} disabled={!editable || !base} onClick={() => base && setDraft(structuredClone(base.values))} title="Sett alle forutsetninger tilbake til grunnanalysen (ulagret til du lagrer)">
-              <span className="hidden sm:inline">Tilbakestill til grunnlag</span>
-            </Button>
-            <Button size="sm" variant="danger" icon={<Trash2 className="size-4" aria-hidden />} disabled={!editable || (scenarios.data?.length ?? 0) < 2} onClick={() => setConfirmDelete(true)} aria-label="Slett scenario" />
-          </span>
-        </div>
-      </div>
-
-      <KeyFigures ctx={ctx} />
-
-      <div>
-        <Tabs label="Analyse" tabs={TABS.map((t) => ({ ...t }))} value={tab} onChange={setTab} />
-        <TabPanel id={tab}>
-          {tab === 'oversikt' && <OverviewTab ctx={ctx} />}
-          {tab === 'kalkyle' && <CalculatorTab ctx={ctx} />}
-          {tab === 'oppussing' && <RenovationTab ctx={ctx} />}
-          {tab === 'risiko' && <RiskTab ctx={ctx} />}
-          {tab === 'marked' && <MarketTab ctx={ctx} />}
-          {tab === 'rapport' && <ReportTab ctx={ctx} />}
-          {tab === 'visninger' && <ViewingsTab ctx={ctx} />}
-        </TabPanel>
-      </div>
-
-      <NotesBox propertyId={it.property.id} initial={it.link.notes} />
-
-      {/* Dialoger */}
+  );
+  const dialogsEl = (
+    <>
       <Dialog
         open={blocker.state === 'blocked' || pendingSwitch !== null}
         onClose={() => {
@@ -574,6 +483,178 @@ export function PropertyPage() {
           }}
         />
       )}
+    </>
+  );
+
+  if (view) {
+    return (
+      <>
+        {view({
+          ctx,
+          it,
+          analysis,
+          selected,
+          scenarios: scenarios.data ?? [],
+          tab,
+          setTab,
+          alerts: alertsEl,
+          notes: <NotesBox propertyId={it.property.id} initial={it.link.notes} />,
+          state: { dirty, busy, canEdit, editable, locked, hasNewVersion, analysisDate, prelim },
+          actions: {
+            switchTo,
+            save,
+            refresh,
+            run,
+            setPrimary: () => run('primary', () => services.scenarios.setPrimary(it.property.id, selected.id), 'Satt som primært scenario'),
+            openSaveAs: () => setNameDialog({ mode: 'saveAs', name: locked ? 'Mitt scenario' : `${selected.name} (kopi)` }),
+            openRename: () => setNameDialog({ mode: 'rename', name: selected.name }),
+            resetToBase: () => base && setDraft(structuredClone(base.values)),
+            openDelete: () => setConfirmDelete(true),
+            toggleFavorite: () => run('fav', () => services.properties.updatePersonalStatus(it.property.id, { favorite: !it.link.favorite })),
+            setWorkStatus: (s2: WorkStatus) => run('ws', () => services.properties.updatePersonalStatus(it.property.id, { workStatus: s2 })),
+            setArchived: (archived: boolean) =>
+              run('arch', async () => {
+                await services.properties.archiveMine(it.property.id, archived);
+              }, archived ? 'Fjernet fra listen – ligger i arkivet med scenarioene dine' : 'Flyttet til aktive'),
+          },
+        })}
+        {dialogsEl}
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <BackLink />
+      {/* Hode */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{it.link.label ?? it.property.address}</h1>
+            <button
+              type="button"
+              aria-pressed={it.link.favorite}
+              aria-label={it.link.favorite ? 'Fjern som favoritt' : 'Marker som favoritt'}
+              onClick={() => run('fav', () => services.properties.updatePersonalStatus(it.property.id, { favorite: !it.link.favorite }))}
+              className="rounded-md p-1 hover:bg-amber-50"
+            >
+              <Star className={`size-5 ${it.link.favorite ? 'fill-amber-400 text-amber-500' : 'text-slate-400'}`} aria-hidden />
+            </button>
+          </div>
+          <p className="mt-0.5 text-sm text-slate-600">
+            {[it.property.district, it.property.city].filter(Boolean).join(', ')} · {PROPERTY_TYPE_LABEL[it.property.propertyType]} · {TENURE_LABEL[it.property.tenure]} · {formatArea(it.snapshot?.areaBRAi ?? null)}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <RecommendationBadge value={analysis.recommendation} />
+            <PreliminaryBadge reasons={prelim} />
+            <SaleStatusBadge value={it.snapshot?.saleStatus ?? null} note={it.snapshot?.saleStatusNote} />
+            {(it.property.dataOrigin === 'demo' || it.property.dataOrigin === 'synthetic') && <DemoBadge synthetic={it.property.dataOrigin === 'synthetic'} />}
+            <a href={it.property.canonicalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-pine-800 underline">
+              FINN-kode {it.property.finnId} <ExternalLink className="size-3" aria-hidden />
+            </a>
+          </div>
+          <p className="mt-1 text-xs text-slate-600">
+            {analysis.visibility === 'private' ? 'Privat importert utkast' : 'Analyse'} fra {formatDate(analysisDate)} · annonse kontrollert{' '}
+            {it.snapshot ? formatRelative(it.snapshot.observedAt, now) : 'aldri'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Min status" className="w-48">
+            {(p) => (
+              <Select {...p} value={it.link.workStatus} onChange={(e) => run('ws', () => services.properties.updatePersonalStatus(it.property.id, { workStatus: e.target.value as WorkStatus }))}>
+                {WORK_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {WORK_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {it.link.archivedAt ? (
+            <Button icon={<ArchiveRestore className="size-4" aria-hidden />} onClick={() => run('arch', () => services.properties.archiveMine(it.property.id, false), 'Flyttet til aktive')}>
+              Gjenopprett
+            </Button>
+          ) : (
+            <Button
+              onClick={() =>
+                run('arch', async () => {
+                  await services.properties.archiveMine(it.property.id, true);
+                }, 'Fjernet fra listen – ligger i arkivet med scenarioene dine')
+              }
+            >
+              Fjern fra min liste
+            </Button>
+          )}
+        </div>
+      </header>
+
+      {alertsEl}
+
+      {/* Scenariolinje */}
+      <div className="sticky top-14 z-20 -mx-4 border-y border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="scenario-select" className="text-sm font-medium">
+            Scenario
+          </label>
+          <div className="w-full max-w-xs sm:w-72">
+          <Select id="scenario-select" className="h-9" value={selected.id} onChange={(e) => switchTo(e.target.value)}>
+            {(scenarios.data ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {s.locked ? ' (låst)' : ''}
+                {s.id === it.link.primaryScenarioId ? ' (primært)' : ''}
+              </option>
+            ))}
+          </Select>
+          </div>
+          {selected.id === it.link.primaryScenarioId ? (
+            <Badge tone="pine">Primært – brukes i oversikt og kalender</Badge>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => run('primary', () => services.scenarios.setPrimary(it.property.id, selected.id), 'Satt som primært scenario')}>
+              Sett som primært
+            </Button>
+          )}
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {dirty && (
+              <span className="text-xs font-medium text-amber-800" role="status">
+                Ulagrede endringer
+              </span>
+            )}
+            <Button size="sm" variant="primary" icon={<Save className="size-4" aria-hidden />} disabled={!dirty || !editable} loading={busy === 'save'} onClick={save}>
+              Lagre
+            </Button>
+            <Button size="sm" variant={locked ? 'primary' : 'secondary'} icon={<Copy className="size-4" aria-hidden />} disabled={!canEdit} onClick={() => setNameDialog({ mode: 'saveAs', name: locked ? 'Mitt scenario' : `${selected.name} (kopi)` })}>
+              Lagre som nytt
+            </Button>
+            <Button size="sm" icon={<Pencil className="size-4" aria-hidden />} disabled={!editable} onClick={() => setNameDialog({ mode: 'rename', name: selected.name })} aria-label="Gi nytt navn">
+              <span className="hidden sm:inline">Navn</span>
+            </Button>
+            <Button size="sm" icon={<RotateCcw className="size-4" aria-hidden />} disabled={!editable || !base} onClick={() => base && setDraft(structuredClone(base.values))} title="Sett alle forutsetninger tilbake til grunnanalysen (ulagret til du lagrer)">
+              <span className="hidden sm:inline">Tilbakestill til grunnlag</span>
+            </Button>
+            <Button size="sm" variant="danger" icon={<Trash2 className="size-4" aria-hidden />} disabled={!editable || (scenarios.data?.length ?? 0) < 2} onClick={() => setConfirmDelete(true)} aria-label="Slett scenario" />
+          </span>
+        </div>
+      </div>
+
+      <KeyFigures ctx={ctx} />
+
+      <div>
+        <Tabs label="Analyse" tabs={TABS.map((t) => ({ ...t }))} value={tab} onChange={setTab} />
+        <TabPanel id={tab}>
+          {tab === 'oversikt' && <OverviewTab ctx={ctx} />}
+          {tab === 'kalkyle' && <CalculatorTab ctx={ctx} />}
+          {tab === 'oppussing' && <RenovationTab ctx={ctx} />}
+          {tab === 'risiko' && <RiskTab ctx={ctx} />}
+          {tab === 'marked' && <MarketTab ctx={ctx} />}
+          {tab === 'rapport' && <ReportTab ctx={ctx} />}
+          {tab === 'visninger' && <ViewingsTab ctx={ctx} />}
+        </TabPanel>
+      </div>
+
+      <NotesBox propertyId={it.property.id} initial={it.link.notes} />
+
+      {dialogsEl}
     </div>
   );
 }

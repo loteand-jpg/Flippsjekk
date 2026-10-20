@@ -24,9 +24,9 @@ import { ScenarioPanel } from './ScenarioPanel';
 import { ScenarioRankingPanel } from './ScenarioRankingPanel';
 import { BasisNote, EXPLAIN, Panel, type PropertyContext } from './shared';
 
-type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | null ? K : never }[keyof ScenarioValues];
+export type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | null ? K : never }[keyof ScenarioValues];
 
-function useField(ctx: PropertyContext) {
+export function useField(ctx: PropertyContext) {
   return (key: NumKey) => ({
     value: ctx.draft[key] as number | null,
     onChange: (v: number | null) => ctx.setDraft((d) => ({ ...d, [key]: v })),
@@ -60,8 +60,8 @@ const fieldAlias: Partial<Record<NumKey, string>> = {
   taxPct: 'taxRate',
 };
 
-const money = (v: number | null) => formatNOK(v);
-const pct = (v: number | null) => formatPctPoints(v);
+export const money = (v: number | null) => formatNOK(v);
+export const pct = (v: number | null) => formatPctPoints(v);
 
 function Inputs({ ctx }: { ctx: PropertyContext }) {
   const f = useField(ctx);
@@ -398,7 +398,7 @@ function HourlyAndEquity({ ctx }: { ctx: PropertyContext }) {
   );
 }
 
-function Results({ ctx }: { ctx: PropertyContext }) {
+export function Results({ ctx }: { ctx: PropertyContext }) {
   const r = ctx.result;
   const ev = r.evaluation;
   const b = ev.base;

@@ -13,8 +13,11 @@ import { scenarioFields } from './ScenarioPanel';
 import { Panel, type PropertyContext } from './shared';
 import { resolveForScenario, useMarketComparables } from './useMarket';
 
-/** Rangering av scenarioer på flere kriterier. Betingede scenarioer styrer aldri anbefalt scenario eller maksbud. */
-export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
+/**
+ * Rangering av scenarioene i en analyse (samme beregning for alle designvarianter). Returnerer scenariodefinisjonene og
+ * rangeringen med hvert scenarios fulle evaluering.
+ */
+export function useScenarioRanking(ctx: PropertyContext) {
   const comps = useMarketComparables(ctx);
   const defs = useMemo(() => resolveAnalysisScenarios(ctx.analysis), [ctx.analysis]);
   const riskBand = useMemo(() => aggregateRisk(effectiveRisks(ctx.analysis.risks, ctx.item.riskEdits).active).band, [ctx.analysis.risks, ctx.item.riskEdits]);
@@ -52,6 +55,13 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
     }
     return { rows, result: rankScenarios(rows.map((r) => r.input)) };
   }, [defs, ctx, comps.all, riskBand]);
+
+  return { defs, data };
+}
+
+/** Rangering av scenarioer på flere kriterier. Betingede scenarioer styrer aldri anbefalt scenario eller maksbud. */
+export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
+  const { defs, data } = useScenarioRanking(ctx);
 
   if (defs.length < 2) return null;
   const { result, rows } = { result: data.result, rows: data.rows };
