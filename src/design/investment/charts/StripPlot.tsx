@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { compactMill, formatNOK } from '../model/format';
+import { formatNOK } from '../model/format';
+import { niceTicks } from './scale';
 import { ChartFrame } from './ChartFrame';
 import { useWidth } from './useWidth';
+
+const compactK = (n: number) => `${(n / 1000).toLocaleString('nb-NO', { maximumFractionDigits: 1 })} k`;
 
 export type Lane = 'primaer' | 'sekundaer' | 'aktiv';
 export interface StripPoint {
@@ -42,7 +45,7 @@ export function StripPlot({ points, anchor, band }: { points: StripPoint[]; anch
   const sx = (x: number) => left + ((x - x0) / (x1 - x0)) * (width - left - right);
   const lanePoints = (l: Lane) => points.filter((p) => p.lane === l).sort((a, b) => a.x - b.x);
   const focus = points.find((p) => p.id === active) ?? null;
-  const ticks = [0, 1, 2, 3].map((k) => Math.round((x0 + ((x1 - x0) * k) / 3) / 1000) * 1000);
+  const ticks = niceTicks(x0, x1, width < 420 ? 3 : 4);
   const shape = (p: StripPoint, cx: number, cy: number, on: boolean) => {
     const stroke = on ? '#052a38' : p.lane === 'aktiv' ? 'var(--viz-2)' : 'var(--viz-1)';
     if (p.lane === 'primaer') return <circle cx={cx} cy={cy} r={on ? 8 : 6.5} fill="var(--viz-1)" stroke={on ? '#052a38' : '#fff'} strokeWidth={on ? 2.5 : 1.5} />;
@@ -64,7 +67,7 @@ export function StripPlot({ points, anchor, band }: { points: StripPoint[]; anch
             <g key={t}>
               <line x1={sx(t)} x2={sx(t)} y1={top - 6} y2={top + LANES.length * laneH} stroke="var(--viz-grid)" />
               <text x={sx(t)} y={height - 8} textAnchor="middle" fontSize={11} fill="#4a5a70" className="inv-fig">
-                {compactMill(t)}
+                {compactK(t)}
               </text>
             </g>
           ))}
@@ -80,14 +83,17 @@ export function StripPlot({ points, anchor, band }: { points: StripPoint[]; anch
             <g>
               <line x1={sx(anchor)} x2={sx(anchor)} y1={top - 6} y2={top + LANES.length * laneH} stroke="#0c5f78" strokeWidth={2} />
               <text x={sx(anchor)} y={top - 11} textAnchor="middle" fontSize={11} fontWeight={700} fill="#0c5f78">
-                Anker {compactMill(anchor)}/m²
+                Anker {formatNOK(anchor)}/m²
               </text>
             </g>
           )}
           {LANES.map((l, li) =>
-            lanePoints(l.id).map((p, pi) => {
+            lanePoints(l.id).map((p, pi, arr) => {
               const cx = sx(p.x);
-              const cy = top + li * laneH + laneH / 2 + (pi % 2 === 0 ? -0.1 : 0.1);
+              // Punkter som ligger tett (innen 16 px) flyttes litt opp/ned, så ingen skjuler hverandre.
+              const prev = arr[pi - 1];
+              const crowded = (prev && cx - sx(prev.x) < 16) || (arr[pi + 1] && sx(arr[pi + 1].x) - cx < 16);
+              const cy = top + li * laneH + laneH / 2 + (crowded ? (pi % 2 === 0 ? -7 : 7) : 0);
               const on = active === p.id;
               return (
                 <g

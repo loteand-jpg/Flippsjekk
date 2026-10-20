@@ -131,8 +131,8 @@ function Headline({ c, base, onUse, ctx }: { c: Col; base: Col; onUse: (id: stri
     <div className="space-y-3">
       <div>
         <p className="inv-label">{c.def.title} mot {base.def.title}</p>
-        <p className={clsx('inv-fig mt-0.5 text-[1.625rem] leading-tight font-bold', TONE_TEXT[tone])} data-testid="inv-delta-net">
-          {signedNOK(d.netProfit)} <span className="text-sm font-semibold text-slate-700">netto {d.netProfit >= 0 ? 'oppside' : 'nedside'}</span>
+        <p className={clsx('mt-0.5 text-[1.625rem] leading-tight font-bold', TONE_TEXT[tone])} data-testid="inv-delta-net">
+          <Fig>{signedNOK(d.netProfit)}</Fig> <span className="text-sm font-semibold text-slate-700">netto {d.netProfit >= 0 ? 'oppside' : 'nedside'}</span>
         </p>
         <p className="mt-0.5 text-xs text-slate-700">
           {d.renovation > 0 ? `for ${signedNOK(d.renovation)} mer i oppussing` : d.renovation < 0 ? `med ${signedNOK(d.renovation)} i oppussing` : 'uten endring i oppussing'}
@@ -264,9 +264,9 @@ export function ScenarioPanel({ ctx, defs, data, activeId, onUse }: { ctx: Prope
       </div>
 
       <h3 className="mt-5 mb-2 text-sm font-semibold">Hva får jeg igjen for ekstra investering?</h3>
-      <ul className="grid gap-4 lg:grid-cols-1 xl:grid-cols-2" data-testid="inv-scenario-cards">
+      <ul className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2" data-testid="inv-scenario-cards">
         {alts.map((c) => (
-          <li key={c.def.id} className={clsx('rounded-xl border p-4', c.recommended ? 'border-pine-400 ring-1 ring-pine-200' : 'border-[var(--inv-line)]')}>
+          <li key={c.def.id} className={clsx('min-w-0 rounded-xl border p-4', c.recommended ? 'border-pine-400 ring-1 ring-pine-200' : 'border-[var(--inv-line)]')}>
             <Headline c={c} base={base} onUse={onUse} ctx={ctx} />
           </li>
         ))}

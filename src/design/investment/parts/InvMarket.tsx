@@ -189,7 +189,7 @@ export function InvMarket({ ctx }: { ctx: PropertyContext }) {
                 {E.basis === 'total' ? 'Totalpris inkl. fellesgjeld' : 'Kontantpris'} · intervall ±{(est.halfWidthPct ?? 0).toLocaleString('nb-NO')} %
               </p>
               <div className="mt-3">
-                <OutcomeRange sale={{ low: E.low, base: E.base, high: E.high }} profit={{ low: null, base: null, high: null }} />
+                <OutcomeRange sale={{ low: E.low, base: E.base, high: E.high }} />
               </div>
               {est.positioning.notes.length > 0 && (
                 <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-slate-700">
@@ -224,9 +224,9 @@ export function InvMarket({ ctx }: { ctx: PropertyContext }) {
               </div>
               <div className="min-w-0">
                 <dt className="inv-label">Konkurranse</dt>
-                <dd className="mt-0.5 font-semibold">{est.activeSignals.count} aktive annonser</dd>
+                <dd className="mt-0.5 font-semibold">{est.activeSignals.count} {est.activeSignals.count === 1 ? 'aktiv annonse' : 'aktive annonser'}</dd>
                 <dd className="text-[11px] text-slate-600">
-                  {est.activeSignals.relevant} svært relevante{reduced > 0 ? ` · ${reduced} prisnedsatt` : ''}
+                  {est.activeSignals.relevant} svært relevant{est.activeSignals.relevant === 1 ? '' : 'e'}{reduced > 0 ? ` · ${reduced} prisnedsatt` : ''}
                   {est.activeSignals.competingBelowAnchor ? ' · noen ligger under ankeret' : ''}
                 </dd>
               </div>

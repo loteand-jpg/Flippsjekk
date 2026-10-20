@@ -31,9 +31,9 @@ const NAV = [
 ];
 
 /** Lenke tilbake til designgalleriet. Kun for testing av designforslagene. */
-function GalleryLink({ className }: { className?: string }) {
+function GalleryLink({ className = 'inline-flex' }: { className?: string }) {
   return (
-    <a href="#/design" className={clsx('inline-flex items-center gap-1.5 text-xs', className)}>
+    <a href="#/design" className={clsx('items-center gap-1.5 text-xs', className)}>
       <Palette className="size-3.5" aria-hidden /> Designforslag
     </a>
   );
@@ -61,7 +61,7 @@ export function InvPublicLayout() {
       <footer className="bg-[var(--inv-dark)] text-slate-300">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs">
           <p>Flippsjekk er et beslutningsverktøy, ikke finans-, skatte- eller juridisk rådgivning. Demo med fiktive data.</p>
-          <GalleryLink className="text-slate-200 hover:underline" />
+          <GalleryLink className="inline-flex text-slate-200 hover:underline" />
         </div>
       </footer>
     </div>
@@ -121,7 +121,7 @@ function InvShell() {
           <p className="truncate font-semibold text-white">{session?.user.displayName}</p>
           <p className="text-slate-300">{subText}</p>
           <div className="mt-3 flex items-center justify-between">
-            <GalleryLink className="text-slate-300 hover:text-white hover:underline" />
+            <GalleryLink className="inline-flex text-slate-300 hover:text-white hover:underline" />
             <button type="button" onClick={signOut} className="flex size-10 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white" aria-label="Logg ut">
               <LogOut className="size-4" aria-hidden />
             </button>
@@ -150,7 +150,7 @@ function InvShell() {
 
       {/* Mobil: mørk bunnmeny med tydelig analyse-handling */}
       <nav aria-label="Hovedmeny (mobil)" className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[var(--inv-dark)] pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5 items-stretch">
+        <div className="mx-auto grid max-w-lg grid-cols-[repeat(5,minmax(0,1fr))] items-stretch">
           {[NAV[0], NAV[1]].map((n) => (
             <MobileLink key={n.to} {...n} />
           ))}
@@ -172,7 +172,7 @@ function InvShell() {
 
 function MobileLink({ to, label, icon: Icon }: { to: string; label: string; icon: typeof TrendingUp }) {
   return (
-    <NavLink to={to} className={({ isActive }) => clsx('flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-cyan-300' : 'text-slate-300')}>
+    <NavLink to={to} className={({ isActive }) => clsx('flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', isActive ? 'text-cyan-300' : 'text-slate-300')}>
       <Icon className="size-5" aria-hidden />
       {label}
     </NavLink>

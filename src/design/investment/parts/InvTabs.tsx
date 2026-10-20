@@ -8,7 +8,7 @@ import { useRef, type ReactNode } from 'react';
 export function InvTabs<T extends string>({ tabs, value, onChange, label }: { tabs: { id: T; label: ReactNode }[]; value: T; onChange: (id: T) => void; label: string }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   return (
-    <div role="tablist" aria-label={label} className="flex flex-wrap gap-1 rounded-xl bg-[var(--inv-dark)] p-1">
+    <div role="tablist" aria-label={label} className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--inv-dark)] p-1 sm:flex sm:flex-wrap">
       {tabs.map((t, i) => (
         <button
           key={t.id}
@@ -35,7 +35,7 @@ export function InvTabs<T extends string>({ tabs, value, onChange, label }: { ta
             }
           }}
           className={clsx(
-            'min-h-11 flex-1 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors sm:flex-none sm:px-4',
+            'min-h-11 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors last:odd:col-span-2 sm:flex-none sm:px-4 sm:last:odd:col-span-1',
             t.id === value ? 'bg-cyan-300 font-semibold text-slate-950' : 'text-slate-200 hover:bg-white/10 hover:text-white',
           )}
         >

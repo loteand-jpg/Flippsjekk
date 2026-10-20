@@ -51,10 +51,10 @@ function LiveResult({ ctx, compact }: { ctx: PropertyContext; compact?: boolean 
   );
   return (
     <div className="inv-dark rounded-xl p-4 sm:p-5" data-testid="inv-calc-result">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-1">
         <div className="min-w-0">
           <p className="inv-label">Forventet fortjeneste</p>
-          <p className={`mt-1 text-[1.75rem] leading-none font-bold ${TONE_TEXT_DARK[profitTone(b.profit)]}`}>
+          <p className={`mt-1 text-[1.625rem] leading-none font-bold ${TONE_TEXT_DARK[profitTone(b.profit)]}`}>
             <CountUp value={b.profit} format={formatNOK} className="inv-fig" testId="inv-calc-profit" />
           </p>
           <p className="inv-muted-d mt-1 text-xs">
@@ -64,7 +64,7 @@ function LiveResult({ ctx, compact }: { ctx: PropertyContext; compact?: boolean 
         </div>
         <div className="min-w-0">
           <p className="inv-label">Anbefalt maksbud</p>
-          <p className="mt-1 text-[1.75rem] leading-none font-bold">
+          <p className="mt-1 text-[1.625rem] leading-none font-bold">
             {floorBid === null ? <span className="text-base font-medium text-slate-300">{bid.status === 'none' ? 'Ingen pris' : 'Ikke beregnet'}</span> : <CountUp value={floorBid} format={formatNOK} className="inv-fig" testId="inv-calc-maxbid" />}
           </p>
           <p className="inv-muted-d mt-1 text-xs">{bid.limitedBy ? `Begrenset av ${MAX_BID_LIMIT_LABEL[bid.limitedBy].toLowerCase()}` : 'Ingen grense satt'}</p>
@@ -230,40 +230,33 @@ export function InvCalculator({ ctx }: { ctx: PropertyContext }) {
             </div>
             <details className="mt-4 rounded-lg border border-[var(--inv-line)] bg-white">
               <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-medium">Hvem utfører arbeidet? (per kategori og kompetanse)</summary>
-              <div className="border-t border-[var(--inv-line)] px-4 py-2">
-                <table className="w-full text-sm">
-                  <caption className="sr-only">Hvem som utfører hvilket arbeid i dette scenarioet</caption>
-                  <tbody className="divide-y divide-[var(--inv-line)]">
-                    {LABOR_CATEGORIES.map((c) => (
-                      <tr key={c}>
-                        <th scope="row" className="py-2 pr-3 text-left font-normal">
-                          {LABOR_CATEGORY_LABEL[c]}
-                          {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-[var(--inv-warn)]">regulert</span>}
-                        </th>
-                        <td className="py-2 pr-3">
-                          <Select aria-label={`Hvem utfører ${LABOR_CATEGORY_LABEL[c].toLowerCase()}`} className="max-w-40" value={d.laborModes[c]} disabled={!ctx.editable} onChange={(e) => ctx.setDraft((x) => ({ ...x, laborModes: { ...x.laborModes, [c]: e.target.value as WorkMode } }))}>
-                            {WORK_MODES.map((m) => (
-                              <option key={m} value={m}>
-                                {WORK_MODE_LABEL[m]}
-                              </option>
-                            ))}
-                          </Select>
-                        </td>
-                        <td className="py-2">
-                          {isRegulatedLabor(c) && (
-                            <Switch
-                              checked={d.regulatedCompetence[c]}
-                              disabled={!ctx.editable}
-                              onChange={(v) => ctx.setDraft((x) => ({ ...x, regulatedCompetence: { ...x.regulatedCompetence, [c]: v } }))}
-                              label={<span className="text-xs">Relevant kompetanse/ansvar bekreftet for {LABOR_CATEGORY_LABEL[c].toLowerCase()}</span>}
-                            />
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="divide-y divide-[var(--inv-line)] border-t border-[var(--inv-line)] px-4" aria-label="Hvem som utfører hvilket arbeid i dette scenarioet">
+                {LABOR_CATEGORIES.map((c) => (
+                  <li key={c} className="grid gap-x-3 gap-y-2 py-3 sm:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1.4fr)] sm:items-center">
+                    <span className="text-sm">
+                      {LABOR_CATEGORY_LABEL[c]}
+                      {isRegulatedLabor(c) && <span className="ml-2 text-[11px] text-[var(--inv-warn)]">regulert</span>}
+                    </span>
+                    <Select aria-label={`Hvem utfører ${LABOR_CATEGORY_LABEL[c].toLowerCase()}`} value={d.laborModes[c]} disabled={!ctx.editable} onChange={(e) => ctx.setDraft((x) => ({ ...x, laborModes: { ...x.laborModes, [c]: e.target.value as WorkMode } }))}>
+                      {WORK_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {WORK_MODE_LABEL[m]}
+                        </option>
+                      ))}
+                    </Select>
+                    {isRegulatedLabor(c) ? (
+                      <Switch
+                        checked={d.regulatedCompetence[c]}
+                        disabled={!ctx.editable}
+                        onChange={(v) => ctx.setDraft((x) => ({ ...x, regulatedCompetence: { ...x.regulatedCompetence, [c]: v } }))}
+                        label={<span className="text-xs">Relevant kompetanse/ansvar bekreftet for {LABOR_CATEGORY_LABEL[c].toLowerCase()}</span>}
+                      />
+                    ) : (
+                      <span />
+                    )}
+                  </li>
+                ))}
+              </ul>
             </details>
           </InvGroup>
 
@@ -391,7 +384,7 @@ export function InvCalculator({ ctx }: { ctx: PropertyContext }) {
           <span className="text-xs font-normal text-slate-500 group-open:hidden">Vis</span>
           <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Skjul</span>
         </summary>
-        <div className="border-t border-[var(--inv-line)] p-4 sm:p-5">
+        <div className="overflow-x-auto border-t border-[var(--inv-line)] p-4 sm:p-5">
           <Results ctx={ctx} />
         </div>
       </details>

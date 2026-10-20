@@ -82,7 +82,7 @@ export function CaseHero({ ctx, activeTitle, recommendedTitle }: { ctx: Property
         <div className="min-w-0 p-4 sm:p-6">
           {b ? (
             <>
-              <dl className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-3">
+              <dl className="grid grid-cols-1 gap-x-5 gap-y-4 min-[400px]:grid-cols-2 sm:grid-cols-3">
                 <KpiDark
                   label="Forventet fortjeneste"
                   tone={profitTone(b.profit)}

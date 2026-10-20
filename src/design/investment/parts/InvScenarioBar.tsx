@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { Copy, Pencil, RotateCcw, Save, Trash2 } from "lucide-react";
 import { Select } from "../../../components/ui/forms";
 import { Badge, Button } from "../../../components/ui/primitives";
@@ -32,7 +33,7 @@ export function InvScenarioBar({ p }: { p: PropertyViewProps }) {
       )}
       <section
         aria-label="Mitt scenario"
-        className="-mx-4 border-y border-[var(--inv-line)] bg-white/95 px-4 py-2.5 sm:mx-0 sm:rounded-xl sm:border md:sticky md:top-14 md:z-20 md:backdrop-blur lg:top-0"
+        className={clsx('-mx-4 border-y border-[var(--inv-line)] bg-white px-4 py-2.5 sm:mx-0 sm:rounded-xl sm:border', dirty && 'md:sticky md:top-14 md:z-20 lg:top-0')}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <label htmlFor="scenario-select" className="text-sm font-semibold">

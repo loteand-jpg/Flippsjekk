@@ -48,7 +48,7 @@ export function ZeroBars({
           const w = (Math.abs(r.value) / span) * 100;
           const left = r.value >= 0 ? zero : zero - w;
           return (
-            <li key={r.id} className={clsx('grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(9rem,12rem)_1fr_7.5rem]', r.emphasis && 'border-t pt-2', r.emphasis && (dark ? 'border-white/20' : 'border-[var(--inv-line)]'))}>
+            <li key={r.id} className={clsx('grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(9rem,12rem)_minmax(0,1fr)_auto]', r.emphasis && 'border-t pt-2', r.emphasis && (dark ? 'border-white/20' : 'border-[var(--inv-line)]'))}>
               <p className={clsx('min-w-0 text-[13px] leading-tight', r.emphasis ? 'font-semibold' : 'font-medium')}>
                 {r.label}
                 {r.sub && <span className={clsx('block text-[11px] font-normal', dark ? 'text-slate-300' : 'text-slate-600')}>{r.sub}</span>}

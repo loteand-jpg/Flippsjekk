@@ -177,3 +177,21 @@
     letter-spacing: -0.01em;
   }
 }
+
+/*
+ * Delte (Original-)blokker i fanene har tabeller som kan bli bredere enn en smal skjerm med store beløp. Lar dem rulle
+ * sideveis inni seg selv i stedet for å gjøre hele siden bredere. Gjelder bare Investment.
+ */
+.inv [role='tabpanel'] table.num {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.inv [role='tabpanel'] .grid > * {
+  min-width: 0;
+}
+
+/* Tabulære siffer uten å forby linjeskift (for tekst som inneholder tall). */
+.inv .inv-num {
+  font-variant-numeric: tabular-nums lining-nums;
+}

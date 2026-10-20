@@ -39,7 +39,7 @@ function DimensionCard({ d }: { d: RiskDimension }) {
   const Icon = BAND_ICON[d.band];
   const costs = d.what.filter((w) => w.cost);
   return (
-    <li className="rounded-xl border border-[var(--inv-line)] bg-white p-4" data-testid="inv-risk-dim">
+    <li className="min-w-0 rounded-xl border border-[var(--inv-line)] bg-white p-4" data-testid="inv-risk-dim">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           <Icon className="size-[18px] text-slate-500" aria-hidden /> {d.label}
@@ -57,10 +57,10 @@ function DimensionCard({ d }: { d: RiskDimension }) {
                 {d.what.slice(0, 4).map((w) => (
                   <li key={w.title} className="flex flex-wrap items-baseline justify-between gap-x-3">
                     <span className="min-w-0 break-words">{w.title}</span>
-                    <Fig className="text-xs text-slate-700">
+                    <span className="inv-num text-right text-xs text-slate-700">
                       {w.level === null ? 'ukjent alvorlighet' : `${w.level}/10`}
                       {w.cost ? ` · mulig merkostnad ${w.cost}` : ''}
-                    </Fig>
+                    </span>
                   </li>
                 ))}
                 {d.what.length > 4 && <li className="text-xs text-slate-500">+ {d.what.length - 4} til i risikoregisteret under</li>}
@@ -127,8 +127,8 @@ export function InvRisk({ ctx }: { ctx: PropertyContext }) {
               caption="Downside er salgspris −10 %. Stress er salgspris −10 %, oppussing +100 000 kr og prosjekttid +3 måneder."
               rows={[
                 { id: 'base', label: 'Base-case', sub: 'Dagens kalkyle', value: b.profit, text: formatNOK(b.profit) },
-                { id: 'down', label: 'Downside', sub: down.label, value: down.result.profit, text: `${formatNOK(down.result.profit)} (${signedNOK(down.deltaProfit)})` },
-                { id: 'stress', label: 'Stress', sub: 'Kombinert', value: stress.result.profit, text: `${formatNOK(stress.result.profit)} (${signedNOK(stress.deltaProfit)})` },
+                { id: 'down', label: 'Downside', sub: `${down.label} · ${signedNOK(down.deltaProfit)} mot base`, value: down.result.profit, text: formatNOK(down.result.profit) },
+                { id: 'stress', label: 'Stress', sub: `Kombinert · ${signedNOK(stress.deltaProfit)} mot base`, value: stress.result.profit, text: formatNOK(stress.result.profit) },
               ]}
             />
             <dl className="grid gap-x-6 gap-y-3 border-t border-[var(--inv-line)] pt-3 sm:grid-cols-3" data-testid="inv-stress-summary">
@@ -156,7 +156,7 @@ export function InvRisk({ ctx }: { ctx: PropertyContext }) {
 
       <Panel id="risikobilde" title="Risikobilde i seks dimensjoner" sub={`For scenarioet «${active.title}». Hver dimensjon forklarer hva risikoen er, hvorfor den finnes og hva som bør avklares før du byr.`}>
         <RiskMeter dims={dims} />
-        <ul className="mt-5 grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        <ul className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2 2xl:grid-cols-3">
           {dims.map((d) => (
             <DimensionCard key={d.id} d={d} />
           ))}

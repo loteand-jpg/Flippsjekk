@@ -104,7 +104,7 @@ export function InvestmentProperty(p: PropertyViewProps) {
       </div>
       <Scorecard dims={scorecard} />
       <ScenarioPanel ctx={ctx} defs={defs} data={data} activeId={activeId} onUse={(id) => applyScenarioToDraft(ctx, id)} />
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
         <Drivers up={drivers.up} down={drivers.down} />
         <CostPanel b={ev.base} />
       </div>

@@ -90,7 +90,7 @@ export function Sensitivity({ ctx }: { ctx: PropertyContext }) {
             {meets !== null && <Tag tone={meets ? 'pos' : 'warn'}>{meets ? 'På eller under anbefalt maksbud' : 'Over anbefalt maksbud'}</Tag>}
             {preview !== P && <span className="text-xs text-slate-700">Endring i fortjeneste mot kalkylen: <Fig className={clsx('font-semibold', TONE_TEXT[diff > 0 ? 'pos' : diff < 0 ? 'neg' : 'neutral'])}>{signedNOK(diff)}</Fig></span>}
           </div>
-          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-4" data-testid="inv-preview-readout">
+          <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 rounded-lg bg-slate-50 p-3 min-[400px]:grid-cols-2 sm:grid-cols-4" data-testid="inv-preview-readout">
             <Readout label="Fortjeneste" preview={formatNOK(pv.profit)} now={formatNOK(cur.profit)} />
             <Readout label="Avkastning" preview={formatPct(pv.projectReturn)} now={formatPct(cur.projectReturn)} />
             <Readout label="Kr per time" preview={pv.profitPerOwnHour === null ? 'Ikke beregnet' : `${noKr(pv.profitPerOwnHour)}/t`} now={cur.profitPerOwnHour === null ? 'ikke beregnet' : `${noKr(cur.profitPerOwnHour)}/t`} />

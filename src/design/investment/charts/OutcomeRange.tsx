@@ -47,7 +47,7 @@ function Row({ label, r, dark, zeroLine }: { label: string; r: Range3; dark?: bo
 }
 
 /** Utfallsspenn: salgsverdi og fortjeneste ved lavt, normalt og høyt salg – oppsiden og nedsiden på ett blikk. */
-export function OutcomeRange({ sale, profit, dark }: { sale: Range3; profit: Range3; dark?: boolean }) {
+export function OutcomeRange({ sale, profit, dark }: { sale: Range3; profit?: Range3 | null; dark?: boolean }) {
   return (
     <ChartFrame
       dark={dark}
@@ -56,13 +56,13 @@ export function OutcomeRange({ sale, profit, dark }: { sale: Range3; profit: Ran
         head: ['', 'Lavt', 'Normalt', 'Høyt'],
         rows: [
           ['Salgsverdi', sale.low === null ? '–' : formatNOK(sale.low), sale.base === null ? '–' : formatNOK(sale.base), sale.high === null ? '–' : formatNOK(sale.high)],
-          ['Fortjeneste', profit.low === null ? '–' : formatNOK(profit.low), profit.base === null ? '–' : formatNOK(profit.base), profit.high === null ? '–' : formatNOK(profit.high)],
+          ...(profit ? [['Fortjeneste', profit.low === null ? '–' : formatNOK(profit.low), profit.base === null ? '–' : formatNOK(profit.base), profit.high === null ? '–' : formatNOK(profit.high)]] : []),
         ],
       }}
     >
       <div className="space-y-3.5">
         <Row label="Salgsverdi" r={sale} dark={dark} />
-        <Row label="Fortjeneste før skatt" r={profit} dark={dark} zeroLine />
+        {profit && <Row label="Fortjeneste før skatt" r={profit} dark={dark} zeroLine />}
       </div>
     </ChartFrame>
   );

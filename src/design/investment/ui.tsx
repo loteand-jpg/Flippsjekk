@@ -68,7 +68,7 @@ export function Panel({
   as?: 'section' | 'div' | 'article';
 }) {
   return (
-    <Tag2 aria-labelledby={title && id ? `${id}-t` : undefined} id={id} className={clsx('rounded-xl border border-[var(--inv-line)] bg-white shadow-[0_1px_0_rgba(12,20,36,0.03)]', className)}>
+    <Tag2 aria-labelledby={title && id ? `${id}-t` : undefined} id={id} className={clsx('min-w-0 rounded-xl border border-[var(--inv-line)] bg-white shadow-[0_1px_0_rgba(12,20,36,0.03)]', className)}>
       {title && (
         <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-[var(--inv-line)] px-4 py-3 sm:px-5">
           <div className="min-w-0">
