@@ -172,21 +172,44 @@ Finansieringsgap = max(0, egenkapitalbehov − tilgjengelig egenkapital)
 
 ### 6.1 Analyseflyt (`MockAnalysisService.requestAnalysis`, `app/analyzeFlow.tsx`)
 
-Brukeren limer inn FINN-lenke → `parseFinnUrl` normaliserer til FINN-ID (ulike URL-formater og `utm_*` gir samme objekt) → beslutning:
+Brukeren limer inn FINN-lenke → `parseFinnUrl` normaliserer til FINN-ID (ulike URL-formater og `utm_*` gir samme objekt) → **én samlet beslutning** (`decideRefresh` i `domain/refreshPolicy.ts`, bygget av `refreshInputFor` i `mock/context.ts`). Samme funksjon brukes av `requestAnalysis`, `requestRefresh`, `publishLinked` og varslene på objektsiden, så reglene aldri avviker mellom kodeveiene.
+
+**Tre typer oppfriskning (aldri blandet sammen)**
+
+| Utfall | Innhold | Jobbtype |
+|---|---|---|
+| **Enkel oppfriskning** (`lightweight_refresh`) | pris, visninger og salgsstatus | `light_refresh` |
+| **Grundigere markedsoppfriskning** (`market_refresh`) | enkel oppfriskning + markedsreferanser + salgsverdi per eksisterende scenario + økonomien på nytt. Teknisk grunnlag og scenarioer tas over uendret; ingen ny dokumentanalyse eller scenario-screening | `market_refresh` |
+| **Full/delvis faglig reanalyse** (`full_analysis`) | ny teknisk hovedanalyse. Delvis teknisk reanalyse (`technical_partial_refresh`) støttes **ikke** av modellen ennå, så slike signaler gir eksplisitt full analyse | `full_analysis` |
+
+**Prioritet (første treff vinner; `decideRefresh`)**
+
+1. Hovedanalyse mangler → `full_analysis`. 2. Inkompatibel med gjeldende modell → `full_analysis`.
+3. Annonsen er **solgt/trukket** → `reuse` (ingen ny analyse eller oppfriskning er nødvendig).
+4. **Nye/endrede kritiske dokumenter eller endrede kritiske fakta** → `full_analysis` (aldri vanlig `reuse`).
+5. **Mer enn 30 dager** siden siste hovedanalyse/grundige markedsoppfriskning → `market_refresh`. Vurderes **før** 24-timersregelen, så en fersk kontroll aldri blokkerer 30-dagersregelen. Markedsoppfriskningen inkluderer den enkle, så en visningshendelse behandles av den.
+6. **Offisiell visningshendelse siden siste kontroll** (visning holdt, endret, avlyst eller ny) → `lightweight_refresh`, **selv om siste kontroll er under 24 timer gammel**.
+7. Ingen kontroll, eller siste kontroll **> 24 timer** gammel → `lightweight_refresh`.
+8. Ellers → `reuse`.
+
+Inndata: finnes hovedanalyse, kompatibel, tidspunkt for siste hovedanalyse, siste markedsoppfriskning og siste kontroll (siste snapshot – enkel oppfriskning eller analyse), visningshendelser, tekniske signaler og salgsstatus. «Visning holdt» utledes av koden fra lagrede offisielle visninger (ikke avlyst, startet etter siste kontroll og før nå); endret/avlyst/ny kan bare oppdages ved å hente annonsen, så de er simulerte signaler (`demo.viewingChangeSignals[finnId]`) som fjernes når annonsen er hentet. Tekniske signaler: `demo.technicalChangeSignals[finnId]`. Ingen automatisk budlogikk.
+
+**Hva tjenesten gjør med beslutningen** (`requestAnalysis`)
 
 | Situasjon | Resultat |
 |---|---|
 | Ikke innlogget / uten aktivt abonnement | `not_authenticated` / `subscription_inactive` (dialog med vei videre) |
-| Objektet ligger i brukerens egen liste (eller er betalt før), annonsen **≤ 24 t** gammel | `reused`: åpnes direkte, ingen belastning. Melding: «Objektet ligger allerede i listen din». |
-| Objektet ligger i brukerens liste, annonsen **> 24 t** gammel | **Lett oppfrisking** (`light_refresh`-jobb: pris, visninger, salgsstatus). Belastes som oppfrisking (ikke ny analyse). Er oppfriskingskvoten brukt opp, åpnes objektet uten oppfriskning. Samtidige forespørsler kobles til samme jobb. |
-| Grunnlag finnes fra før, brukeren har ikke objektet, grunnlaget ≤ 30 dager og kompatibelt | **`linked_analysis`-jobb**: samme fremdriftsdialog, steg og tempo som en ny analyse. Brukeren belastes som **ny analyse** når den er ferdig. Hvis annonseopplysningene er > 24 t gamle **eller en visning har vært siden de ble hentet**, oppfriskes de først (uten egen belastning). Brukerens analysedato (`analyzedAt`) settes til ferdigtidspunktet. |
-| Grunnlag finnes, brukeren har ikke objektet, grunnlaget **> 30 dager** gammelt, kompatibelt og uten tekniske endringer | **`market_refresh`-jobb** (grundig markedsoppfriskning): dialog og trinn ser ut som en ny analyse, belastes som **ny analyse**, samtidige forespørsler kobles til samme jobb. Publiserer ny analyseversjon (`analysisKind: 'market_refresh'`, `derivedFromVersion`, ny dato) med **uendret teknisk grunnlag** – leser ikke dokumenter på nytt og lager ikke nye scenarioer. Salgsverdi per scenario og økonomi regnes på nytt. |
-| Brukeren har objektet, analysen **> 30 dager** | Objektet åpnes. Siden tilbyr «Oppdater markedsdata» (`requestRefresh(.., 'market')`), belastet som **oppfriskning** (ikke ny analyse). Ikke aktuelt for analyser ≤ 30 dager (`already_fresh`). |
-| Analysen mangler, er inkompatibel, **eller kilden melder nye/endrede dokumenter eller endrede kritiske fakta** | **Full teknisk analyse** (`full_analysis`, versjon + 1). `requestRefresh('full')` avvises (`conflict`) uten slik årsak – tid alene gir aldri full analyse (`domain/refreshPolicy.ts`). |
-| Ingen analyse, ingen aktiv jobb | Ny full analyse (`full_analysis`) |
+| Brukeren har objektet (liste eller betalt før), beslutning `reuse` | `reused`: åpnes direkte, ingen belastning |
+| Brukeren har objektet, beslutning `lightweight_refresh` | `light_refresh`-jobb (samtidige forespørsler kobles til samme). Belastes som **oppfriskning**. Er kvoten brukt opp, åpnes objektet uten oppfriskning |
+| Brukeren har objektet, beslutning `market_refresh` (> 30 dager) | `market_refresh`-jobb med dialog «Oppdaterer markedsdata», belastet som **oppfriskning** (ikke ny analyse; teller ikke mot analysekvoten). Er kvoten brukt opp, åpnes objektet som det er. Siden viser også «Oppdater markedsdata» (`requestRefresh(.., 'market')`) |
+| Brukeren har ikke objektet, beslutning `reuse` eller `lightweight_refresh` | **`linked_analysis`-jobb**: samme dialog, steg og tempo som en ny analyse; belastes som **ny analyse**. Annonsen oppfriskes først når beslutningen sier det (uten egen belastning). Brukerens analysedato (`analyzedAt`) settes ved ferdigstillelse |
+| Brukeren har ikke objektet, beslutning `market_refresh` | **`market_refresh`-jobb**, dialog og trinn som en ny analyse, belastet som **ny analyse**; samtidige forespørsler kobles til samme jobb |
+| Beslutning `full_analysis` (analyse mangler, inkompatibel, nye dokumenter/kritiske fakta) | **Full teknisk analyse** (versjon + 1). `requestRefresh('full')` avvises (`conflict`) uten slik årsak |
 | Aktiv full jobb fra en annen bruker | Koble til samme jobb; **også denne brukeren belastes** som ny analyse når den er ferdig |
 
-Alle jobber viser samme dialog («Analyserer bolig» med trinn «Henter annonse, Kontrollerer grunnlag, Vurderer oppussing, Vurderer salgsverdi, Klargjør analyse»); ferdig-melding er «Analysen er klar» (eller «Annonsen er oppfrisket» for oppfriskning). Mens en `linked_analysis` pågår, **maskeres** objektet for brukeren (ingen analyse/snapshot/visninger) slik at det ser ut som en ny analyse (`buildMyItem`); andres `linked_analysis`-jobber vises aldri.
+`requestRefresh('light')` er «allerede fersk» bare når en enkel oppfriskning ikke er nødvendig (`RefreshDecision.lightDue` falsk: nylig kontrollert og ingen visningshendelse), også når markedsoppfriskning er aktuell. `requestRefresh('market')` er «allerede fersk» for analyser ≤ 30 dager.
+
+Analyse- og koblede jobber viser samme dialog («Analyserer bolig» med trinn «Henter annonse, Kontrollerer grunnlag, Vurderer oppussing, Vurderer salgsverdi, Klargjør analyse»); ferdig-melding er «Analysen er klar». Oppfriskning har egne dialoger: «Oppfrisker annonseopplysninger» («Annonsen er oppfrisket») og, for en bruker som allerede har objektet, «Oppdaterer markedsdata» («Markedsdataene er oppdatert»; trinnene er markedsoppfriskningens egne). Mens en `linked_analysis` pågår, **maskeres** objektet for brukeren (ingen analyse/snapshot/visninger) slik at det ser ut som en ny analyse (`buildMyItem`); andres `linked_analysis`-jobber vises aldri.
 
 Jobbsimulatoren (`mock/jobs.ts`) flytter jobber frem tidsbasert (`DEMO_JOB`: 1,1 s/steg full, 0,7 s/steg oppfrisking og markedsoppfriskning fra «Oppdater markedsdata»). I demoen finnes ingen ekte markedskilde: markedsoppfriskningen oppdaterer annonsen og analysedatoen, tar teknisk grunnlag og referanser uendret, og lar koden regne på nytt. Signaler om endret teknisk grunnlag simuleres via `demo.technicalChangeSignals[finnId]`. `publishFull` publiserer **atomisk**: først valideres hele agentresultatet (kontrakt + `PublishableAnalysisSchema`); feiler det, merkes bare jobben feilet og eksisterende analyse røres ikke. Retry er idempotent (nøkkel `new_analysis:<dedupeKey>`; ny forsøk på lykket jobb gir ingen ny belastning).
 
@@ -403,6 +426,10 @@ Repo: `https://github.com/loteand-jpg/Flippsjekk` (`origin`, gren `main`). `.git
 | Én kostnadsmodell per tiltak (arbeidsmodell ELLER eldre fagfelt) | Hindrer at arbeid telles to ganger. Agentkontrakt avviser; lagrede rader normaliseres |
 | Kompetanse for regulert arbeid per område | Elektro-kompetanse gjør ikke rør/våtrom gratis. Gammelt samlet flagg nullstilles konservativt |
 | 30 dager gir markedsoppfriskning, ikke full analyse | Teknisk grunnlag foreldes ikke av tid alene. Full analyse kun ved nye dokumenter, endrede kritiske fakta eller inkompatibel modell |
+| Én samlet beslutningsfunksjon for oppfriskning (`decideRefresh`) | Tidligere hadde `requestAnalysis` (24 t uten 30-dagersvurdering for eksisterende brukere), den koblede jobben (`needsRefresh`) og knappen på objektsiden litt ulike regler. Nå er det én testbar kilde |
+| 30 dager vurderes før 24 timer, også for brukere som har objektet | En fersk kontroll skal ikke skjule at analysen er gammel. Markedsoppfriskningen inkluderer den enkle oppfriskningen |
+| Visningshendelse utløser enkel oppfriskning selv under 24 timer | En holdt, endret, avlyst eller ny offisiell visning er viktig (buddag, kalender). Utledes fra lagrede visninger (holdt) eller kildesignal (endret/avlyst/ny) |
+| Solgt/trukket annonse gir `reuse` | Ingen grunn til å oppfriske eller analysere på nytt; unngår unødvendig full analyse |
 
 ---
 
@@ -460,6 +487,7 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 * K-68. **Scenario-spesifikk risiko** (teknisk, kostnad, tid, myndighet) brukes i rangeringen sammen med objektrisiko; betinget/uavklart scenario styrer aldri anbefalt maksbud. K-69. **Én autoritativ salgsverdiflyt**: kode fastsetter low/base/high; agenten leverer sluttprodukt, klassifisering og begrenset begrunnet ankerjustering; tre verdier (historisk agent, markedsmotor, privat) holdes adskilt.
 * K-70. **`standardClass` i sluttproduktet** brukes automatisk av markedsvektingen; ikke anta nyoppusset; udokumentert standard får tydelig fallback. K-71. **Ukjent er ikke middels** i markedsvekting (konservative poeng + pålitelighet + hindrer primærstatus). K-72. **Ukjent fellesgjeld på aktiv annonse blir aldri 0.**
 * K-73. **Ingen dobbelttelling av arbeid** mellom eldre fagfelt og ny arbeidsmodell. K-74. **Regulert kompetanse per kategori** (elektro/rør/bad-våtrom), «Relevant kompetanse/ansvar bekreftet for dette arbeidsområdet». K-75. **Aktive annonser** er begrenset markedssignal (dokumentert maksimum), aldri faktiske salg. K-76. Kontrakten støtter scenario-screening (vindu/dagslys, romgeometri, teknikk, vann/avløp, ventilasjon, myndighet, økonomi) og stopp uten treff – uten at ekte agent er bygget.
+* K-77. **Samlet oppfriskingsbeslutning:** én ren funksjon (`decideRefresh`) bestemmer reuse / enkel oppfriskning / markedsoppfriskning / full analyse. Prioritet: manglende eller inkompatibel analyse → solgt → nye kritiske dokumenter/fakta → > 30 dager → visningshendelse → > 24 timer → gjenbruk. K-78. **30-dagersregelen gjelder også brukere som allerede har objektet** (grundig markedsoppfriskning, belastet som oppfriskning) og vurderes før 24-timersregelen. K-79. **Offisiell visningshendelse** (holdt, endret, avlyst, ny) kan utløse enkel oppfriskning selv når siste kontroll er under 24 timer gammel. K-80. Ingen automatisk budlogikk; ingen ekte agent- eller markedsfunksjon beskrives som ferdig.
 
 ---
 
@@ -481,7 +509,7 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 * Demo er **ikke sikker**: tilgangskontroll i nettleseren, kursinnhold i klientbygget, kode vises i UI. Ikke bruk ekte personopplysninger.
 * Lagring i `localStorage` er per nettleser; e-postkoder og ventende Vipps-avtaler ligger i minnet og forsvinner ved omlasting.
 * Eksisterende lokale databaser får ikke automatisk nye **seeddata** (f.eks. Adas kurskjøp, scenariodata på p01) – bruk «Tilbakestill demodata» i testkontrollene. **Skjemaendringer** migreres derimot automatisk (v3→v4).
-* **Modell 1.1/1.2 – kjente begrensninger:** markedsindeks/områdeprofil er ikke koblet til data (kun modell + fallback); markedsvektingen justerer ikke prisen for standardforskjeller (den vekter og begrenser); markedsoppfriskning i demoen henter ingen nye referanser (kun annonse og analysedato oppdateres); tekniske endringssignaler (nye dokumenter/kritiske fakta) simuleres; `weeklyOwnHours` er team-nivå, ikke per person; scenariodemodata finnes bare for ett objekt (p01); `hourValue` finnes fortsatt for kurset; lånefinansierte løpende utgifter er forenklet (ingen rente på rente); rangeringsvekter og markedsparametere er heuristikker som ikke er validert mot reelle salg; ingen prisbank er koblet til.
+* **Modell 1.1/1.2 – kjente begrensninger:** markedsindeks/områdeprofil er ikke koblet til data (kun modell + fallback); markedsvektingen justerer ikke prisen for standardforskjeller (den vekter og begrenser); markedsoppfriskning i demoen henter ingen nye referanser (kun annonse og analysedato oppdateres); tekniske endringssignaler (nye dokumenter/kritiske fakta) og visningsendringer (endret/avlyst/ny) simuleres, mens «visning holdt» utledes av lagrede visninger; delvis teknisk reanalyse (`technical_partial_refresh`) finnes ikke, så kritiske signaler gir full analyse; `weeklyOwnHours` er team-nivå, ikke per person; scenariodemodata finnes bare for ett objekt (p01); `hourValue` finnes fortsatt for kurset; lånefinansierte løpende utgifter er forenklet (ingen rente på rente); rangeringsvekter og markedsparametere er heuristikker som ikke er validert mot reelle salg; ingen prisbank er koblet til.
 * Dev-server under Git-grenbytte: bytte gren mens `vite` kjører kan ødelegge `node_modules/.vite`; stopp serveren og slett `node_modules/.vite` ved rare feil.
 * Test-selektorer og tallformat: NBSP/U+2212 (se §8). Flere elementer med samme tekst gir strict-mode-feil i Playwright (bruk `.first()`/roller).
 * `README.md` beskriver demo og kjøring; `docs/*.md` beskriver datamodell, agentkontrakt, formater og integrasjoner. Hold dem og denne filen i synk når regler endres.

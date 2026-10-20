@@ -204,6 +204,11 @@ describe('FINN-lenke → gjenbruk og deduplisering', () => {
 
   it('objekt i egen liste: annonsen oppfriskes hvis det har gått over ett døgn siden forrige analyse/oppfriskning', async () => {
     const pid = s.db.read((st) => st.properties.find((p) => p.finnId === DEMO_FINN.stale)!.id);
+    // Egen analyse som er yngre enn 30 dager (30-dagersregelen har egne tester): bare 24-timersregelen gjelder her.
+    const recent = new Date(clock.now().getTime() - 5 * 86_400_000).toISOString();
+    s.db.transaction((d) => {
+      for (const an of d.analyses) if (an.propertyId === pid) Object.assign(an, { createdAt: recent, publishedAt: recent });
+    });
     const before = (await s.properties.getMine(pid))!;
     const snapsBefore = before.versions.length;
     const askingBefore = before.snapshot!.askingPrice;
@@ -1460,5 +1465,232 @@ describe('profil: manglende rad skjuler ikke standardforutsetningene', () => {
     // Og den kan lagres
     const upd = await s.profile.update({ defaults: { minProfitPerOwnHour: 700 } });
     expect(upd.defaults.minProfitPerOwnHour).toBe(700);
+  });
+});
+
+describe('samlet oppfriskingsbeslutning i tjenestene (hendelser → 24 timer → 30 dager)', () => {
+  const HOUR = 3_600_000;
+  const url = `finn.no/${DEMO_FINN.sharedAB}`;
+  type Prep = { analysisDays?: number; checkHours?: number; saleStatus?: 'aktiv' | 'solgt' | 'trukket'; viewingStartHoursAgo?: number | null };
+  const technical = (a: any) => ({ risks: a.risks, checklist: a.checklist, sources: a.sources, scenarios: a.estimates.scenarios, comparables: a.comparables, summary: a.summary });
+
+  /** Setter alder på analysen og på siste kontroll av annonsen, og eventuelt en offisiell visning som har funnet sted. */
+  function prepare(s: MockServices, clock: ManualClock, p: Prep) {
+    const now = clock.now().getTime();
+    const pid = s.db.read((st) => st.properties.find((x) => x.finnId === DEMO_FINN.sharedAB)!.id);
+    s.db.transaction((d) => {
+      if (p.analysisDays !== undefined) {
+        const at = new Date(now - p.analysisDays * 24 * HOUR).toISOString();
+        for (const a of d.analyses) if (a.propertyId === pid) Object.assign(a, { createdAt: at, publishedAt: at });
+      }
+      const snaps = d.snapshots.filter((x) => x.propertyId === pid);
+      const latest = snaps.sort((x, y) => y.version - x.version)[0];
+      if (p.checkHours !== undefined) Object.assign(latest, { observedAt: new Date(now - p.checkHours * HOUR).toISOString(), fetchedAt: new Date(now - p.checkHours * HOUR).toISOString() });
+      if (p.saleStatus) latest.saleStatus = p.saleStatus;
+      // Fjern fremtidige visninger fra utgangspunktet, så bare det testen legger inn teller
+      d.viewings = d.viewings.filter((v) => v.propertyId !== pid);
+      if (p.viewingStartHoursAgo !== undefined && p.viewingStartHoursAgo !== null) {
+        const start = new Date(now - p.viewingStartHoursAgo * HOUR);
+        d.viewings.push({ id: 'v-test', propertyId: pid, kind: 'official', start: start.toISOString(), end: new Date(start.getTime() + HOUR).toISOString(), status: 'planlagt', sourceId: null, sourceLabel: 'Test', verifiedAt: new Date(now - 10 * HOUR).toISOString(), replacesViewingId: null, note: null });
+      }
+    });
+    return pid;
+  }
+  const jobsOf = (s: MockServices, pid: string) => s.db.read((st) => st.jobs.filter((j) => j.propertyId === pid));
+
+  async function started(s: MockServices) {
+    const r = await s.analysis.requestAnalysis({ url, idempotencyKey: 'k' + Math.random() });
+    return r;
+  }
+
+  it('A: eksisterende bruker, hovedanalysen er 31 dager gammel → grundig markedsoppfriskning (belastet som oppfriskning)', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 31, checkHours: 6 });
+    const before = (await s.analysis.getPublishedAnalysis(pid))!;
+    const scenariosBefore = JSON.stringify((await s.scenarios.list(pid)).map((x) => x.values));
+    const newBefore = usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length;
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await started(s);
+    expect(r.outcome).toBe('job_started');
+    if (r.outcome !== 'job_started') return;
+    expect(r.job.type).toBe('market_refresh');
+    expect(r.job.charges).toEqual({ [DEMO_USERS.ada.id]: 'refresh' });
+    expect(r.job.steps).toEqual(['Henter annonse', 'Oppdaterer visninger og salgsstatus', 'Oppdaterer markedsreferanser', 'Beregner salgsverdi per scenario', 'Kjører økonomimotoren']);
+    expect(jobsOf(s, pid).some((j) => j.type === 'full_analysis')).toBe(false); // ingen unødvendig full teknisk analyse
+    // Samtidig forespørsel kobles til samme jobb
+    const again = await started(s);
+    expect(again.outcome === 'job_joined' && again.job.id === r.job.id).toBe(true);
+    await runJob(s, clock);
+    expect((await s.analysis.getJob(r.job.id))?.status).toBe('succeeded');
+    const after = (await s.analysis.getPublishedAnalysis(pid))!;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.analysisKind).toBe('market_refresh');
+    expect(technical(after)).toEqual(technical(before)); // hovedanalyse og scenarioer beholdes
+    expect(JSON.stringify((await s.scenarios.list(pid)).map((x) => x.values))).toBe(scenariosBefore); // private brukerdata beholdes
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'new_analysis').length).toBe(newBefore);
+    // Rett etterpå er alt fersk: objektet åpnes uten ny jobb
+    expect((await started(s)).outcome).toBe('reused');
+  });
+
+  it('24-timersregelen blokkerer ikke 30-dagersregelen: gammel analyse og helt fersk kontroll gir likevel markedsoppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    prepare(s, clock, { analysisDays: 31, checkHours: 2 });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('market_refresh');
+  });
+
+  it('B: kontrollert for 6 timer siden, men en offisiell visning har funnet sted etter det → enkel oppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 5, checkHours: 6, viewingStartHoursAgo: 2 });
+    const snapsBefore = s.db.read((st) => st.snapshots.filter((x) => x.propertyId === pid).length);
+    const refreshBefore = usageOf(s, DEMO_USERS.ada.id, 'refresh').length;
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('light_refresh');
+    await runJob(s, clock, 3);
+    expect(s.db.read((st) => st.snapshots.filter((x) => x.propertyId === pid).length)).toBe(snapsBefore + 1);
+    expect(usageOf(s, DEMO_USERS.ada.id, 'refresh').length).toBe(refreshBefore + 1);
+    // Hendelsen er behandlet (kontrollen er nyere enn visningen): ingen ny oppfriskning
+    expect((await started(s)).outcome).toBe('reused');
+    // Ingen full analyse og ingen ny analyseversjon
+    expect(jobsOf(s, pid).some((j) => j.type === 'full_analysis' || j.type === 'market_refresh')).toBe(false);
+    expect((await s.analysis.listVersions(pid)).length).toBe(1);
+  });
+
+  it('B: endret, avlyst eller ny visning (signal fra kilden) gir enkel oppfriskning under 24 timer, og signalet fjernes etterpå', async () => {
+    for (const signal of [{ changed: true }, { cancelled: true }, { added: true }]) {
+      const { services: s, clock } = setup();
+      await signIn(s, 'ada');
+      const pid = prepare(s, clock, { analysisDays: 5, checkHours: 3 });
+      s.db.transaction((d) => {
+        d.demo.viewingChangeSignals = { [DEMO_FINN.sharedAB]: signal };
+      });
+      const mine = (await s.properties.getMine(pid))!;
+      expect(mine.refreshDecision.kind).toBe('lightweight_refresh');
+      const r = await started(s);
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      expect(r.job.type).toBe('light_refresh');
+      await runJob(s, clock, 3);
+      expect(s.db.read((st) => st.demo.viewingChangeSignals?.[DEMO_FINN.sharedAB])).toBeUndefined();
+      expect((await started(s)).outcome).toBe('reused');
+    }
+  });
+
+  it('C: kontrollert for 6 timer siden og ingen relevante endringer → gjenbruk uten jobb og uten belastning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 5, checkHours: 6 });
+    const usageBefore = s.db.read((st) => st.usageEvents.length);
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    expect(jobsOf(s, pid)).toHaveLength(0);
+    expect(s.db.read((st) => st.usageEvents.length)).toBe(usageBefore);
+    expect((await s.properties.getMine(pid))!.refreshDecision).toMatchObject({ kind: 'reuse', reasons: ['fersk'] });
+  });
+
+  it('D: grundig analyse 20 dager gammel og siste kontroll over 24 timer, uten særhendelse → enkel oppfriskning', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 20, checkHours: 30 });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('light_refresh');
+    expect(jobsOf(s, pid).some((j) => j.type === 'market_refresh' || j.type === 'full_analysis')).toBe(false);
+  });
+
+  it('E: ingen tidligere hovedanalyse → full analyse (også for en bruker som har objektet i listen)', async () => {
+    const { services: s } = setup();
+    await signIn(s, 'ada');
+    const pid = s.db.read((st) => st.properties.find((x) => x.finnId === DEMO_FINN.sharedAB)!.id);
+    s.db.transaction((d) => {
+      d.analyses = d.analyses.filter((a) => a.propertyId !== pid);
+    });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('full_analysis');
+  });
+
+  it('F: nytt kritisk dokument eller endrede kritiske fakta gir aldri vanlig gjenbruk – også ved helt fersk kontroll', async () => {
+    for (const signal of [{ newOrChangedDocuments: true }, { criticalFactsChanged: true }]) {
+      const { services: s, clock } = setup();
+      await signIn(s, 'ada');
+      const pid = prepare(s, clock, { analysisDays: 2, checkHours: 1 });
+      s.db.transaction((d) => {
+        d.demo.technicalChangeSignals = { [DEMO_FINN.sharedAB]: signal };
+      });
+      const mine = (await s.properties.getMine(pid))!;
+      expect(mine.refreshDecision.kind).toBe('full_analysis');
+      const r = await started(s);
+      expect(r.outcome).not.toBe('reused');
+      if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+      expect(r.job.type).toBe('full_analysis');
+      // Eksplisitt full analyse (delvis teknisk reanalyse støttes ikke ennå) – eksisterende scenarioer slettes aldri
+      expect((await s.scenarios.list(pid)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('G: solgt annonse starter ingen full analyse eller oppfriskning, selv med gammel analyse og gammel kontroll', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 60, checkHours: 24 * 20, saleStatus: 'solgt' });
+    const decision = (await s.properties.getMine(pid))!.refreshDecision;
+    expect(decision).toMatchObject({ kind: 'reuse', reasons: ['objekt_solgt'] });
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    expect(jobsOf(s, pid)).toHaveLength(0);
+    await expectError(s.analysis.requestRefresh(pid, 'full', 'x'), 'conflict');
+    expect((await s.analysis.requestRefresh(pid, 'light', 'y')).outcome).toBe('already_fresh');
+    expect((await s.analysis.requestRefresh(pid, 'market', 'z')).outcome).toBe('job_started'); // eksplisitt valg er fortsatt mulig
+    // En bruker uten objektet får sin analyse (koblet) uten ny teknisk analyse eller markedsoppfriskning
+    await signIn(s, 'bjorn');
+    s.db.transaction((d) => {
+      d.userProperties = d.userProperties.filter((u) => !(u.userId === DEMO_USERS.bjorn.id && u.propertyId === pid));
+      d.usageEvents = d.usageEvents.filter((u) => !(u.userId === DEMO_USERS.bjorn.id && u.propertyId === pid));
+    });
+    const b = await started(s);
+    if (b.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(b.job.type).toBe('linked_analysis');
+  });
+
+  it('visningshendelse og over 30 dager: markedsoppfriskningen behandler hendelsen, og signalene fjernes', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 40, checkHours: 3, viewingStartHoursAgo: 1 });
+    s.db.transaction((d) => {
+      d.demo.viewingChangeSignals = { [DEMO_FINN.sharedAB]: { cancelled: true } };
+    });
+    const r = await started(s);
+    if (r.outcome !== 'job_started') throw new Error('forventet jobb');
+    expect(r.job.type).toBe('market_refresh');
+    await runJob(s, clock);
+    expect(s.db.read((st) => st.demo.viewingChangeSignals?.[DEMO_FINN.sharedAB])).toBeUndefined();
+    expect((await s.analysis.getPublishedAnalysis(pid))!.analysisKind).toBe('market_refresh');
+  });
+
+  it('er oppfriskingskvoten brukt opp, åpnes objektet som det er (ingen jobb, ingen feil)', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    prepare(s, clock, { analysisDays: 45, checkHours: 6 });
+    const e = await s.subscription.getEntitlements();
+    s.db.transaction((d) => {
+      d.usageEvents.push(...Array.from({ length: e.limits.refreshes }, (_, i) => ({ id: `q-${i}`, userId: DEMO_USERS.ada.id, kind: 'refresh' as const, propertyId: 'x', jobId: null, analysisId: null, idempotencyKey: `q-${i}`, chargeable: true, createdAt: clock.now().toISOString() })));
+    });
+    const r = await started(s);
+    expect(r.outcome).toBe('reused');
+    if (r.outcome === 'reused') expect(r.staleness.refresh.kind).toBe('market_refresh');
+  });
+
+  it('eksplisitt «lett oppfrisking»: tillatt under 24 timer bare ved visningshendelse, ellers «allerede fersk» – også når markedsoppfriskning er aktuell', async () => {
+    const { services: s, clock } = setup();
+    await signIn(s, 'ada');
+    const pid = prepare(s, clock, { analysisDays: 45, checkHours: 2 });
+    expect((await s.analysis.requestRefresh(pid, 'light', 'a')).outcome).toBe('already_fresh');
+    prepare(s, clock, { checkHours: 2, viewingStartHoursAgo: 1 });
+    expect((await s.analysis.requestRefresh(pid, 'light', 'b')).outcome).toBe('job_started');
   });
 });

@@ -36,19 +36,21 @@ export class MockPropertyRepository implements PropertyRepository {
   async listMine(opts: { includeArchived?: boolean } = {}): Promise<MyPropertyItem[]> {
     await this.ctx.delay();
     const uid = this.ctx.uid();
+    const now = this.ctx.now();
     return this.ctx.db.read((s) =>
       s.userProperties
         .filter((l) => l.userId === uid && (opts.includeArchived || !l.archivedAt))
-        .map((l) => buildMyItem(s, uid, l))
+        .map((l) => buildMyItem(s, uid, l, now))
         .filter((x): x is MyPropertyItem => x !== null),
     );
   }
 
   async getMine(propertyId: string): Promise<MyPropertyItem | null> {
     const uid = this.ctx.uid();
+    const now = this.ctx.now();
     return this.ctx.db.read((s) => {
       const link = s.userProperties.find((l) => l.userId === uid && l.propertyId === propertyId);
-      return link ? buildMyItem(s, uid, link) : null;
+      return link ? buildMyItem(s, uid, link, now) : null;
     });
   }
 

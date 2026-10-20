@@ -1,5 +1,5 @@
 import { CALC_MODEL_VERSION } from '../../calc/engine';
-import { DEMO_JOB, FRESHNESS } from '../../config/freshness';
+import { DEMO_JOB } from '../../config/freshness';
 import { deterministicUuid } from '../../data/analysisBuilder';
 import type { DbState } from '../../data/db';
 import { SEED_PROPERTIES } from '../../data/seedProperties';
@@ -9,7 +9,7 @@ import { mockAgentRun } from './mockAgent';
 import type { JobType } from '../../domain/enums';
 import { uuid } from '../../lib/ids';
 import { addDaysToKey, localDateKey, osloAt } from '../../lib/time';
-import { ensureDefaultScenario, ensureLink, latestSharedAnalysis, latestSnapshot } from './context';
+import { decideRefreshFor, ensureDefaultScenario, ensureLink, latestSharedAnalysis, latestSnapshot } from './context';
 
 export function dedupeKeyFor(propertyId: string, type: JobType, targetVersion: number | null): string {
   return `${propertyId}:${type}:v${targetVersion ?? 0}:s${ANALYSIS_SCHEMA_VERSION}:m${CALC_MODEL_VERSION}`;
@@ -169,6 +169,7 @@ function publishFull(draft: DbState, job: AnalysisJob, now: Date): void {
   job.error = null;
   // Signalene om endret teknisk grunnlag er behandlet av den nye tekniske analysen.
   if (draft.demo.technicalChangeSignals) delete draft.demo.technicalChangeSignals[job.finnId];
+  if (draft.demo.viewingChangeSignals) delete draft.demo.viewingChangeSignals[job.finnId];
 
   // Scenarioer som peker på en analyse som ikke finnes lenger (f.eks. etter skadet lokal lagring)
   // flyttes til den nye analysen. Verdiene beholdes.
@@ -197,13 +198,15 @@ function publishFull(draft: DbState, job: AnalysisJob, now: Date): void {
   }
 }
 
-/** Trenger annonseopplysningene oppfriskning før brukeren får analysen? Eldre enn ett døgn, eller en visning har vært siden sist. */
+/**
+ * Trenger annonseopplysningene oppfriskning før brukeren får analysen? Følger den samlede beslutningen (`decideRefresh`): en
+ * visningshendelse siden siste kontroll, kontroll eldre enn 24 timer eller 30-dagersregelen gir oppfriskning av annonsen.
+ * Solgte/trukne annonser oppfriskes ikke.
+ */
 export function needsRefresh(draft: Readonly<DbState>, propertyId: string, now: Date): boolean {
-  const snap = latestSnapshot(draft, propertyId);
-  if (!snap) return false;
-  const observed = Date.parse(snap.observedAt);
-  if (now.getTime() - observed > FRESHNESS.volatileMaxAgeHours * 3_600_000) return true;
-  return draft.viewings.some((v) => v.propertyId === propertyId && v.status !== 'avlyst' && Date.parse(v.start) > observed && Date.parse(v.start) <= now.getTime());
+  if (!latestSnapshot(draft, propertyId)) return false;
+  const kind = decideRefreshFor(draft, propertyId, now).kind;
+  return kind === 'lightweight_refresh' || kind === 'market_refresh';
 }
 
 /**
@@ -295,6 +298,8 @@ function applyRefresh(draft: DbState, job: AnalysisJob, now: Date) {
     script.applied = true;
   }
   for (const v of draft.viewings) if (v.propertyId === job.propertyId && v.status !== 'avlyst') v.verifiedAt = now.toISOString();
+  // Annonsen er hentet på nytt, så simulerte signaler om visningshendelser er behandlet.
+  if (draft.demo.viewingChangeSignals) delete draft.demo.viewingChangeSignals[job.finnId];
   draft.snapshots.push(snapshot);
   job.resultSnapshotId = snapshot.id;
   return snapshot;

@@ -36,7 +36,7 @@ import {
 import { migrateLegacyComparable } from '../domain/comparables';
 import { migrateProfileDefaultsRaw, migrateRenovationItemRaw, migrateScenarioValuesRaw, type ProfileMigrationHints } from '../domain/migrate';
 import type { SaleStatus } from '../domain/enums';
-import type { TechnicalChangeSignals } from '../domain/refreshPolicy';
+import type { TechnicalChangeSignals, ViewingChangeSignals } from '../domain/refreshPolicy';
 import type { Clock } from '../lib/clock';
 import type { StorageLike } from './storage';
 
@@ -66,6 +66,8 @@ export interface DemoState {
   refreshScripts: Record<string, RefreshScript>;
   /** Simulerte signaler om endret teknisk grunnlag per FINN-ID (nye dokumenter / endrede kritiske fakta). */
   technicalChangeSignals?: Record<string, TechnicalChangeSignals>;
+  /** Simulerte signaler om endrede/avlyste/nye offisielle visninger per FINN-ID siden siste kontroll. Fjernes når annonsen er hentet på nytt. */
+  viewingChangeSignals?: Record<string, ViewingChangeSignals>;
 }
 
 export interface DbState {

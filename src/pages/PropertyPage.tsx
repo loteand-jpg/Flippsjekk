@@ -17,8 +17,7 @@ import { snapshotFor } from '../components/property/rowModel';
 import { Field, Select, TextInput } from '../components/ui/forms';
 import { Dialog, TabPanel, Tabs } from '../components/ui/overlay';
 import { Alert, Badge, Button, EmptyState, PageLoading } from '../components/ui/primitives';
-import { FRESHNESS } from '../config/freshness';
-import { TECHNICAL_REASON_LABEL } from '../domain/refreshPolicy';
+import { REFRESH_REASON_LABEL, TECHNICAL_REASON_LABEL } from '../domain/refreshPolicy';
 import { NEW_ACCOUNT_DEFAULTS } from '../config/defaults';
 import { preliminaryReasons } from '../domain/assessment';
 import { PROPERTY_TYPE_LABEL, RECOMMENDATION_LABEL, TENURE_LABEL, WORK_STATUS_LABEL, WORK_STATUSES, type WorkStatus } from '../domain/enums';
@@ -312,10 +311,10 @@ export function PropertyPage() {
             Scenarioet bygger på ditt importerte utkast.
           </Alert>
         )}
-        {analysis.visibility === 'shared' && analysisAge > FRESHNESS.marketRefreshAfterDays && !it.technicalReanalysis.needed && (
+        {analysis.visibility === 'shared' && it.refreshDecision.kind === 'market_refresh' && !it.technicalReanalysis.needed && (
           <Alert
             tone="warning"
-            title={`Markedsdataene er ${Math.floor(analysisAge)} dager gamle`}
+            title={`Markedsdataene er ${Math.floor(it.refreshDecision.thoroughAgeDays ?? analysisAge)} dager gamle`}
             action={
               <Button size="sm" loading={busy === 'refresh-market'} disabled={!entitlements?.canRefresh || Boolean(it.activeJob)} onClick={() => refresh('market')}>
                 Oppdater markedsdata
@@ -344,7 +343,7 @@ export function PropertyPage() {
             <p>En ny teknisk analyse belastes som én ny analyse.</p>
           </Alert>
         )}
-        {volatileAgeH !== null && volatileAgeH > FRESHNESS.volatileMaxAgeHours && (
+        {it.refreshDecision.kind === 'lightweight_refresh' && (
           <Alert
             tone="info"
             title="Pris, visninger og salgsstatus bør kontrolleres"
@@ -354,7 +353,8 @@ export function PropertyPage() {
               </Button>
             }
           >
-            Sist kontrollert for {Math.round(volatileAgeH)} timer siden. Oppfrisking endrer ikke dine lagrede forutsetninger.
+            {it.refreshDecision.reasons.map((r) => REFRESH_REASON_LABEL[r]).join('. ')}
+            {volatileAgeH !== null ? `. Sist kontrollert for ${Math.round(volatileAgeH)} timer siden` : ''}. Oppfrisking endrer ikke dine lagrede forutsetninger.
           </Alert>
         )}
         {it.activeJob && (

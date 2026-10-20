@@ -1,4 +1,4 @@
-import type { TechnicalReason } from '../domain/refreshPolicy';
+import type { RefreshDecision, TechnicalReason } from '../domain/refreshPolicy';
 import type { PlanConfig } from '../config/plans';
 import type {
   AnalysisJob,
@@ -259,6 +259,8 @@ export interface MyPropertyItem extends PropertyBundle {
   privateEvents: PrivateEvent[];
   /** Brukerens private risikoer og endringer av grunnlagets risikoer. */
   riskEdits: UserRisk[];
+  /** Samlet beslutning om oppfriskning (`decideRefresh`): hendelser, 24 timer og 30 dager. Brukes til varsler på objektsiden. */
+  refreshDecision: RefreshDecision;
   /** Er teknisk reanalyse nødvendig? Bare ved inkompatibel modell, nye/endrede dokumenter eller endrede kritiske fakta – aldri bare fordi tiden har gått. */
   technicalReanalysis: { needed: boolean; reasons: TechnicalReason[] };
 }
@@ -331,6 +333,8 @@ export interface RiskRepository {
 
 export interface Staleness {
   analysisAgeDays: number;
+  /** Samlet oppfriskingsbeslutning (`decideRefresh`): reuse, enkel oppfriskning, markedsoppfriskning eller full analyse. */
+  refresh: RefreshDecision;
   /** Analysen er eldre enn 30 dager: grundig markedsoppfriskning er aktuelt (ikke full teknisk analyse). */
   marketRefreshDue: boolean;
   /** Teknisk reanalyse trengs bare ved inkompatibel modell, nye/endrede dokumenter eller endrede kritiske fakta. */

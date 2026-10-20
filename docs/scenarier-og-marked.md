@@ -163,17 +163,49 @@ I demoen (ingen ekte kilde) gjør jobben dette: oppdaterer annonsen (pris, visni
 | `nye_dokumenter` | kilden melder nye eller endrede relevante dokumenter |
 | `kritiske_fakta_endret` | kilden melder at kritiske fakta er endret |
 
-De to siste er i demoen simulerte signaler (`demo.technicalChangeSignals[finnId]`); i produksjon kommer de fra kildehentingen.
+De to siste er i demoen simulerte signaler (`demo.technicalChangeSignals[finnId]`); i produksjon kommer de fra kildehentingen. Delvis teknisk reanalyse finnes ikke i modellen ennå, så slike signaler gir eksplisitt full analyse.
+
+### 6.1 Tre typer oppfriskning
+
+| Type | Innhold | Jobbtype |
+|---|---|---|
+| **Enkel oppfriskning** | pris, visninger og salgsstatus | `light_refresh` |
+| **Grundigere markedsoppfriskning** | enkel oppfriskning + markedsreferanser + salgsverdi per eksisterende scenario + økonomien på nytt. Tar teknisk grunnlag og scenarioer over uendret | `market_refresh` |
+| **Full/delvis faglig reanalyse** | ny teknisk hovedanalyse, bare ved nye kritiske dokumenter/fakta, manglende eller inkompatibel analyse | `full_analysis` |
+
+### 6.2 Én beslutningsfunksjon og prioritet
+
+Alle kodeveier (forespørsel om analyse, oppfrisking, koblet analyse og varsler på objektsiden) bruker `decideRefresh` ([src/domain/refreshPolicy.ts](../src/domain/refreshPolicy.ts)), med inndata fra `refreshInputFor` ([src/services/mock/context.ts](../src/services/mock/context.ts)). Utfall: `reuse`, `lightweight_refresh`, `market_refresh` eller `full_analysis`, med `reasons` som vises i UI. Første treff vinner:
+
+| # | Betingelse | Utfall |
+|---|---|---|
+| 1 | Hovedanalyse mangler | `full_analysis` |
+| 2 | Analysen er inkompatibel med gjeldende modell | `full_analysis` |
+| 3 | Annonsen er solgt eller trukket | `reuse` (ingen unødvendig analyse eller oppfriskning) |
+| 4 | Nye/endrede kritiske dokumenter eller endrede kritiske fakta | `full_analysis` (aldri vanlig `reuse`) |
+| 5 | > 30 dager siden siste hovedanalyse eller grundige markedsoppfriskning | `market_refresh` |
+| 6 | Offisiell visningshendelse siden siste kontroll (holdt, endret, avlyst, ny) | `lightweight_refresh` – selv om siste kontroll er under 24 t gammel |
+| 7 | Ingen kontroll, eller siste kontroll > 24 t gammel | `lightweight_refresh` |
+| 8 | Ellers | `reuse` |
+
+**Prioritet mellom hendelser, 24 timer og 30 dager:** 30-dagersregelen (5) vurderes før 24-timersregelen (7), så en fersk kontroll aldri blokkerer den. Markedsoppfriskningen inkluderer den enkle, så en visningshendelse samtidig med > 30 dager behandles av den (ett kall, ikke to). Under 30 dager går visningshendelser foran 24 timer, og 24 timer foran gjenbruk. «Siste hovedanalyse/grundige markedsoppfriskning» er datoen til siste analyseversjon (hovedanalyse eller `market_refresh`); «siste kontroll» er tidspunktet annonsen sist ble hentet (siste snapshot, fra enkel oppfriskning eller analyse). Grensene (24 t, 30 dager) ligger i `FRESHNESS`.
+
+**Visningshendelser:** «holdt» utledes av koden: en offisiell, ikke avlyst visning som startet etter siste kontroll og før nå. «Endret», «avlyst» og «ny» kan bare oppdages ved å hente annonsen, så i demoen er de simulerte signaler (`demo.viewingChangeSignals[finnId]`) som fjernes når annonsen er hentet. Private visninger teller ikke. Ingen automatisk budlogikk.
+
+### 6.3 Hva tjenesten gjør
 
 | Situasjon | Resultat |
 |---|---|
-| Bruker uten objektet, analyse ≤ 30 dager, kompatibel | `linked_analysis` (som før) |
-| Bruker uten objektet, analyse > 30 dager, kompatibel, ingen tekniske endringer | **`market_refresh`**; dialog og trinn ser ut som en ny analyse; belastes som ny analyse; samtidige forespørsler kobles til samme jobb |
-| Bruker uten objektet, teknisk årsak | `full_analysis` |
-| Bruker har objektet, analyse > 30 dager | Objektet åpnes; siden tilbyr **«Oppdater markedsdata»** (`requestRefresh(.., 'market', ..)`), belastet som én oppfriskning (ikke ny analyse; teller ikke mot analysekvoten mens den pågår) |
-| Bruker har objektet, teknisk årsak | Siden tilbyr «Bestill ny teknisk analyse» (`'full'`), belastet som ny analyse |
-| `requestRefresh('full')` uten teknisk årsak | Avvises (`conflict`): en ny teknisk analyse er ikke nødvendig |
+| Bruker har objektet, beslutning `reuse` | Objektet åpnes uten jobb og uten belastning |
+| Bruker har objektet, `lightweight_refresh` | `light_refresh`; belastes som oppfriskning; er kvoten brukt opp, åpnes objektet som det er |
+| Bruker har objektet, `market_refresh` | **`market_refresh` startes automatisk** ved ny tilgang (dialog «Oppdaterer markedsdata»); belastes som oppfriskning (ikke ny analyse; teller ikke mot analysekvoten); er kvoten brukt opp, åpnes objektet som det er. Siden viser i tillegg «Oppdater markedsdata» |
+| Bruker uten objektet, `reuse` / `lightweight_refresh` | `linked_analysis` (dialog og belastning som ny analyse); annonsen oppfriskes først når beslutningen sier det |
+| Bruker uten objektet, `market_refresh` | `market_refresh`; dialog og trinn som en ny analyse; belastes som ny analyse; samtidige forespørsler kobles til samme jobb |
+| `full_analysis` | full teknisk analyse. `requestRefresh('full')` uten slik årsak avvises (`conflict`) |
+| `requestRefresh('light')` | «allerede fersk» når `lightDue` er falsk (nylig kontrollert og ingen visningshendelse) – også når markedsoppfriskning er aktuell |
 | `requestRefresh('market')` på analyse ≤ 30 dager | `already_fresh` – ingenting belastes |
+
+Hovedanalyse, scenarioer og brukerens private kalkyler beholdes ved alle oppfriskninger.
 
 ## 7. Arbeid og pris i oppussingstiltak (klargjort for prisbank)
 
@@ -252,7 +284,7 @@ Kriterier og vekter (vises i UI): fortjeneste 25 %, prosjektavkastning 15 %, for
 | `regulatedSelfWorkConfirmed` (v4) | → `regulatedCompetence` (alle områder «ikke bekreftet»), flagget fjernes (se §3.1). |
 | Tiltak med arbeidsmodell og eldre fagfelt (v4) | Normaliseres, se §7. |
 | Nye scenariofelt (`endProduct.standardClass`, `risk`, `screening`, `anchorAdjustment`, `referenceClassification`, `estimates.scenarioSearch`, `sale` valgfri, `analysisKind`, `derivedFromVersion`) | Valgfrie – eldre analyser leses uendret. Manglende `standardClass` → tydelig fallback (§4.1). |
-| Jobbtype `market_refresh`, `AnalysisJob.charges`, `demo.technicalChangeSignals` | Nye og valgfrie; ingen migrering nødvendig. |
+| Jobbtype `market_refresh`, `AnalysisJob.charges`, `demo.technicalChangeSignals`, `demo.viewingChangeSignals` | Nye og valgfrie; ingen migrering nødvendig. |
 | Skjema | `ScenarioValuesSchema` og `ProfileDefaultsSchema` kjører migreringsfunksjonene før validering, så gamle rader (også kursets localStorage, import og eksport) alltid kan leses. `evaluateScenario` normaliserer også eldre verdier. |
 | Import v1 | `financing` blir kjøps- og oppussingslån; `hourRate` beholdes som utfaset `hourValue`; nye felt hentes fra profilen. |
 | Eksport | Formatet er uendret (`flipprom-scenarios` v1) med nye felt i `values` (`regulatedCompetence`) og i `result`: `profitPerOwnHour`, `equityNeed`, `equityGap`, `maxBid` (anbefalt), `maxBidLimitedBy`, `maxBidProfitTarget`, `maxBidHourlyRequirement`. |
@@ -261,6 +293,7 @@ Kriterier og vekter (vises i UI): fortjeneste 25 %, prosjektavkastning 15 %, for
 ## 13. Kjente begrensninger
 
 - Markedsindeks/områdeprofil er ikke koblet til data, og det finnes ingen ekte markedskilde: en markedsoppfriskning i demoen oppdaterer annonse og analysedato og regner på nytt, men henter ikke nye referanser.
+- Oppfriskingssignaler: «visning holdt» utledes av lagrede visninger, mens endret/avlyst/ny visning og nye kritiske dokumenter/fakta er simulerte signaler i demoen (kilden må levere dem i produksjon). Delvis teknisk reanalyse finnes ikke; kritiske signaler gir full analyse. «Siste kontroll» er ett tidspunkt (siste snapshot) – enkel oppfriskning og analyse skilles ikke.
 - Markedsvektingen justerer ikke prisen for standardforskjeller (§4.1) og har parametere som ikke er validert mot reelle salg.
 - Aktive annonser: `originalAskingPrice` og annonsedato må leveres av kilden; mangler de, gir bare «under ankeret» poeng.
 - `weeklyOwnHours` gjelder hele teamet. Rangeringsvekter er heuristikker.

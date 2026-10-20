@@ -38,11 +38,12 @@ test('testkontroller: cachetreff, felles jobb, feil og nytt forsøk, gammel anal
   await page.getByRole('button', { name: 'Prøv igjen' }).click();
   await expect(page.getByText('Analysen er klar')).toBeVisible({ timeout: 20_000 });
 
-  // Objekt i egen liste med gamle annonseopplysninger: annonsen oppfriskes først (samme dialog), deretter åpnes objektet
+  // Objekt i egen liste med analyse eldre enn 30 dager: grundig markedsoppfriskning (ikke full analyse), deretter åpnes objektet
   await run('Gammel analyse');
-  await expect(page.getByRole('dialog', { name: 'Oppfrisker annonseopplysninger' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Oppdaterer markedsdata' })).toBeVisible();
   await expect(page.getByText(/Eksisterende analyse|finnes allerede|felles analyse/i)).toHaveCount(0);
   await expect(page).toHaveURL(/#\/objekter\//, { timeout: 15_000 });
-  await expect(page.getByText('Annonsen er oppfrisket')).toBeVisible();
+  await expect(page.getByText('Markedsdataene er oppdatert')).toBeVisible();
   await expect(page.getByText('Pris, visninger og salgsstatus bør kontrolleres')).toHaveCount(0); // annonsen er fersk etter oppfriskningen
+  await expect(page.getByText(/Markedsdataene er \d+ dager gamle/)).toHaveCount(0);
 });

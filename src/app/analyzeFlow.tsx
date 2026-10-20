@@ -29,6 +29,11 @@ export function useAnalyzeFlow() {
 
 const PRE_STEPS = ['Kontrollerer innlogging og abonnement', 'Slår opp FINN-koden'];
 
+/** Markedsoppfriskning av en analyse brukeren allerede har (belastes som oppfriskning, ikke som ny analyse). */
+const isMarketRefreshOfOwn = (j: Pick<AnalysisJob, 'type' | 'charges' | 'createdBy'>) => j.type === 'market_refresh' && j.charges?.[j.createdBy] === 'refresh';
+/** Oppfriskingsjobber har egne trinn og viser ikke «innlogging/oppslag»-trinnene. */
+const isRefreshJob = (j: Pick<AnalysisJob, 'type' | 'charges' | 'createdBy'>) => j.type === 'light_refresh' || isMarketRefreshOfOwn(j);
+
 export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
   const services = useServices();
   const navigate = useNavigate();
@@ -88,7 +93,7 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
       if (j.status === 'succeeded') {
         alive = false;
         setPhase({ kind: 'idle' });
-        toast({ tone: 'success', title: j.type === 'light_refresh' ? 'Annonsen er oppfrisket' : j.type === 'market_refresh' && j.charges?.[j.createdBy] === 'refresh' ? 'Markedsdataene er oppdatert' : 'Analysen er klar' });
+        toast({ tone: 'success', title: j.type === 'light_refresh' ? 'Annonsen er oppfrisket' : isMarketRefreshOfOwn(j) ? 'Markedsdataene er oppdatert' : 'Analysen er klar' });
         open(phase.propertyId);
       }
     };
@@ -129,7 +134,9 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
           phase.kind === 'job'
             ? job?.type === 'light_refresh'
               ? 'Oppfrisker annonseopplysninger'
-              : 'Analyserer bolig'
+              : job && isMarketRefreshOfOwn(job)
+                ? 'Oppdaterer markedsdata'
+                : 'Analyserer bolig'
             : 'Kunne ikke starte analysen'
         }
         footer={
@@ -176,8 +183,8 @@ export function AnalyzeFlowProvider({ children }: { children: ReactNode }) {
         {phase.kind === 'job' && job && (
           <div className="space-y-4">
             <ol className="space-y-2" aria-label="Fremdrift">
-              {[...(job.type !== 'light_refresh' ? PRE_STEPS : []), ...job.steps].map((label, i) => {
-                const offset = job.type !== 'light_refresh' ? PRE_STEPS.length : 0;
+              {[...(!isRefreshJob(job) ? PRE_STEPS : []), ...job.steps].map((label, i) => {
+                const offset = !isRefreshJob(job) ? PRE_STEPS.length : 0;
                 const idx = i - offset;
                 const done = idx < 0 || idx < job.stepIndex || job.status === 'succeeded';
                 const failedHere = job.status === 'failed' && idx === job.stepIndex;
