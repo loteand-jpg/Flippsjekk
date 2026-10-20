@@ -1,4 +1,4 @@
-import { findAnalysisScenario } from '../domain/analysisScenarios';
+import { findAnalysisScenario, type ResolvedAnalysisScenario } from '../domain/analysisScenarios';
 import { isRegulatedLabor, LABOR_CATEGORIES, propertyCategory, type LaborCategory, type Tenure, type WorkMode } from '../domain/enums';
 import { migrateScenarioValuesRaw } from '../domain/migrate';
 import type {
@@ -467,6 +467,119 @@ export function buildBaseValues(args: {
     vatIncluded: 'standard',
   };
   return { values, origins, saleResolution };
+}
+
+// ---------------------------------------------------------------------------
+// Overgang mellom analysescenarioer: felles forutsetninger + scenarioets egne egenskaper
+// ---------------------------------------------------------------------------
+
+/**
+ * Hva et felt i en kalkyle er når analysescenarioene (basis og alternativer) sammenlignes eller byttes mellom:
+ *  - `felles`: brukerens og prosjektets økonomiske ramme (kjøpspris, kjøpskostnader, finansiering, rente, egenkapital, mål,
+ *    timekrav, arbeidsmodus, kompetanse, salgskostnader, skatt, oppgjørstid, bud). Like for alle scenarioer.
+ *  - `scenario`: det som faktisk tilhører et scenario (tiltak, oppussingsmodus, mva-valg, salgsverdi low/base/high og
+ *    prisgrunnlag, og hvilket scenario kalkylen bygger på). Kan variere mellom scenarioer.
+ *  - `varighet`: total prosjektvarighet = scenarioets egen oppussingstid + brukerens tid til økonomisk oppgjør.
+ *
+ * Tabellen er uttømmende (TypeScript krever en klassifisering av hvert felt i ScenarioValues), så et nytt felt kan ikke
+ * legges til uten at det tas stilling til om det er felles eller scenariospesifikt.
+ */
+export type ScenarioFieldClass = 'felles' | 'scenario' | 'varighet';
+
+export const SCENARIO_FIELD_CLASS: Record<keyof ScenarioValues, ScenarioFieldClass> = {
+  buyerType: 'felles',
+  purchasePrice: 'felles',
+  debtAtPurchase: 'felles',
+  debtAtSale: 'felles',
+  dutyBasis: 'felles',
+  dutyPct: 'felles',
+  dutyCustomBase: 'felles',
+  buyFees: 'felles',
+  renovationMode: 'scenario',
+  renovationOptionId: 'scenario',
+  renovationItems: 'scenario',
+  renovationLumpSum: 'scenario',
+  lumpSumHours: 'scenario',
+  vatIncluded: 'scenario',
+  reservePct: 'felles',
+  months: 'varighet',
+  settlementMonths: 'felles',
+  monthlyCost: 'felles',
+  interestPct: 'felles',
+  purchaseFinancingPct: 'felles',
+  renovationFinancingPct: 'felles',
+  financeRunningCosts: 'felles',
+  availableEquity: 'felles',
+  saleBasis: 'scenario',
+  saleLow: 'scenario',
+  saleBase: 'scenario',
+  saleHigh: 'scenario',
+  saleFixedCost: 'felles',
+  saleCommissionPct: 'felles',
+  hourValue: 'felles',
+  minProfitPerOwnHour: 'felles',
+  weeklyOwnHours: 'felles',
+  laborModes: 'felles',
+  maxOwnWork: 'felles',
+  regulatedCompetence: 'felles',
+  analysisScenarioId: 'scenario',
+  profitTarget: 'felles',
+  taxMode: 'felles',
+  taxPct: 'felles',
+  startBid: 'felles',
+  walkAway: 'felles',
+  notes: 'felles',
+};
+
+/** Oppussingstiden (uten tid til oppgjør) i et sett verdier. null når varigheten ikke er satt. */
+export function renovationMonthsOf(v: Pick<ScenarioValues, 'months' | 'settlementMonths'>): number | null {
+  return v.months === null ? null : Math.max(0, Math.round((v.months - (v.settlementMonths ?? 0)) * 100) / 100);
+}
+
+/** Har scenarioet sin egen varighet (oppussingstid eller total fra eldre analyse), eller skal brukerens varighet beholdes? */
+export function scenarioHasOwnDuration(scenario: Pick<ResolvedAnalysisScenario, 'suggestedMonths' | 'monthsAreTotal'>): boolean {
+  return scenario.monthsAreTotal || scenario.suggestedMonths !== null;
+}
+
+/**
+ * Legger et analysescenarios egne egenskaper over brukerens felles forutsetninger. Alle felt som ikke er scenariospesifikke
+ * (se `SCENARIO_FIELD_CLASS`) beholdes fra `user`. Funksjonen er ren: verken `user` eller `scenario` endres, og lagrede
+ * scenarioer berøres aldri.
+ *
+ * Varighet: total varighet settes sammen av scenarioets egen oppussingstid og brukerens tid til økonomisk oppgjør
+ * (`settlementMonths`), slik at to scenarioer med ulik oppussingstid får samme oppgjørsforutsetning. Har scenarioet
+ * ingen egen varighet beholdes brukerens varighet uendret.
+ *
+ * @param user brukerens aktive kalkyle (den felles økonomiske rammen)
+ * @param scenario grunnverdiene for analysescenarioet (`buildBaseValues(...).values`), som gir scenarioets egne felt
+ */
+export function valuesForAnalysisScenario(args: { user: ScenarioValues; scenario: ScenarioValues; ownDuration: boolean }): ScenarioValues {
+  const { user, scenario, ownDuration } = args;
+  const out: Record<string, unknown> = { ...user };
+  for (const key of Object.keys(SCENARIO_FIELD_CLASS) as (keyof ScenarioValues)[]) {
+    if (SCENARIO_FIELD_CLASS[key] === 'scenario') out[key] = structuredClone(scenario[key]);
+  }
+  const reno = renovationMonthsOf(scenario);
+  if (ownDuration && reno !== null) out.months = Math.round((reno + (user.settlementMonths ?? 0)) * 100) / 100;
+  return out as ScenarioValues;
+}
+
+/**
+ * Brukerens felles forutsetninger med et bestemt analysescenario lagt over. Samme funksjon brukes av rangeringen av
+ * Basis/Alternativ A/B og av «Bruk i kalkylen», så det finnes én definisjon av hva som er scenariospesifikt.
+ */
+export function analysisScenarioValues(args: {
+  property: Property;
+  snapshot: PropertySnapshot;
+  analysis: SharedAnalysis;
+  defaults: ProfileDefaults;
+  user: ScenarioValues;
+  analysisScenarioId: string;
+}): { values: ScenarioValues; scenarioBase: BaseValues; scenario: ResolvedAnalysisScenario } {
+  const { user, analysisScenarioId, ...rest } = args;
+  const scenarioBase = buildBaseValues({ ...rest, analysisScenarioId });
+  const scenario = findAnalysisScenario(args.analysis, analysisScenarioId);
+  return { values: valuesForAnalysisScenario({ user, scenario: scenarioBase.values, ownDuration: scenarioHasOwnDuration(scenario) }), scenarioBase, scenario };
 }
 
 // ---------------------------------------------------------------------------

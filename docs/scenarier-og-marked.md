@@ -275,6 +275,24 @@ Kriterier og vekter (vises i UI): fortjeneste 25 %, prosjektavkastning 15 %, for
 
 **Bare `klar` + komplett kalkyle kan anbefales; betingede og uavklarte scenarioer rangeres for sammenligning, men styrer aldri anbefalt scenario eller anbefalt maksbud.** Anbefalt maksbud for et scenario er den laveste maksbudgrensen (§2.2), med begrensende grense synlig.
 
+### 11.1 Samme økonomiske ramme for Basis, Alternativ A og Alternativ B
+
+Rangeringen svarer på «hvilket analysescenario er best ved samme kjøpspris og samme brukerforutsetninger?». Derfor evalueres alle scenarioene med **brukerens aktive kalkyle som felles ramme**, og bare det som faktisk tilhører scenarioet varierer ([src/calc/scenarioComparison.ts](../src/calc/scenarioComparison.ts), `buildScenarioComparison`). Overgangen defineres ett sted: `valuesForAnalysisScenario` / `analysisScenarioValues` i [src/calc/scenario.ts](../src/calc/scenario.ts), og feltene er klassifisert i `SCENARIO_FIELD_CLASS` (TypeScript krever at hvert felt i `ScenarioValues` tas stilling til):
+
+| Klasse | Felt | Regel |
+| --- | --- | --- |
+| felles | kjøpspris, fellesgjeld ved kjøp/salg, dokumentavgift (grunnlag og sats), øvrige kjøpsgebyrer, kjøpertype, reserve, månedlige kostnader, rente, kjøps- og oppussingslån, lånefinansiering av løpende kostnader, egenkapital, salgskostnader, fortjenestemål, timekrav, ukentlig egeninnsats, arbeidsmodus, maks egeninnsats, kompetanse for regulert arbeid, timeverdi (utgått), skatt, tid til oppgjør (`settlementMonths`), startbud, smertegrense, notater | fra brukerens kalkyle – like for alle |
+| scenario | tiltak (`renovationItems`), oppussingsmodus, oppussingsalternativ, rundsum/timer for rundsum, mva-valg, salgsverdi low/base/high og prisgrunnlag, `analysisScenarioId` | fra analysescenarioet |
+| varighet | `months` | scenarioets egen oppussingstid + brukerens `settlementMonths` |
+
+**Varighet.** `months` er total prosjektvarighet (oppussing + tid til økonomisk oppgjør). Oppussingstiden hentes fra scenarioet (`months − settlementMonths` i scenarioets grunnverdier, dvs. agentens foreslåtte oppussingstid), og brukerens tid til oppgjør legges til: Basis med 2,5 mnd og Alternativ A med 3,5 mnd får 7,5 og 8,5 mnd ved 5 mnd oppgjør. Har scenarioet ingen egen varighet, beholdes brukerens varighet.
+
+**Aktivt scenario** brukes som brukerens kalkyle er (også private endringer i selve scenarioet, f.eks. egne tiltak eller salgsverdi). **De andre scenarioene** bygges av brukerens kalkyle med scenarioets egne felt lagt over. **Lagrede private scenarioer leses aldri av rangeringen og endres aldri** – de er en annen sammenligning, og kan ha helt andre kjøpspriser.
+
+**«Bruk i dette scenarioet»** (`applyScenarioToDraft`) bruker samme overlay: kjøpspris, finansiering, rente, egenkapital, mål, timekrav, egeninnsats og oppgjørstid beholdes, mens tiltak, salgsverdi og oppussingstid byttes (ulagret til brukeren lagrer).
+
+**Begrensning.** Scenarioets salgsverdi er fastsatt av markedsmotoren med analysens fellesgjeld ved salg. Overstyrer brukeren fellesgjeld ved salg samtidig som prisgrunnlaget er totalpris, regnes ikke salgsverdien om. «Lag eget scenario» oppretter fortsatt et nytt privat scenario fra scenarioets grunnverdier (profilens standarder), ikke fra aktiv kalkyle.
+
 ## 12. Migrering
 
 | Hva | Hvordan |
