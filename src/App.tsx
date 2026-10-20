@@ -31,10 +31,9 @@ const createOriginalRouter = () => createHashRouter([
       { path: '/logg-inn', element: <LoginPage /> },
       { path: '/registrer', element: <SignupPage /> },
       { path: '/glemt-passord', element: <Navigate to="/logg-inn" replace /> },
-      // Designforslag (kun testing). Original = dagens ruter og utseende; Finance har eget rutertre under /design/finance.
+      // Designforslag (kun testing). Original = dagens ruter og utseende; Finance og Investment har egne rutertrær under /design/finance og /design/investment.
       { path: '/design', element: <DesignGallery /> },
       { path: '/design/original', element: <Navigate to="/" replace /> },
-      { path: '/design/investment', element: <DesignComingSoon id="investment" /> },
       { path: '/design/property', element: <DesignComingSoon id="property" /> },
       {
         element: <RequireAuth />,
@@ -55,8 +54,9 @@ const createOriginalRouter = () => createHashRouter([
   },
 ]);
 
-/** Finance lastes først når varianten åpnes, så Original ikke blir tyngre. */
+/** Finance og Investment lastes først når variantene åpnes, så Original ikke blir tyngre. */
 const FinanceApp = lazy(() => import('./design/finance/FinanceApp'));
+const InvestmentApp = lazy(() => import('./design/investment/InvestmentApp'));
 
 function OriginalApp() {
   return <RouterProvider router={getRouter('original', createOriginalRouter)} />;
@@ -68,7 +68,7 @@ const subscribeHash = (cb: () => void) => {
 };
 
 /**
- * Velger rutertre ut fra adressen: `#/design/finance/...` åpner Finance, alt annet er Original. Ved bytte av variant
+ * Velger rutertre ut fra adressen: `#/design/finance/...` åpner Finance, `#/design/investment/...` åpner Investment, alt annet er Original. Ved bytte av variant
  * kastes den forrige ruteren (ikke i en effect-opprydding, så StrictMode ikke river den ned i utvikling).
  */
 function RoutedApp() {
@@ -93,6 +93,13 @@ function RoutedApp() {
     return (
       <Suspense fallback={<PageLoading label="Laster Finance …" />}>
         <FinanceApp key="finance" />
+      </Suspense>
+    );
+  }
+  if (variant === 'investment') {
+    return (
+      <Suspense fallback={<PageLoading label="Laster Investment …" />}>
+        <InvestmentApp key="investment" />
       </Suspense>
     );
   }

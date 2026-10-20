@@ -1,0 +1,179 @@
+/*
+ * Investment – designtokens og hjelpeklasser.
+ *
+ * Alt er avgrenset til .inv, så Original og Finance ikke påvirkes. Delte komponenter bruker Tailwind-fargene pine (primær)
+ * og slate (nøytral) som CSS-variabler; de settes om her slik at kalender, konto, kurs osv. får uttrykket uten å kopieres.
+ *
+ * Retning: moderne analyseplattform. Dyp grafitt/marine i navigasjon og hovedpanel, kjølig lys bakgrunn for analyseflater,
+ * kontrollert cyan som aksent og tydelig positiv/negativ kontrast. Kontrast er målt (se docs/design-varianter.md).
+ */
+.inv {
+  /* Primærfarge: dyp cyan/petrol (erstatter «pine») */
+  --color-pine-50: #ecf8fb;
+  --color-pine-100: #d3eef5;
+  --color-pine-200: #a8dceb;
+  --color-pine-300: #6fc3dc;
+  --color-pine-400: #35a5c8;
+  --color-pine-500: #1488ad;
+  --color-pine-600: #0e7490;
+  --color-pine-700: #0c5f78;
+  --color-pine-800: #0a4d63;
+  --color-pine-900: #093e51;
+  --color-pine-950: #052a38;
+  /* Nøytrale: kjølig skifergrå (erstatter «slate») */
+  --color-slate-50: #f6f8fb;
+  --color-slate-100: #edf1f6;
+  --color-slate-200: #dde4ed;
+  --color-slate-300: #c3cddb;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #66768b;
+  --color-slate-600: #4a5a70;
+  --color-slate-700: #364559;
+  --color-slate-800: #232f42;
+  --color-slate-900: #141d2d;
+  --color-slate-950: #0b1220;
+  --color-canvas: #eef2f7;
+  --color-ink: #0c1424;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  /* Investment-spesifikke tokens */
+  --inv-dark: #0b1220;
+  --inv-dark-2: #121d33;
+  --inv-dark-3: #1a2a47;
+  --inv-dark-line: rgb(148 163 184 / 0.22);
+  --inv-on-dark: #f1f5f9;
+  --inv-on-dark-muted: #b4c1d3;
+  --inv-accent: #22d3ee;
+  --inv-accent-strong: #0e7490;
+  --inv-line: #dbe3ed;
+  --inv-line-strong: #bcc8d8;
+  --inv-surface: #ffffff;
+  --inv-surface-muted: #f6f8fb;
+  --inv-pos: #047857;
+  --inv-pos-bg: #e3f6ee;
+  --inv-neg: #be123c;
+  --inv-neg-bg: #fdecf0;
+  --inv-warn: #92400e;
+  --inv-warn-bg: #fdf1dc;
+  --inv-info: #0e7490;
+  --inv-info-bg: #e4f5f9;
+  /* På mørk flate */
+  --inv-pos-d: #4ade80;
+  --inv-neg-d: #fb7185;
+  --inv-warn-d: #fbbf24;
+  /* Diagramfarger (validert kategorisk palett, fast rekkefølge) */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-up: #0e7490;
+  --viz-down: #be123c;
+  --viz-grid: #e1e7ef;
+  --viz-axis: #94a3b8;
+
+  min-height: 100dvh;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.inv .inv-fig,
+.inv .num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+.inv .inv-fig {
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+
+.inv .inv-label {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-slate-600);
+}
+
+.inv :focus-visible {
+  outline: 2px solid var(--inv-accent-strong);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.inv .inv-dark :focus-visible {
+  outline-color: #67e8f9;
+}
+
+.inv dialog::backdrop {
+  background: rgb(5 12 25 / 0.6);
+}
+
+/* Mørkt hovedpanel («investeringscase») */
+.inv .inv-dark {
+  color: var(--inv-on-dark);
+  background:
+    radial-gradient(120% 140% at 0% 0%, #17294a 0%, rgb(23 41 74 / 0) 55%),
+    linear-gradient(160deg, #0f1a30 0%, #0b1220 100%);
+}
+.inv .inv-dark .inv-label {
+  color: var(--inv-on-dark-muted);
+}
+.inv .inv-muted-d {
+  color: var(--inv-on-dark-muted);
+}
+
+/* Tallene som endres får et kort, rolig lysglimt: animasjonen forklarer at noe er oppdatert. */
+@keyframes inv-flash {
+  0% {
+    background-color: rgb(34 211 238 / 0.28);
+  }
+  100% {
+    background-color: rgb(34 211 238 / 0);
+  }
+}
+.inv .inv-flash {
+  animation: inv-flash 900ms ease-out 1;
+  border-radius: 0.375rem;
+}
+
+.inv .inv-bar {
+  transition: width 420ms cubic-bezier(0.2, 0.7, 0.2, 1), left 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.inv summary {
+  list-style: none;
+}
+.inv summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Sidestolpe: scrollbar skjules ikke, men gjøres diskret */
+.inv .inv-rail a:focus-visible,
+.inv .inv-rail button:focus-visible {
+  outline-color: #67e8f9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv *,
+  .inv *::before,
+  .inv *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Delte markedsblokker: tre store tall ved siden av hverandre blir for trange på smale skjermer. */
+@media (max-width: 480px) {
+  .inv .num.grid-cols-3 .text-lg {
+    font-size: 0.875rem;
+    letter-spacing: -0.01em;
+  }
+}

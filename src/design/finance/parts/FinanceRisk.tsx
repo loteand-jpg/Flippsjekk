@@ -1,12 +1,9 @@
 import { CircleHelp, ShieldAlert, ShieldCheck, ShieldHalf } from 'lucide-react';
-import { useMemo } from 'react';
-import { useScenarioRanking } from '../../../components/analysis/ScenarioRankingPanel';
 import { RiskTab } from '../../../components/analysis/InfoTabs';
-import { activeScenarioId } from '../../../components/analysis/ScenarioPanel';
 import type { PropertyContext } from '../../../components/analysis/shared';
-import { dataQuality, type RiskBand } from '../../../domain/assessment';
-import { effectiveRisks } from '../../../domain/risks';
-import { buildRiskDimensions, type RiskDimension } from '../riskView';
+import type { RiskBand } from '../../../domain/assessment';
+import type { RiskDimension } from '../../shared/riskView';
+import { useRiskDimensions } from '../../shared/useRiskDimensions';
 import { Pill, SectionHeading, type FinTone } from './primitives';
 
 const BAND_TONE: Record<RiskBand, FinTone> = { lav: 'pos', middels: 'warn', hoy: 'neg', uavklart: 'neutral' };
@@ -83,22 +80,7 @@ function DimensionCard({ d }: { d: RiskDimension }) {
 
 /** Risiko i Finance: seks dimensjoner med forklaring først, deretter det fulle risikoregisteret og sjekklisten (redigerbart, privat). */
 export function FinanceRisk({ ctx }: { ctx: PropertyContext }) {
-  const { defs, data } = useScenarioRanking(ctx);
-  const active = defs.find((d) => d.id === activeScenarioId(ctx)) ?? defs[0];
-  const row = data.result.rows.find((r) => r.id === active.id) ?? null;
-  const dims = useMemo(() => {
-    const quality = dataQuality(ctx.analysis, ctx.baseSnapshot);
-    const certainty = row?.metrics.saleCertainty ?? null;
-    return buildRiskDimensions({
-      risks: effectiveRisks(ctx.analysis.risks, ctx.item.riskEdits).active,
-      scenarioRisk: active.risk,
-      scenarioRequirements: active.requirements,
-      scenarioFeasibilityRationale: active.feasibilityRationale,
-      quality,
-      saleCertaintyLabel: row?.metrics.saleCertaintyLabel ?? null,
-      saleCertaintyBand: certainty === null ? null : certainty >= 0.7 ? 'lav' : certainty >= 0.35 ? 'middels' : 'hoy',
-    });
-  }, [ctx.analysis, ctx.baseSnapshot, ctx.item.riskEdits, active, row]);
+  const { active, dims } = useRiskDimensions(ctx);
 
   return (
     <div className="space-y-10">

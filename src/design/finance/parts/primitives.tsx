@@ -1,7 +1,8 @@
 import clsx from 'clsx';
 import type { ReactNode } from 'react';
+import type { Tone } from '../../shared/present';
 
-export type FinTone = 'neutral' | 'pos' | 'neg' | 'warn' | 'info';
+export type FinTone = Tone;
 
 export const TONE_TEXT: Record<FinTone, string> = {
   neutral: 'text-ink',

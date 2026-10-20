@@ -72,14 +72,14 @@ export function DesignGallery() {
         ))}
       </ul>
       <p className="mt-8 text-xs text-slate-600">
-        Dagens versjon er bevart i Git: grenen <code>main</code> og tag <code>pre-design-baseline</code>. Finance ligger på grenen <code>design-finance</code>. Direktelenker:{' '}
-        <code>#/design/original</code> og <code>#/design/finance</code>.
+        Dagens versjon er bevart i Git: grenen <code>main</code> og tag <code>pre-design-baseline</code>. Finance ligger på grenen <code>design-finance</code> (tag <code>design-finance-v1</code>),
+        Investment på <code>design-investment</code>. Direktelenker: <code>#/design/original</code>, <code>#/design/finance</code> og <code>#/design/investment</code>.
       </p>
     </div>
   );
 }
 
-export function DesignComingSoon({ id }: { id: 'investment' | 'property' }) {
+export function DesignComingSoon({ id }: { id: 'property' }) {
   const v = VARIANTS.find((x) => x.id === id)!;
   return (
     <div className="mx-auto max-w-lg px-4 py-20 text-center">

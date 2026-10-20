@@ -3,7 +3,7 @@
  * de skiller seg bare i layout, presentasjonskomponenter, styling (designtokens) og visuell informasjonsarkitektur.
  *
  * Slik legger du til en ny variant (f.eks. «investment» eller «property»):
- *  1. Sett `status: 'available'` her og legg inn `routing` for varianten.
+ *  1. Sett `status: 'available'` her og legg til et `<ID>_BASE`-prefiks og en gren i `routingVariantFromHash`.
  *  2. Lag `src/design/<id>/` med `<Id>App.tsx` (default export, lager ruter med `basename` = `variantBase(id)`) og et CSS-scope.
  *  3. Legg varianten til i `routingVariantFromHash` og i `App.tsx` (lazy import).
  *  Gjenbruk `PropertyPage view={...}`, `useScenarioRanking`, `MarketTab sections`, `Results` osv. i stedet for å kopiere logikk.
@@ -44,11 +44,11 @@ export const VARIANTS: readonly DesignVariant[] = [
   {
     id: 'investment',
     name: 'Investment',
-    tagline: 'Kommer senere.',
-    points: ['Ikke bygget ennå'],
-    status: 'soon',
+    tagline: 'Moderne investeringsverktøy: mulighet først, scenariodelta og maksbud.',
+    points: ['Investeringscase og scorecard øverst, med oppside, nedside og maksbudgrenser', 'Scenarioer som delta mot basis, sensitivitet mot kjøpspris og diagrammer', 'Mørk navigasjon, lyse analyseflater og cyan aksent'],
+    status: 'available',
     entry: '/design/investment',
-    swatches: [],
+    swatches: ['#0b1220', '#17233c', '#0e7490', '#22d3ee', '#eef2f7'],
   },
   {
     id: 'property',
@@ -62,14 +62,18 @@ export const VARIANTS: readonly DesignVariant[] = [
 ];
 
 /** Varianter som har sitt eget rutertre. De andre bruker Originals ruter. */
-export type RoutingVariant = 'original' | 'finance';
+export type RoutingVariant = 'original' | 'finance' | 'investment';
 
 export const FINANCE_BASE = '/design/finance';
+export const INVESTMENT_BASE = '/design/investment';
 
-/** Hvilket rutertre som styrer en gitt hash (`#/design/finance/oversikt` → finance, alt annet → original). */
+/** Hvilket rutertre som styrer en gitt hash (`#/design/finance/oversikt` → finance, `#/design/investment/…` → investment, alt annet → original). */
 export function routingVariantFromHash(hash: string): RoutingVariant {
   const path = hash.replace(/^#/, '').split('?')[0];
-  return path === FINANCE_BASE || path.startsWith(`${FINANCE_BASE}/`) ? 'finance' : 'original';
+  const under = (base: string) => path === base || path.startsWith(`${base}/`);
+  if (under(FINANCE_BASE)) return 'finance';
+  if (under(INVESTMENT_BASE)) return 'investment';
+  return 'original';
 }
 
 /** Hash-lenke inn i en variant, f.eks. `#/design/finance`. */

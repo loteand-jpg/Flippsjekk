@@ -3,12 +3,14 @@ import { bidMargin, equityLine, floorToThousand, formatResult, hourlyLine, maxBi
 import { VARIANTS, routingVariantFromHash, variantHref } from './variants';
 
 describe('designvarianter og ruting', () => {
-  it('har Original og Finance tilgjengelig og Investment/Property som «kommer senere»', () => {
+  it('har Original, Finance og Investment tilgjengelig og Property som «kommer senere»', () => {
     const by = Object.fromEntries(VARIANTS.map((v) => [v.id, v]));
     expect(by.original.status).toBe('available');
     expect(by.finance.status).toBe('available');
-    expect(by.investment.status).toBe('soon');
+    expect(by.investment.status).toBe('available');
     expect(by.property.status).toBe('soon');
+    // Hver tilgjengelige variant har egen inngang og fargeprøver til galleriet
+    for (const id of ['original', 'finance', 'investment']) expect(by[id].swatches.length).toBeGreaterThan(0);
   });
 
   it('velger rutertre ut fra adressen – også ved direkte åpning og oppdatering av siden', () => {
@@ -23,10 +25,17 @@ describe('designvarianter og ruting', () => {
     expect(routingVariantFromHash('#/design/finance/objekter/abc?x=1')).toBe('finance');
     // lignende prefiks skal ikke treffe
     expect(routingVariantFromHash('#/design/financeX')).toBe('original');
+    expect(routingVariantFromHash('#/design/investment')).toBe('investment');
+    expect(routingVariantFromHash('#/design/investment/')).toBe('investment');
+    expect(routingVariantFromHash('#/design/investment/oversikt')).toBe('investment');
+    expect(routingVariantFromHash('#/design/investment/objekter/abc?fane=kalkyle')).toBe('investment');
+    expect(routingVariantFromHash('#/design/investmentX')).toBe('original');
+    expect(routingVariantFromHash('#/design/property')).toBe('original');
   });
 
   it('gir hash-lenker inn i hver variant', () => {
     expect(variantHref('finance')).toBe('#/design/finance');
+    expect(variantHref('investment')).toBe('#/design/investment');
     expect(variantHref('original').startsWith('#/')).toBe(true);
   });
 });
