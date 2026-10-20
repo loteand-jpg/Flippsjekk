@@ -98,7 +98,7 @@ function ReferenceCard({ r, c, own }: { r: WeightedReference; c: MarketComparabl
       </dl>
 
       <details className="mt-3 text-sm">
-        <summary className="inline-flex min-h-9 cursor-pointer items-center text-pine-800 underline decoration-dotted underline-offset-2">Hvorfor er denne referansen {r.strength === 'sterk' ? 'sterk' : r.strength === 'middels' ? 'middels sterk' : 'svak'}?</summary>
+        <summary className="inline-flex min-h-11 md:min-h-9 cursor-pointer items-center text-pine-800 underline decoration-dotted underline-offset-2">Hvorfor er denne referansen {r.strength === 'sterk' ? 'sterk' : r.strength === 'middels' ? 'middels sterk' : 'svak'}?</summary>
         <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-xs text-slate-700">
           {r.reasons.map((x) => (
             <li key={x}>{x}</li>
@@ -224,7 +224,7 @@ export function FinanceMarket({ ctx }: { ctx: PropertyContext }) {
                 </ul>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button size="sm" variant="secondary" className="min-h-10" disabled={!ctx.editable || res.source !== 'markedsmotor'} onClick={apply}>
+                <Button size="sm" variant="secondary" className="min-h-11 md:min-h-10" disabled={!ctx.editable || res.source !== 'markedsmotor'} onClick={apply}>
                   Bruk som salgsverdi i kalkylen
                 </Button>
                 {applied && (

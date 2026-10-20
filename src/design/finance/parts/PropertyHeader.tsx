@@ -39,7 +39,7 @@ export function PropertyHeader({ p }: { p: PropertyViewProps }) {
   return (
     <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
       <div className="min-w-0">
-        <Link to="/oversikt" className="inline-flex min-h-8 items-center gap-1 text-sm text-pine-800 hover:underline">
+        <Link to="/oversikt" className="inline-flex min-h-11 md:min-h-8 items-center gap-1 text-sm text-pine-800 hover:underline">
           <ArrowLeft className="size-4" aria-hidden /> Alle objekter
         </Link>
         <div className="mt-2 flex items-start gap-2">
@@ -64,7 +64,7 @@ export function PropertyHeader({ p }: { p: PropertyViewProps }) {
           <PreliminaryBadge reasons={state.prelim} />
           <SaleStatusBadge value={snap?.saleStatus ?? null} note={snap?.saleStatusNote} />
           {(it.property.dataOrigin === 'demo' || it.property.dataOrigin === 'synthetic') && <DemoBadge synthetic={it.property.dataOrigin === 'synthetic'} />}
-          <a href={it.property.canonicalUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-xs text-pine-800 underline">
+          <a href={it.property.canonicalUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 md:min-h-8 items-center gap-1 text-xs text-pine-800 underline">
             FINN-kode {it.property.finnId} <ExternalLink className="size-3" aria-hidden />
           </a>
         </div>

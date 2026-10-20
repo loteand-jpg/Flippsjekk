@@ -1,7 +1,7 @@
 import { ArrowRight, Check, Clock } from 'lucide-react';
 import { Link } from 'react-router';
 import { Logo } from '../components/layout/AppShell';
-import { VARIANTS, type DesignVariant } from './variants';
+import { VARIANTS, variantHref, type DesignVariant } from './variants';
 
 function Swatches({ colors }: { colors: string[] }) {
   if (colors.length === 0) return <div className="h-10 rounded-md border border-dashed border-slate-300" aria-hidden />;
@@ -40,11 +40,12 @@ function VariantCard({ v }: { v: DesignVariant }) {
           </li>
         ))}
       </ul>
+      {/* Vanlig lenke (ikke <Link>): hver variant har sin egen ruter, og bare en ekte adresseendring får appen til å bytte ruter. */}
       <div className="mt-auto pt-5">
         {available ? (
-          <Link to={v.id === 'original' ? '/design/original' : v.entry} className="inline-flex h-10 items-center gap-2 rounded-lg bg-pine-800 px-4 text-sm font-medium text-white hover:bg-pine-900">
+          <a href={v.id === 'original' ? '#/design/original' : variantHref(v.id)} className="inline-flex h-11 items-center gap-2 rounded-lg bg-pine-800 px-4 text-sm font-medium text-white hover:bg-pine-900">
             Åpne {v.name} <ArrowRight className="size-4" aria-hidden />
-          </Link>
+          </a>
         ) : (
           <span className="inline-flex h-10 items-center rounded-lg border border-dashed border-slate-300 px-4 text-sm text-slate-500" aria-disabled="true">
             Ikke bygget ennå

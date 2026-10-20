@@ -132,7 +132,7 @@ function ColumnHead({ c, ctx, onUse }: { c: Col; ctx: PropertyContext; onUse: (i
         {c.active && <Pill tone="pos">I bruk i kalkylen</Pill>}
       </span>
       {!c.active && (
-        <Button size="sm" className="mt-2 min-h-9" disabled={!ctx.editable} onClick={() => onUse(c.def.id)}>
+        <Button size="sm" className="mt-2 min-h-11 md:min-h-9" disabled={!ctx.editable} onClick={() => onUse(c.def.id)}>
           Bruk i kalkylen
         </Button>
       )}

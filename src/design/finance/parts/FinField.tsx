@@ -60,7 +60,7 @@ export function FinNumberField({
           <span className="flex shrink-0 items-center gap-2">
             <Pill tone="info">Din verdi</Pill>
             {!disabled && (
-              <button type="button" onClick={() => onChange(baseValue ?? null)} aria-label={`Tilbakestill ${label} til grunnlag`} className="inline-flex min-h-8 items-center gap-1 text-xs text-pine-800 hover:underline">
+              <button type="button" onClick={() => onChange(baseValue ?? null)} aria-label={`Tilbakestill ${label} til grunnlag`} className="inline-flex min-h-11 md:min-h-8 items-center gap-1 text-xs text-pine-800 hover:underline">
                 <RotateCcw className="size-3" aria-hidden /> Tilbakestill
               </button>
             )}
