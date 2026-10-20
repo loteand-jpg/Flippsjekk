@@ -195,3 +195,40 @@
 .inv .inv-num {
   font-variant-numeric: tabular-nums lining-nums;
 }
+
+/* Berøringsflater på mobil og nettbrett: delte knapper (f.eks. «Lagre notat») og forklaringsikoner får minst 44 px treffflate. */
+@media (max-width: 1023px) {
+  .inv main button:not([role='tab']) {
+    min-height: 44px;
+  }
+  .inv main button[aria-label^='Forklaring'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -12px;
+  }
+}
+
+/* WCAG 2.2 (målstørrelse 24 px): små ikonknapper og avkrysningsfelt i delte blokker får større treffflate også på desktop. */
+@media (min-width: 1024px) {
+  .inv main button[aria-label^='Forklaring'] {
+    min-width: 24px;
+    min-height: 24px;
+  }
+}
+.inv input[type='checkbox'],
+.inv input[type='radio'] {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.inv input[type='range'] {
+  min-height: 1.5rem;
+}
+
+/* Fokus skal ikke havne bak den klebrige mobilmenyen eller resultatstripen (WCAG 2.4.11). */
+html:has(.inv) {
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: 7rem;
+}

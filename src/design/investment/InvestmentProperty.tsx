@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { recommendedBidOf } from '../../calc/engine';
 import { OverviewTab, ReportTab } from '../../components/analysis/InfoTabs';
 import { RenovationTab } from '../../components/analysis/RenovationTab';
@@ -10,6 +10,7 @@ import { aggregateRisk, dataQuality } from '../../domain/assessment';
 import { effectiveRisks } from '../../domain/risks';
 import type { PropertyTabId, PropertyViewProps } from '../../pages/PropertyPage';
 import { buildDrivers } from './model/drivers';
+import { useScrollableAccess } from './useScrollableAccess';
 import { useMarketFacts } from './model/useMarketFacts';
 import { buildScorecard } from './model/scorecard';
 import { CaseControls, CaseTitle, InvVisual } from './parts/CaseHeader';
@@ -43,6 +44,8 @@ const TABS: { id: PropertyTabId; label: string }[] = [
  */
 export function InvestmentProperty(p: PropertyViewProps) {
   const { ctx, tab, setTab, alerts, notes } = p;
+  const root = useRef<HTMLDivElement | null>(null);
+  useScrollableAccess(root);
   const { defs, data } = useScenarioRanking(ctx);
   const activeId = activeScenarioId(ctx);
   const activeDef = defs.find((d) => d.id === activeId) ?? defs[0];
@@ -90,7 +93,7 @@ export function InvestmentProperty(p: PropertyViewProps) {
   );
 
   return (
-    <div className="space-y-5">
+    <div ref={root} className="space-y-5">
       {/* Mobil: tittel → varsler → investeringscase → status og bilde (maksbudet er alltid i første skjermbilde).
           Desktop: tittel og status til venstre med bilde til høyre, så varsler og investeringscase i full bredde. */}
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-6">

@@ -34,7 +34,7 @@ function downloadText(filename: string, content: string, type: string) {
 function Money({ value, row, strong, signed, unit = true }: { value: number | null; row: PropertyRow; strong?: boolean; signed?: boolean; unit?: boolean }) {
   if (value === null) {
     return (
-      <span className="text-xs font-normal text-slate-500" title={row.missing.length ? `Mangler: ${row.missing.join(', ')}` : undefined}>
+      <span className="text-xs font-normal text-slate-600" title={row.missing.length ? `Mangler: ${row.missing.join(', ')}` : undefined}>
         {row.calcStatus === 'pending' ? 'Analyse pågår' : NO_BASIS}
       </span>
     );
@@ -48,7 +48,7 @@ function RiskText({ r }: { r: PropertyRow }) {
   return (
     <span className={clsx('text-[13px]', r.riskBand === 'hoy' && 'font-semibold text-[var(--inv-neg)]')} title={r.riskUnknown ? `${r.riskUnknown} risiko(er) med ukjent alvorlighet` : undefined}>
       {label}
-      {r.riskUnknown ? <span className="text-slate-500"> +{r.riskUnknown}</span> : null}
+      {r.riskUnknown ? <span className="text-slate-600"> +{r.riskUnknown}</span> : null}
     </span>
   );
 }
@@ -224,11 +224,11 @@ function PipelineTable({ rows, sort, onSort }: { rows: PropertyRow[]; sort: { ke
                   <Bar value={r.profit} max={maxProfit} />
                 </td>
                 <td className="px-2 py-3 text-right">
-                  <Fig className="font-medium">{r.projectReturn === null ? <span className="text-xs text-slate-500">–</span> : formatPct(r.projectReturn)}</Fig>
+                  <Fig className="font-medium">{r.projectReturn === null ? <span className="text-xs text-slate-600">–</span> : formatPct(r.projectReturn)}</Fig>
                   <Bar value={r.projectReturn} max={maxReturn} tone="info" />
                 </td>
                 <td className="px-2 py-3 text-right">
-                  <Fig className={clsx(h.unknown ? 'text-xs text-slate-500' : 'font-medium', h.low && 'text-[var(--inv-warn)]')}>{h.text}</Fig>
+                  <Fig className={clsx(h.unknown ? 'text-xs text-slate-600' : 'font-medium', h.low && 'text-[var(--inv-warn)]')}>{h.text}</Fig>
                   {h.low && <span className="block text-[10px] text-[var(--inv-warn)]">under krav</span>}
                 </td>
                 <td className="px-2 py-3 text-right">
@@ -239,7 +239,7 @@ function PipelineTable({ rows, sort, onSort }: { rows: PropertyRow[]; sort: { ke
                   {r.maxBidStatus === 'none' ? <span className="text-xs text-[var(--inv-neg)]">Ingen pris</span> : <Money value={r.maxBid === null ? null : floorToThousand(r.maxBid)} row={r} strong unit={false} />}
                 </td>
                 <td className="px-2 py-3"><RiskText r={r} /></td>
-                <td className="px-2 py-3 text-xs text-slate-700">{r.nextViewing ? <Fig>{formatDateTimeCompact(r.nextViewing)}</Fig> : <span className="text-slate-500">Ingen kjent</span>}</td>
+                <td className="px-2 py-3 text-xs text-slate-700">{r.nextViewing ? <Fig>{formatDateTimeCompact(r.nextViewing)}</Fig> : <span className="text-slate-600">Ingen kjent</span>}</td>
                 <td className="px-2 py-3">
                   <div className="flex flex-col items-start gap-1">
                     <RecommendationBadge value={r.recommendation} />

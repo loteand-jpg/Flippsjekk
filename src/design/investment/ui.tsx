@@ -107,7 +107,7 @@ export function Kpi({
     <div className={clsx('min-w-0', className)}>
       <dt className="inv-label">{label}</dt>
       <dd className="mt-1">
-        <span data-testid={testId} className={clsx('inv-fig block text-[1.375rem] leading-tight font-semibold', unknown ? 'text-base font-medium text-slate-500' : TONE_TEXT[tone])}>
+        <span data-testid={testId} className={clsx('inv-fig block text-[1.375rem] leading-tight font-semibold', unknown ? 'text-base font-medium text-slate-600' : TONE_TEXT[tone])}>
           {value}
         </span>
         {sub && <span className="mt-0.5 block text-xs leading-snug text-slate-600">{sub}</span>}

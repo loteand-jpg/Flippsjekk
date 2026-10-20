@@ -25,11 +25,11 @@ async function openElvekanten(page: Page, base: string) {
 }
 
 test.describe('designgalleri', () => {
-  test('/design viser Original, Finance og «kommer senere» for Investment og Property', async ({ page }) => {
+  test('/design viser Original, Finance, Investment og «kommer senere» for Property', async ({ page }) => {
     await page.goto('/#/design');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/design/i);
     for (const id of ['original', 'finance', 'investment', 'property']) await expect(page.getByTestId(`variant-${id}`)).toBeVisible();
-    await expect(page.getByTestId('variant-investment')).toContainText(/kommer senere/i);
+    await expect(page.getByTestId('variant-investment')).toContainText(/tilgjengelig/i);
     await expect(page.getByTestId('variant-property')).toContainText(/kommer senere/i);
     await noHorizontalScroll(page);
   });
@@ -46,11 +46,9 @@ test.describe('designgalleri', () => {
     await expect(page.getByRole('heading', { level: 1 })).not.toContainText(/Vit hva du maksimalt/);
   });
 
-  test('/design/original sender til Original, og «kommer senere»-sidene åpnes', async ({ page }) => {
+  test('/design/original sender til Original, og «kommer senere»-siden for Property åpnes', async ({ page }) => {
     await page.goto('/#/design/original');
     await expect(page).toHaveURL(/#\/$/);
-    await page.goto('/#/design/investment');
-    await expect(page.getByText(/kommer senere/i).first()).toBeVisible();
     await page.goto('/#/design/property');
     await expect(page.getByText(/kommer senere/i).first()).toBeVisible();
   });

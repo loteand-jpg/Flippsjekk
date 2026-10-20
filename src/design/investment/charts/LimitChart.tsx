@@ -35,7 +35,7 @@ export function LimitChart({ rows, purchase, floorK, dark }: { rows: LimitRow[];
       }}
     >
       <div className="relative">
-        <ul className="space-y-3.5">
+        <ul className="space-y-3.5" data-testid="inv-limits">
           {rows
             .filter((r) => !r.id.startsWith('na-'))
             .map((r) => (

@@ -38,7 +38,7 @@ interface Metric {
 }
 
 function metrics(): Metric[] {
-  const num = (c: Col, f: (b: Breakdown) => ReactNode) => (c.b ? f(c.b) : <span className="text-xs font-normal text-slate-500">Ikke beregnet</span>);
+  const num = (c: Col, f: (b: Breakdown) => ReactNode) => (c.b ? f(c.b) : <span className="text-xs font-normal text-slate-600">Ikke beregnet</span>);
   return [
     { label: 'Kjøpspris', value: (c) => num(c, (b) => <Fig>{formatNOK(b.P)}</Fig>) },
     {
@@ -91,7 +91,7 @@ function metrics(): Metric[] {
             <span className="block text-[11px] text-slate-600">scenario {c.row.metrics.scenarioRiskAssessed ? `${c.row.metrics.scenarioRiskPoints.toLocaleString('nb-NO')}/4` : 'ikke vurdert'}</span>
           </span>
         ) : (
-          <span className="text-xs text-slate-500">Ikke vurdert</span>
+          <span className="text-xs text-slate-600">Ikke vurdert</span>
         ),
       delta: (c, base) => (c.row && base.row && c.row.metrics.riskPoints !== base.row.metrics.riskPoints ? <Delta tone={better(false, c.row.metrics.riskPoints - base.row.metrics.riskPoints)}>{c.row.metrics.riskPoints > base.row.metrics.riskPoints ? 'Høyere risiko' : 'Lavere risiko'}</Delta> : null),
     },
@@ -107,7 +107,7 @@ function metrics(): Metric[] {
     { label: 'Salgsverdiens sikkerhet', value: (c) => <span>{c.row ? c.row.metrics.saleCertaintyLabel : 'Ikke vurdert'}</span> },
     {
       label: 'Anbefalt maksbud',
-      value: (c) => (c.row?.metrics.maxBid != null ? <Fig className="font-bold">{formatNOK(floorToThousand(c.row.metrics.maxBid))}</Fig> : <span className="text-xs text-slate-500">Ikke beregnet</span>),
+      value: (c) => (c.row?.metrics.maxBid != null ? <Fig className="font-bold">{formatNOK(floorToThousand(c.row.metrics.maxBid))}</Fig> : <span className="text-xs text-slate-600">Ikke beregnet</span>),
       delta: (c, base) =>
         c.row?.metrics.maxBid != null && base.row?.metrics.maxBid != null && floorToThousand(c.row.metrics.maxBid) !== floorToThousand(base.row.metrics.maxBid) ? (
           <Delta tone={better(true, c.row.metrics.maxBid - base.row.metrics.maxBid)}>{signedNOK(floorToThousand(c.row.metrics.maxBid) - floorToThousand(base.row.metrics.maxBid))}</Delta>

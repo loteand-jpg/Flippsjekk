@@ -381,14 +381,14 @@ export function InvCalculator({ ctx }: { ctx: PropertyContext }) {
       <details className="group rounded-xl border border-[var(--inv-line)] bg-white" data-testid="inv-calc-details">
         <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-base font-semibold sm:px-5">
           Detaljert kalkyle, stresstester og følsomhet
-          <span className="text-xs font-normal text-slate-500 group-open:hidden">Vis</span>
-          <span className="hidden text-xs font-normal text-slate-500 group-open:inline">Skjul</span>
+          <span className="text-xs font-normal text-slate-600 group-open:hidden">Vis</span>
+          <span className="hidden text-xs font-normal text-slate-600 group-open:inline">Skjul</span>
         </summary>
         <div className="overflow-x-auto border-t border-[var(--inv-line)] p-4 sm:p-5">
           <Results ctx={ctx} />
         </div>
       </details>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-600">
         Egen tid er ikke en kostnad. Se <Link to="?fane=rapport" className="underline">Rapport og kilder</Link> for forutsetninger og beregningsregler.
       </p>
     </div>

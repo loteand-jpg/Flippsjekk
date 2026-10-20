@@ -42,7 +42,7 @@ function DimensionCard({ d }: { d: RiskDimension }) {
     <li className="min-w-0 rounded-xl border border-[var(--inv-line)] bg-white p-4" data-testid="inv-risk-dim">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Icon className="size-[18px] text-slate-500" aria-hidden /> {d.label}
+          <Icon className="size-[18px] text-slate-600" aria-hidden /> {d.label}
         </h3>
         <Tag tone={BAND_TONE[d.band]}>{d.levelText}</Tag>
       </div>
@@ -63,7 +63,7 @@ function DimensionCard({ d }: { d: RiskDimension }) {
                     </span>
                   </li>
                 ))}
-                {d.what.length > 4 && <li className="text-xs text-slate-500">+ {d.what.length - 4} til i risikoregisteret under</li>}
+                {d.what.length > 4 && <li className="text-xs text-slate-600">+ {d.what.length - 4} til i risikoregisteret under</li>}
               </ul>
             )}
             {costs.length === 0 && d.what.length > 0 && <p className="mt-1 text-xs text-slate-600">Ingen kostnadsanslag registrert.</p>}

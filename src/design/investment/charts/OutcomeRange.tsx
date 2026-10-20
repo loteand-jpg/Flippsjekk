@@ -14,7 +14,7 @@ function Row({ label, r, dark, zeroLine }: { label: string; r: Range3; dark?: bo
     return (
       <div>
         <p className="text-xs font-medium">{label}</p>
-        <p className={clsx('text-xs', dark ? 'text-slate-300' : 'text-slate-500')}>Ikke beregnet</p>
+        <p className={clsx('text-xs', dark ? 'text-slate-300' : 'text-slate-600')}>Ikke beregnet</p>
       </div>
     );
   }

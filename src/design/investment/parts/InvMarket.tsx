@@ -61,11 +61,11 @@ function RefItem({ r, c, own }: { r: WeightedReference; c: MarketComparable | un
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-[var(--inv-line)] pt-2 text-[13px] sm:grid-cols-4">
         <div className="min-w-0">
           <dt className="inv-label">{sold ? 'Solgt for' : 'Prisantydning'}</dt>
-          <dd className="mt-0.5">{price === null ? <span className="text-slate-500">Ikke dokumentert</span> : <Fig>{formatNOK(price)}</Fig>}<span className="block text-[11px] text-slate-600">{c?.date ? formatDateKey(c.date) : 'Dato ukjent'}</span></dd>
+          <dd className="mt-0.5">{price === null ? <span className="text-slate-600">Ikke dokumentert</span> : <Fig>{formatNOK(price)}</Fig>}<span className="block text-[11px] text-slate-600">{c?.date ? formatDateKey(c.date) : 'Dato ukjent'}</span></dd>
         </div>
         <div className="min-w-0">
           <dt className="inv-label">{active ? 'Pris/m² (total)' : 'Justert pris/m²'}</dt>
-          <dd className="mt-0.5">{perM2 === null ? <span className="text-slate-500">Ikke brukbar</span> : <Fig>{formatNOK(perM2)}</Fig>}<span className="block text-[11px] text-slate-600">{active ? 'Signal, aldri oppnådd pris' : r.marketAdjusted ? 'Markedsjustert' : 'Ikke markedsjustert'}</span></dd>
+          <dd className="mt-0.5">{perM2 === null ? <span className="text-slate-600">Ikke brukbar</span> : <Fig>{formatNOK(perM2)}</Fig>}<span className="block text-[11px] text-slate-600">{active ? 'Signal, aldri oppnådd pris' : r.marketAdjusted ? 'Markedsjustert' : 'Ikke markedsjustert'}</span></dd>
         </div>
         <div className="min-w-0">
           <dt className="inv-label">Standard</dt>
@@ -93,7 +93,7 @@ function RefGroup({ title, sub, refs, byId, ownIds, empty }: { title: string; su
     <div>
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3">
         <h3 className="text-sm font-semibold">
-          {title} <span className="inv-fig font-normal text-slate-500">({refs.length})</span>
+          {title} <span className="inv-fig font-normal text-slate-600">({refs.length})</span>
         </h3>
         <p className="text-xs text-slate-600">{sub}</p>
       </div>

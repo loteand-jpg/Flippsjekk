@@ -25,7 +25,7 @@ export function CostChart({ segments, sale, profit, dark }: { segments: CostSegm
         rows: [...segments.map((s) => [s.label, formatNOK(s.amount), share(s.amount)]), ['Samlet kostnad', formatNOK(total), '100 %'], ['Kontantsalg', formatNOK(sale), ''], ['Fortjeneste', formatNOK(profit), '']],
       }}
     >
-      <div role="img" aria-label={`Kostnadsfordeling: ${segments.map((s) => `${s.label} ${formatNOK(s.amount)}`).join(', ')}. Samlet ${formatNOK(total)}. Kontantsalg ${formatNOK(sale)}.`}>
+      <div data-testid="inv-cost" role="img" aria-label={`Kostnadsfordeling: ${segments.map((s) => `${s.label} ${formatNOK(s.amount)}`).join(', ')}. Samlet ${formatNOK(total)}. Kontantsalg ${formatNOK(sale)}.`}>
         <div className="space-y-2">
           <div>
             <div className="mb-1 flex justify-between text-xs font-medium"><span>Kostnader</span><span className="inv-fig">{formatNOK(total)}</span></div>
@@ -49,7 +49,7 @@ export function CostChart({ segments, sale, profit, dark }: { segments: CostSegm
               <span className="truncate">{s.label}</span>
             </span>
             <span className={clsx('inv-fig shrink-0 font-semibold')}>
-              {formatNOK(s.amount)} <span className={clsx('font-normal', dark ? 'text-slate-300' : 'text-slate-500')}>· {share(s.amount)}</span>
+              {formatNOK(s.amount)} <span className={clsx('font-normal', dark ? 'text-slate-300' : 'text-slate-600')}>· {share(s.amount)}</span>
             </span>
           </li>
         ))}

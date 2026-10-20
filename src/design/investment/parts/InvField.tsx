@@ -103,7 +103,7 @@ export function InvGroup({ n, title, sub, summary, children, id, defaultOpen = t
           <span className="block text-base font-semibold tracking-tight">{title}</span>
           {summary && <span className="inv-fig block truncate text-xs text-slate-600">{summary}</span>}
         </span>
-        <ChevronDown className="size-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
+        <ChevronDown className="size-4 shrink-0 text-slate-600 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
       <div className="border-t border-[var(--inv-line)] px-4 py-4 sm:px-5">
         {sub && <p className="mb-4 max-w-2xl text-sm text-slate-600">{sub}</p>}

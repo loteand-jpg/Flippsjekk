@@ -33,7 +33,7 @@ export function ChartFrame({
             <span className="group-open:hidden">{tableLabel}</span>
             <span className="hidden group-open:inline">Skjul tall</span>
           </summary>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${table.caption} (kan rulles sideveis)`}>
             <table className={clsx('mt-1 w-full text-xs', dark ? 'text-slate-100' : 'text-slate-800')}>
               <caption className="sr-only">{table.caption}</caption>
               <thead>
