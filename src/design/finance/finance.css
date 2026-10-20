@@ -1,0 +1,130 @@
+/*
+ * Finance – designtokens og hjelpeklasser.
+ *
+ * Alt er avgrenset til .fin, så Original (og senere varianter) ikke påvirkes. Tailwind-fargene som delte komponenter bruker
+ * (pine = primærfarge, slate = nøytrale) er CSS-variabler, så ved å sette dem om innenfor .fin får også delte sider
+ * (kalender, konto, kurs …) Finance-uttrykket uten å kopieres.
+ *
+ * Retning: lyst, rolig finansuttrykk. Varm off-white bakgrunn, mørk blågrå typografi, dyp marineblå primærfarge,
+ * dempede statusfarger og fine skillelinjer.
+ */
+.fin {
+  /* Primærfarge: dyp marineblå (erstatter «pine») */
+  --color-pine-50: #f1f5f9;
+  --color-pine-100: #e0e8f0;
+  --color-pine-200: #c2d2e1;
+  --color-pine-300: #94adc6;
+  --color-pine-400: #6188ab;
+  --color-pine-500: #416b92;
+  --color-pine-600: #2f5579;
+  --color-pine-700: #254562;
+  --color-pine-800: #1c3650;
+  --color-pine-900: #152a3f;
+  --color-pine-950: #0d1a29;
+  /* Nøytrale: varm grå (erstatter «slate») */
+  --color-slate-50: #f9f8f5;
+  --color-slate-100: #f1efea;
+  --color-slate-200: #e5e2db;
+  --color-slate-300: #d3cfc5;
+  --color-slate-400: #a8a397;
+  --color-slate-500: #7b766a;
+  --color-slate-600: #5a564c;
+  --color-slate-700: #45423a;
+  --color-slate-800: #2f2d28;
+  --color-slate-900: #1e1d1a;
+  --color-slate-950: #11100e;
+  --color-canvas: #f6f4ef;
+  --color-ink: #14202b;
+  /* Moderat avrunding */
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+
+  /* Finance-spesifikke tokens */
+  --fin-line: #e5e2db;
+  --fin-line-strong: #cfcbc0;
+  --fin-surface: #ffffff;
+  --fin-surface-muted: #faf9f6;
+  --fin-pos: #1e6a49;
+  --fin-pos-bg: #eaf3ee;
+  --fin-neg: #a2362a;
+  --fin-neg-bg: #f9ece9;
+  --fin-warn: #86570a;
+  --fin-warn-bg: #f8f0de;
+  --fin-info: #254562;
+  --fin-info-bg: #eaf0f6;
+
+  min-height: 100dvh;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tall: tabular og lining. Brukes på alle beløp så kolonner flukter og siffer ikke «danser». */
+.fin .fin-fig,
+.fin .num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+.fin .fin-fig {
+  white-space: nowrap;
+  letter-spacing: -0.015em;
+}
+
+/* Etiketter: små, rolige, tydelig adskilt fra verdier */
+.fin .fin-label {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-slate-600);
+}
+
+.fin :focus-visible {
+  outline: 2px solid var(--color-pine-700);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.fin dialog::backdrop {
+  background: rgb(13 26 41 / 0.45);
+}
+
+/* Nøkkeltall i beslutningstoppen: hårfine skillelinjer i stedet for kort i kort */
+.fin .fin-metrics > * {
+  border-top: 1px solid var(--fin-line);
+}
+
+.fin .fin-callout {
+  border-left: 3px solid var(--color-pine-700);
+  background: var(--fin-info-bg);
+}
+
+/* Skjul native piler i tallfelt som aldri brukes i Finance */
+.fin summary {
+  list-style: none;
+}
+.fin summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fin *,
+  .fin *::before,
+  .fin *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Delte markedsblokker: tre store tall ved siden av hverandre blir for trange på smale skjermer. */
+@media (max-width: 480px) {
+  .fin .num.grid-cols-3 .text-lg {
+    font-size: 0.875rem;
+    letter-spacing: -0.01em;
+  }
+}
