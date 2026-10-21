@@ -387,6 +387,51 @@ test.describe('Økonomisk paritet i scenariosammenligningen (felles produktlogik
   });
 });
 
+test.describe('Fellesgjeld ved salg: samme konsistente tall i Original, Finance og Investment', () => {
+  test('gjeld 200 000: totalverdien (4 050 000) beholdes, kontant = 3 850 000, og alle tre variantene viser identiske tall', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobil', 'Tabellene sammenlignes på desktop; logikken er den samme på mobil');
+    await signIn(page, '');
+    const before = await compareOriginal(page);
+
+    // Brukeren endrer fellesgjeld ved salg i Investment-kalkylen og lagrer. Feltet bruker den felles logikken.
+    await page.goto(`/#${INV}/oversikt`);
+    await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
+    await expect(page.getByTestId('inv-maxbid')).toBeVisible();
+    await page.getByRole('tab', { name: 'Kalkyle' }).click();
+    const debt = page.getByRole('textbox', { name: 'Fellesgjeld ved salg', exact: true });
+    await debt.fill('200 000');
+    await debt.blur();
+    await expect.poll(() => value(page, 'inv-sale')).toBe(3_850_000);
+    expect(Math.round(await value(page, 'inv-profit'))).toBe(172_600 - 200_000);
+    await page.getByRole('button', { name: 'Lagre', exact: true }).first().click();
+    await expect(page.getByText('Ulagrede endringer')).toHaveCount(0);
+
+    // Alle tre variantene: samme kontant salgsverdi, fortjeneste, avkastning, kr/time, EK-behov, maksbud og scenarioer
+    const o = await readOriginal(page);
+    const f = await readFinance(page);
+    const i = await readInvestment(page);
+    expect(o.sale).toBe(3_850_000);
+    expect(o.sale + 200_000).toBe(4_050_000); // totalverdien er uendret
+    expect(o.profit).toBe(-27_400);
+    expect({ ...f }).toEqual({ ...o, maxBid: floorK(o.maxBid), returnPct: Math.round(o.returnPct * 10) / 10 });
+    const { returnPct2, ...iRest } = i;
+    expect({ ...iRest, returnPct: returnPct2 }).toEqual({ ...o, maxBid: floorK(o.maxBid) });
+
+    const oc = await compareOriginal(page);
+    const fc = await compareFinance(page);
+    const ic = await compareInvestment(page);
+    expect(fc.profit).toEqual(oc.profit);
+    expect(ic.profit).toEqual(oc.profit);
+    expect(fc.hourly).toEqual(oc.hourly);
+    expect(ic.hourly).toEqual(oc.hourly);
+    expect(fc.recommended).toBe(oc.recommended);
+    expect(ic.recommended).toBe(oc.recommended);
+    // Basis, A og B beholder hver sin totalverdi og bruker samme gjeld: hver er nøyaktig 200 000 lavere i kontantsalg og fortjeneste
+    oc.profit.forEach((p, k) => expect(p, `scenario ${k}`).toBe(before.profit[k] - 200_000));
+    expect(ic.price).toEqual([2_950_000, 2_950_000, 2_950_000]);
+  });
+});
+
 test.describe('Investment: bevegelse', () => {
   test('tall som endres animeres og får et lysglimt – og det hoppes over med «reduser bevegelse»', async ({ browser }) => {
     for (const reduce of [false, true]) {
