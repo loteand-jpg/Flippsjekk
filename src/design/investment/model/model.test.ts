@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Breakdown } from '../../../calc/engine';
 import { buildBaseValues, evaluateScenario } from '../../../calc/scenario';
+import { buildScenarioComparison } from '../../../calc/scenarioComparison';
 import { NEW_ACCOUNT_DEFAULTS } from '../../../config/defaults';
 import { buildProperty } from '../../../data/analysisBuilder';
 import { DEMO_FINN, SEED_PROPERTIES } from '../../../data/seedProperties';
@@ -65,6 +66,50 @@ describe('Investment: scenariodelta (ren regnskapsidentitet over motorresultater
     const d = scenarioDelta({ ...b, ownHours: null, equityNeed: b.equityNeed, profitPerOwnHour: null }, b);
     expect(d.ownHours).toBeNull();
     expect(d.profitPerOwnHour).toBeNull();
+  });
+});
+
+describe('Investment: delta i den automatiske sammenligningen er ren scenarioeffekt (samme kjøpspris)', () => {
+  const spec = SEED_PROPERTIES.find((x) => x.finnId === DEMO_FINN.sharedAB)!;
+  const built = buildProperty({ ...spec, analysisAgeDays: 1, snapshotAgeHours: 1 }, NOW);
+  const defs = resolveAnalysisScenarios(built.analysis);
+  const base = (id: string) => buildBaseValues({ property: built.property, snapshot: built.snapshot, analysis: built.analysis, defaults: NEW_ACCOUNT_DEFAULTS, analysisScenarioId: id }).values;
+  const compare = (price: number) =>
+    buildScenarioComparison({ analysis: built.analysis, property: built.property, snapshot: built.snapshot, defaults: NEW_ACCOUNT_DEFAULTS, draft: { ...base(defs[0].id), purchasePrice: price }, activeName: 'Hovedscenario', riskBand: 'middels' });
+
+  it('Basis, A og B har samme kjøpspris, så deltaet har ingen prislinje og ingen prisvarsel', () => {
+    for (const price of [2_890_000, 2_950_000, 3_200_000]) {
+      const c = compare(price);
+      const b0 = c.rows[0].input.evaluation.base as Breakdown;
+      for (const r of c.rows) expect((r.input.evaluation.base as Breakdown).P).toBe(price);
+      for (const r of c.rows.slice(1)) {
+        const d = scenarioDelta(r.input.evaluation.base as Breakdown, b0);
+        expect(d.purchase, `P ${price}`).toBeNull();
+        expect(d.lines.map((l) => l.id)).not.toContain('purchase');
+        expect(d.lines.reduce((s, l) => s + l.amount, 0)).toBe(d.netProfit);
+      }
+    }
+  });
+
+  it('forsvaret mot feil: ulik kjøpspris oppdages fortsatt og gir en egen linje', () => {
+    const c = compare(2_950_000);
+    const b0 = c.rows[0].input.evaluation.base as Breakdown;
+    const other = evaluateScenario({ ...c.rows[1].values, purchasePrice: 2_890_000 }).evaluation.base as Breakdown;
+    const d = scenarioDelta(other, b0);
+    expect(d.purchase).toEqual({ alt: 2_890_000, base: 2_950_000 });
+    expect(d.lines.find((l) => l.id === 'purchase')?.amount).toBeGreaterThan(0);
+  });
+
+  it('deltaet endres med scenarioet, ikke med kjøpsprisen i kalkylen (salgsverdi og oppussing er prisuavhengige)', () => {
+    const at = (p: number) => {
+      const c = compare(p);
+      return scenarioDelta(c.rows[1].input.evaluation.base as Breakdown, c.rows[0].input.evaluation.base as Breakdown);
+    };
+    const lo = at(2_700_000);
+    const hi = at(3_400_000);
+    expect(lo.sale).toBe(hi.sale);
+    expect(lo.renovation).toBe(hi.renovation);
+    expect(lo.months).toBe(hi.months);
   });
 });
 

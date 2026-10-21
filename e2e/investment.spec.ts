@@ -284,6 +284,109 @@ test.describe('Økonomisk paritet: Original, Finance og Investment viser identis
   });
 });
 
+/** Scenariosammenligningen (Basis, Alternativ A, Alternativ B) slik hver variant viser den. */
+const SCENARIO_TITLES = ['Standardheving', 'Åpen løsning mellom kjøkken og stue', 'Tre rom (nytt soverom)'];
+const firstNumber = (t: string) => numberIn(t.split('\n')[0]);
+
+async function compareOriginal(page: Page) {
+  await page.goto('/#/oversikt');
+  await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
+  await page.getByRole('tab', { name: 'Kalkyle' }).click();
+  const rows = page.getByTestId('rank-row');
+  await expect(rows).toHaveCount(3);
+  const profit: Record<string, number> = {};
+  const kt: Record<string, number> = {};
+  for (let i = 0; i < 3; i++) {
+    const row = rows.nth(i);
+    const title = (await row.locator('.font-semibold').first().innerText()).trim();
+    const dd = (label: string) => row.locator(`xpath=.//dt[normalize-space(.)="${label}"]/following-sibling::dd[1]`).innerText();
+    profit[title] = numberIn(await dd('Fortjeneste før skatt'));
+    kt[title] = numberIn(await dd('Per egeninnsatstime'));
+  }
+  const recommended = (await page.getByText(/Anbefalt scenario: /).first().innerText()).replace(/^.*Anbefalt scenario: /, '').split('.')[0].trim();
+  return { profit: SCENARIO_TITLES.map((t) => profit[t]), hourly: SCENARIO_TITLES.map((t) => kt[t]), recommended };
+}
+
+async function tableRow(page: Page, tableId: string, label: RegExp) {
+  const cells = page.getByTestId(tableId).locator('tr', { has: page.locator('th[scope="row"]', { hasText: label }) }).first().locator('td');
+  const n = await cells.count();
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) out.push(await cells.nth(i).innerText());
+  return out;
+}
+
+async function compareFinance(page: Page) {
+  await page.goto('/#/design/finance/oversikt');
+  await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
+  await expect(page.getByTestId('fin-scenarios')).toBeVisible();
+  const profit = (await tableRow(page, 'fin-scenarios', /^Forventet fortjeneste/)).map(firstNumber);
+  const hourly = (await tableRow(page, 'fin-scenarios', /^Per egeninnsatstime/)).map(firstNumber);
+  const recommended = (await page.getByText('Beste scenario', { exact: true }).locator('xpath=following-sibling::dd[1]').innerText()).split('\n')[0].trim();
+  return { profit, hourly, recommended };
+}
+
+async function compareInvestment(page: Page) {
+  await page.goto(`/#${INV}/oversikt`);
+  await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
+  await expect(page.getByTestId('inv-scenarios')).toBeVisible();
+  const price = (await tableRow(page, 'inv-scenarios', /^Kjøpspris/)).map(firstNumber);
+  const profit = (await tableRow(page, 'inv-scenarios', /^Forventet fortjeneste/)).map(firstNumber);
+  const hourly = (await tableRow(page, 'inv-scenarios', /^Per egeninnsatstime/)).map(firstNumber);
+  const heroTags = await page.locator('#case').locator('xpath=ancestor::section[1]').innerText();
+  const recommended = /Anbefalt scenario/.test(heroTags) ? (heroTags.match(/Scenario i bruk: ([^\n]+)/)?.[1] ?? '').trim() : (heroTags.match(/Anbefalt: ([^\n]+)/)?.[1] ?? '').trim();
+  return { price, profit, hourly, recommended };
+}
+
+test.describe('Økonomisk paritet i scenariosammenligningen (felles produktlogikk)', () => {
+  test('Basis, A og B har samme kjøpspris som kalkylen, og alle tre variantene viser identiske tall og anbefalt scenario', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobil', 'Tabellene sammenlignes på desktop; logikken er den samme på mobil');
+    await signIn(page, '');
+    const o = await compareOriginal(page);
+    const f = await compareFinance(page);
+    const i = await compareInvestment(page);
+    // kjøpsprisen i sammenligningen: brukerens kalkyle (2 950 000), ikke analysens grunnlag (2 890 000), for alle tre scenarioene
+    expect(i.price).toEqual([2_950_000, 2_950_000, 2_950_000]);
+    // fortjeneste og kr/time per scenario er identiske i alle varianter
+    expect(f.profit).toEqual(o.profit);
+    expect(i.profit).toEqual(o.profit);
+    expect(f.hourly).toEqual(o.hourly);
+    expect(i.hourly).toEqual(o.hourly);
+    // alternativene er regnet ved samme pris som Basis (de lå tidligere 60 000 kr lavere i pris og dermed langt høyere i fortjeneste)
+    expect(o.profit[0]).toBe(172_600);
+    expect(o.profit[1]).toBeLessThan(126_615 - 55_000);
+    // anbefalt scenario er det samme
+    expect(o.recommended).toBe('Standardheving');
+    expect(f.recommended).toBe('Standardheving');
+    expect(i.recommended).toBe('Standardheving');
+  });
+
+  test('Investment viser ingen «ulik kjøpspris»-advarsel i vanlig Basis/A/B-sammenligning', async ({ page }) => {
+    await openElvekanten(page, INV);
+    await expect(page.getByTestId('inv-delta-net')).toHaveCount(2);
+    await expect(page.getByTestId('inv-delta-price-note')).toHaveCount(0);
+    await expect(page.getByText(/Ulik kjøpspris i kalkylene/)).toHaveCount(0);
+    await expect(page.getByText('Kjøpspris og kjøpskostnader')).toHaveCount(0);
+  });
+
+  test('«Bruk i kalkylen» beholder privat kjøpspris og rente, og sammenligningen følger den nye kalkylen', async ({ page }) => {
+    await openElvekanten(page, INV);
+    await page.getByRole('tab', { name: 'Kalkyle' }).click();
+    const set = async (name: string, v: string) => {
+      const f = page.getByRole('textbox', { name, exact: true });
+      await f.fill(v);
+      await f.blur();
+    };
+    await set('Kjøpspris (kontant)', '3 100 000');
+    await set('Rente', '7,2');
+    await page.locator('button:visible', { hasText: 'Bruk i kalkylen' }).first().click();
+    await expect(page.getByRole('textbox', { name: 'Kjøpspris (kontant)', exact: true })).toHaveValue(/3\s?100\s?000/);
+    await expect(page.getByRole('textbox', { name: 'Rente', exact: true })).toHaveValue(/7,2/);
+    const price = (await tableRow(page, 'inv-scenarios', /^Kjøpspris/)).map(firstNumber);
+    expect(price).toEqual([3_100_000, 3_100_000, 3_100_000]);
+    await expect(page.getByTestId('inv-delta-price-note')).toHaveCount(0);
+  });
+});
+
 test.describe('Investment: bevegelse', () => {
   test('tall som endres animeres og får et lysglimt – og det hoppes over med «reduser bevegelse»', async ({ browser }) => {
     for (const reduce of [false, true]) {
