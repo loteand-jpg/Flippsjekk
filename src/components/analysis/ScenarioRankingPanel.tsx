@@ -1,21 +1,20 @@
 import { useMemo, type ReactNode } from 'react';
-import { CRITERIA, rankScenarios, RANK_FLAG_LABEL, type RankInput, type RankRow } from '../../calc/ranking';
-import { evaluateScenario, normalizeScenarioValues } from '../../calc/scenario';
-import { QUALITY_TIER_LABEL } from '../../calc/market';
+import { CRITERIA, RANK_FLAG_LABEL, type RankRow } from '../../calc/ranking';
+import { buildScenarioComparison } from '../../calc/scenarioComparison';
+import { NEW_ACCOUNT_DEFAULTS } from '../../config/defaults';
 import { aggregateRisk, RISK_BAND_LABEL } from '../../domain/assessment';
 import { resolveAnalysisScenarios } from '../../domain/analysisScenarios';
 import { FEASIBILITY_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, UNCERTAINTY_LABEL } from '../../domain/enums';
 import { effectiveRisks } from '../../domain/risks';
-import type { ScenarioValues } from '../../domain/schemas';
 import { formatHours, formatMonths, formatNOK, formatPct, NO_BASIS } from '../../lib/format';
 import { Badge } from '../ui/primitives';
-import { scenarioFields } from './ScenarioPanel';
 import { Panel, type PropertyContext } from './shared';
-import { resolveForScenario, useMarketComparables } from './useMarket';
+import { useMarketComparables } from './useMarket';
 
 /**
- * Rangering av scenarioene i en analyse (samme beregning for alle designvarianter). Returnerer scenariodefinisjonene og
- * rangeringen med hvert scenarios fulle evaluering.
+ * Rangering av scenarioene i en analyse (samme beregning for alle designvarianter). Basis og alternativene sammenlignes under
+ * brukerens felles økonomiske ramme (`buildScenarioComparison`). Returnerer scenariodefinisjonene og rangeringen med hvert
+ * scenarios fulle evaluering.
  */
 export function useScenarioRanking(ctx: PropertyContext) {
   const comps = useMarketComparables(ctx);
@@ -23,38 +22,18 @@ export function useScenarioRanking(ctx: PropertyContext) {
   const riskBand = useMemo(() => aggregateRisk(effectiveRisks(ctx.analysis.risks, ctx.item.riskEdits).active).band, [ctx.analysis.risks, ctx.item.riskEdits]);
 
   const data = useMemo(() => {
-    const rows: { input: RankInput; source: string; marketTier: string | null }[] = [];
-    for (const d of defs) {
-      // Kalkylen din for scenarioet hvis du har en (valgt scenario bruker ulagrede endringer), ellers grunnverdiene.
-      const draftId = ctx.draft.analysisScenarioId ?? defs.find((x) => x.kind === 'basis')?.id;
-      let values: ScenarioValues | null = null;
-      let source = 'Grunnverdier';
-      if (draftId === d.id) {
-        values = ctx.draft;
-        source = `Din kalkyle: ${ctx.scenario.name}`;
-      } else {
-        const mine = ctx.scenarios.find((s) => !s.locked && s.id !== ctx.scenario.id && (normalizeScenarioValues(s.values).analysisScenarioId ?? defs.find((x) => x.kind === 'basis')?.id) === d.id);
-        if (mine) {
-          values = normalizeScenarioValues(mine.values);
-          source = `Din kalkyle: ${mine.name}`;
-        }
-      }
-      values ??= scenarioFields(ctx, d.id)?.values ?? null;
-      if (!values) continue;
-      const evaluation = evaluateScenario(values).evaluation;
-      // Salgsverdiens sikkerhet: markedsmotorens datakvalitet når den regner verdien. Agentens estimat uten markedsverifisering
-      // regnes aldri som sikrere enn «middels». Eldre global verdi og manglende verdi følger scenarioets egen usikkerhet.
-      const res = resolveForScenario({ ctx, scenario: d, values, own: comps.own });
-      const tier = res.source === 'markedsmotor' && res.market?.status === 'ok' ? res.market.quality.tier : null;
-      const uncertainty = res.source === 'agent_fallback' && (d.uncertainty.level === 'lav') ? 'middels' : d.uncertainty.level;
-      rows.push({
-        input: { id: d.id, title: d.title, kind: d.kind, feasibility: d.feasibility, evaluation, riskBand, scenarioRisk: d.risk ?? null, saleCertainty: { tier, uncertainty: res.source === 'ingen' ? 'uavklart' : uncertainty } },
-        source,
-        marketTier: tier ? QUALITY_TIER_LABEL[tier] : null,
-      });
-    }
-    return { rows, result: rankScenarios(rows.map((r) => r.input)) };
-  }, [defs, ctx, comps.all, riskBand]);
+    const c = buildScenarioComparison({
+      analysis: ctx.analysis,
+      property: ctx.item.property,
+      snapshot: ctx.baseSnapshot ?? ctx.item.snapshot,
+      defaults: ctx.profile?.defaults ?? NEW_ACCOUNT_DEFAULTS,
+      draft: ctx.draft,
+      activeName: ctx.scenario.name,
+      riskBand,
+      ownComparables: comps.own,
+    });
+    return { rows: c.rows, result: c.result };
+  }, [ctx, comps.own, riskBand]);
 
   return { defs, data };
 }
@@ -72,7 +51,7 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
   return (
     <Panel
       title="Sammenligning av scenarioer"
-      sub="Rangert på fortjeneste, avkastning, fortjeneste per egeninnsatstime, risiko (objekt og scenario), salgsverdiens sikkerhet, stresstest og finansiering – ikke bare nominell fortjeneste. Timekravet påvirker rangering og maksbud, men utelukker ikke et scenario."
+      sub="Rangert på fortjeneste, avkastning, fortjeneste per egeninnsatstime, risiko (objekt og scenario), salgsverdiens sikkerhet, stresstest og finansiering – ikke bare nominell fortjeneste. Alle scenarioer regnes med dine forutsetninger. Timekravet påvirker rangering og maksbud, men utelukker ikke et scenario."
     >
       {recommended ? (
         <p className="mb-3 rounded-lg bg-pine-50 p-3 text-sm text-pine-950">

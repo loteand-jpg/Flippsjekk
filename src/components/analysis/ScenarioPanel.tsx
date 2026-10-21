@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { buildBaseValues, renovationTotals } from '../../calc/scenario';
+import { analysisScenarioValues, buildBaseValues, renovationTotals } from '../../calc/scenario';
 import { useSession } from '../../app/session';
 import { resolveAnalysisScenarios, type ResolvedAnalysisScenario } from '../../domain/analysisScenarios';
 import { CHANGE_LEVEL_LABEL, FEASIBILITY_LABEL, RENOVATION_LEVEL_LABEL, SCENARIO_KIND_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, STANDARD_CLASS_LABEL, UNCERTAINTY_LABEL, type FeasibilityStatus } from '../../domain/enums';
@@ -19,24 +19,16 @@ export function scenarioFields(ctx: PropertyContext, id: string) {
   return buildBaseValues({ property: ctx.item.property, snapshot, analysis: ctx.analysis, defaults, analysisScenarioId: id });
 }
 
-/** Tar et agentscenario (basis/alternativ) i bruk i brukerens kalkyle: tiltak, salgsverdi og varighet erstattes (ulagret). */
+/**
+ * Tar et agentscenario (basis/alternativ) i bruk i brukerens kalkyle (ulagret). Brukerens økonomiske forutsetninger beholdes
+ * (kjøpspris, kjøpskostnader, finansiering, rente, egenkapital, mål, timekrav, arbeidsmodus, oppgjørstid m.m.); bare det som er
+ * scenariospesifikt byttes: tiltak, salgsverdi og oppussingstid. Samme overlay som rangeringen av scenarioene bruker.
+ */
 export function applyScenarioToDraft(ctx: PropertyContext, scenarioId: string): void {
-  const nb = scenarioFields(ctx, scenarioId)?.values;
-  if (!nb) return;
-  ctx.setDraft((d) => ({
-    ...d,
-    analysisScenarioId: nb.analysisScenarioId,
-    renovationMode: nb.renovationMode,
-    renovationOptionId: nb.renovationOptionId,
-    renovationItems: nb.renovationItems,
-    vatIncluded: nb.vatIncluded,
-    months: nb.months,
-    settlementMonths: nb.settlementMonths,
-    saleBasis: nb.saleBasis,
-    saleLow: nb.saleLow,
-    saleBase: nb.saleBase,
-    saleHigh: nb.saleHigh,
-  }));
+  const snapshot = ctx.baseSnapshot ?? ctx.item.snapshot;
+  if (!snapshot) return;
+  const defaults = ctx.profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;
+  ctx.setDraft((d) => analysisScenarioValues({ property: ctx.item.property, snapshot, analysis: ctx.analysis, defaults, user: d, analysisScenarioId: scenarioId }).values);
 }
 
 export function activeScenarioId(ctx: PropertyContext): string {
@@ -151,7 +143,7 @@ export function ScenarioPanel({ ctx, onCreate, compact, stack }: { ctx: Property
           <ScenarioCard key={d.id} ctx={ctx} def={d} active={d.id === activeId} onCreate={hasAlternatives ? onCreate : undefined} />
         ))}
       </div>
-      {hasAlternatives && <p className="mt-3 text-xs text-slate-600">«Bruk i dette scenarioet» erstatter tiltak, salgsverdi og varighet (ulagret til du lagrer). Dine øvrige valg, som finansiering og egeninnsats, beholdes.</p>}
+      {hasAlternatives && <p className="mt-3 text-xs text-slate-600">«Bruk i dette scenarioet» erstatter tiltak, salgsverdi og oppussingstid (ulagret til du lagrer). Dine øvrige valg, som kjøpspris, finansiering og egeninnsats, beholdes.</p>}
     </Panel>
   );
 }
