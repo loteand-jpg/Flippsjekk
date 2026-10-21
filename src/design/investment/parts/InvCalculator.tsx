@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router';
 import { MAX_BID_LIMIT_LABEL, recommendedBidOf } from '../../../calc/engine';
 import { VALUE_ORIGIN_LABEL } from '../../../calc/scenario';
 import { Results, money, pct, useField } from '../../../components/analysis/CalculatorTab';
+import { saleDebtHelp, saleDebtStatuses } from '../../../components/analysis/saleDebtStatus';
 import type { PropertyContext } from '../../../components/analysis/shared';
 import { Field, Segmented, Select, Switch } from '../../../components/ui/forms';
 import { Alert } from '../../../components/ui/primitives';
@@ -12,6 +13,7 @@ import { formatHours, formatMonths, formatNOK, formatPct } from '../../../lib/fo
 import { equityLine, floorToThousand, hourlyLine, maxBidLine, profitTone } from '../../shared/present';
 import { CountUp } from '../CountUp';
 import { Fig, TONE_TEXT_DARK } from '../ui';
+import { DebtStatus } from './DebtStatus';
 import { InvGroup, InvNumberField } from './InvField';
 import { signedNOK } from '../model/format';
 
@@ -139,6 +141,8 @@ export function InvCalculator({ ctx }: { ctx: PropertyContext }) {
           </Alert>
         )
       )}
+      {/* Samme status som i investeringscaset øverst, her ved feltet du redigerer */}
+      <DebtStatus statuses={saleDebtStatuses({ draft: d, base: ctx.base, activeTitle: ctx.scenario.name })} testId="inv-calc-debt-status" messageTestId={false} />
       <div>
         <h2 className="text-lg font-semibold tracking-tight">Kalkyle</h2>
         <p className="text-sm text-slate-600">Forutsetninger i ditt private scenario. Hvert felt viser hvor verdien kommer fra, og kan tilbakestilles til grunnlaget i analysen. Resultatet oppdateres mens du endrer.</p>
@@ -304,7 +308,7 @@ export function InvCalculator({ ctx }: { ctx: PropertyContext }) {
               <InvNumberField label="Salg høy" unit="kr" formatBase={money} {...withOrigin('saleHigh')} />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <InvNumberField label="Fellesgjeld ved salg" unit="kr" formatBase={money} {...withOrigin('debtAtSale')} hint={d.saleBasis === 'total' ? 'Trekkes fra totalprisen én gang.' : 'Påvirker ikke kalkylen ved kontantpris.'} />
+              <InvNumberField label="Fellesgjeld ved salg" unit="kr" formatBase={money} {...withOrigin('debtAtSale')} hint={saleDebtHelp({ draft: d, base: ctx.base }).text} />
               <InvNumberField label="Faste salgskostnader" unit="kr" formatBase={money} {...withOrigin('saleFixedCost')} hint="Markedsføring, takst, styling, oppgjør." />
               <InvNumberField label="Meglerprovisjon" unit="%" decimals={2} formatBase={pct} {...withOrigin('saleCommissionPct')} hint="Av kontantsalget." />
               <InvNumberField

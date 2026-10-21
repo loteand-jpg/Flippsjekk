@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { recommendedBidOf } from '../../calc/engine';
 import { OverviewTab, ReportTab } from '../../components/analysis/InfoTabs';
+import { saleDebtStatuses } from '../../components/analysis/saleDebtStatus';
 import { RenovationTab } from '../../components/analysis/RenovationTab';
 import { activeScenarioId, applyScenarioToDraft } from '../../components/analysis/ScenarioPanel';
 import { useScenarioRanking } from '../../components/analysis/ScenarioRankingPanel';
@@ -54,6 +55,7 @@ export function InvestmentProperty(p: PropertyViewProps) {
   const facts = useMarketFacts(ctx, activeId);
   const ev = ctx.result.evaluation;
   const bid = recommendedBidOf(ev);
+  const debtStatus = useMemo(() => saleDebtStatuses({ draft: ctx.draft, base: ctx.base, activeTitle: activeDef?.title ?? ctx.scenario.name, rows: data.rows, activeId }), [ctx.draft, ctx.base, ctx.scenario.name, activeDef, data.rows, activeId]);
 
   const risks = useMemo(() => effectiveRisks(ctx.analysis.risks, ctx.item.riskEdits).active, [ctx.analysis.risks, ctx.item.riskEdits]);
   const risk = useMemo(() => aggregateRisk(risks), [risks]);
@@ -100,7 +102,7 @@ export function InvestmentProperty(p: PropertyViewProps) {
         <CaseTitle p={p} className="order-1 min-w-0 lg:col-start-1 lg:row-start-1" />
         <div className="order-2 lg:order-none lg:col-span-2 lg:row-start-3 empty:hidden">{alerts}</div>
         <div className="order-3 lg:order-none lg:col-span-2 lg:row-start-4">
-          <CaseHero ctx={ctx} activeTitle={activeDef?.title ?? null} recommendedTitle={recommendedRow?.title ?? null} />
+          <CaseHero ctx={ctx} activeTitle={activeDef?.title ?? null} recommendedTitle={recommendedRow?.title ?? null} debtStatus={debtStatus} />
         </div>
         <CaseControls p={p} className="order-4 lg:order-none lg:col-start-1 lg:row-start-2" />
         <InvVisual className="order-5 max-w-sm lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-w-none" />

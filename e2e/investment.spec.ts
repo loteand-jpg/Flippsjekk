@@ -432,6 +432,102 @@ test.describe('Fellesgjeld ved salg: samme konsistente tall i Original, Finance 
   });
 });
 
+const DEBT_TITLE = { gjeld_over_totalverdi: 'Fellesgjeld er høyere enn beregnet total salgsverdi', gjeld_ukjent: 'Fellesgjeld ved salg er ikke avklart' } as const;
+const DEBT_MESSAGE = {
+  gjeld_over_totalverdi: 'Kontant salgsverdi kan derfor ikke beregnes. Kontroller fellesgjeld eller salgsverdi.',
+  gjeld_ukjent: 'Kontant salgsverdi kan ikke fastsettes sikkert før fellesgjelden ved salg er kjent. Ukjent er ikke 0 kr.',
+} as const;
+
+/** Sett fellesgjeld ved salg i variantens kalkyle (ulagret) og les statusen slik varianten viser den. */
+async function debtStatusIn(page: Page, variant: 'original' | 'finance' | 'investment', debt: string) {
+  const base = variant === 'original' ? '' : variant === 'finance' ? '/design/finance' : INV;
+  await page.goto(`/#${base}/oversikt`);
+  await page.getByRole('link', { name: /Elvekanten 17 B/ }).first().click();
+  await page.getByRole('tab', { name: variant === 'original' ? 'Min kalkyle' : 'Kalkyle' }).click();
+  const field = page.getByRole('textbox', { name: 'Fellesgjeld ved salg', exact: true });
+  await field.fill(debt);
+  await field.blur();
+  const root = variant === 'finance' ? page.getByTestId('fin-debt-status') : variant === 'investment' ? page.getByTestId('inv-debt-status') : page.getByTestId('sale-debt-status-gjeld_over_totalverdi').or(page.getByTestId('sale-debt-status-gjeld_ukjent')).first().locator('xpath=ancestor::*[@role="alert" or @role="status"][1]');
+  await page.waitForTimeout(150);
+  return root;
+}
+
+test.describe('Fellesgjeld ved salg: samme status og forklaring i Original, Finance og Investment', () => {
+  test('umulig gjeld (99 mill.) og ukjent gjeld gir samme tittel, forklaring og alvorlighet i alle tre', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobil', 'Samme logikk på mobil; layout og overflow testes egen test');
+    await signIn(page, '');
+    for (const [debt, kind, label] of [
+      ['99 000 000', 'gjeld_over_totalverdi', 'Feil'],
+      ['', 'gjeld_ukjent', 'Ikke avklart'],
+    ] as const) {
+      for (const variant of ['original', 'finance', 'investment'] as const) {
+        const root = await debtStatusIn(page, variant, debt);
+        await expect(root, `${variant} ${kind}`).toBeVisible();
+        await expect(root).toContainText(DEBT_TITLE[kind]);
+        await expect(root).toContainText(DEBT_MESSAGE[kind]);
+        await expect(root).toContainText(label); // alvor som ord, ikke bare farge
+        // synlig uten hover og leses av skjermleser (rolle alert/status)
+        await expect(root.locator('xpath=self::*[@role="alert" or @role="status"] | .//*[@role="alert" or @role="status"]').first()).toBeVisible();
+      }
+    }
+    // ingen unødvendig varsel når gjelden er kjent og mulig
+    for (const variant of ['original', 'finance', 'investment'] as const) {
+      await debtStatusIn(page, variant, '0');
+      await expect(page.getByTestId('sale-debt-status-gjeld_ukjent')).toHaveCount(0);
+      await expect(page.getByTestId('sale-debt-status-gjeld_over_totalverdi')).toHaveCount(0);
+    }
+  });
+
+  test('hjelpeteksten ved feltet er den samme i alle tre for samme kilde', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobil', 'Samme tekst på mobil');
+    await signIn(page, '');
+    const texts: Record<string, string> = {
+      'Elvekanten 17 B': 'Salgsverdien bygger på en beregnet totalverdi. Endrer du fellesgjelden ved salg, justeres kontantprisen slik at totalverdien beholdes.',
+      'Nardoveien 31': 'Trekkes fra totalprisen én gang. Endrer du fellesgjelden, endres kontantdelen av salgsverdien tilsvarende.',
+      'Ladeveien 9 A': 'Salgsverdien er oppgitt som kontantpris. Endring i fellesgjeld endrer ikke denne salgsverdien automatisk.',
+    };
+    for (const [name, text] of Object.entries(texts)) {
+      for (const [base, tab] of [['', 'Min kalkyle'], ['/design/finance', 'Kalkyle'], [INV, 'Kalkyle']] as const) {
+        await page.goto(`/#${base}/oversikt`);
+        await page.getByRole('link', { name: new RegExp(name) }).first().click();
+        await page.getByRole('tab', { name: tab }).click();
+        await expect(page.getByText(text), `${base || 'original'} ${name}`).toBeVisible();
+      }
+    }
+  });
+
+  test('varselet skaper ikke overflow og skyver ikke maksbudet uforholdsmessig langt ned (320 og 390 px)', async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobil', 'Smal skjerm');
+    await signIn(page, '');
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const variant of ['finance', 'investment'] as const) {
+        const root = await debtStatusIn(page, variant, '99 000 000');
+        await expect(root).toBeVisible();
+        await noHorizontalScroll(page);
+        const box = await root.boundingBox();
+        expect(box!.height, `${variant} ${width}px: varselet skal ikke bli ekstremt høyt`).toBeLessThan(width === 320 ? 330 : 260);
+      }
+    }
+  });
+});
+
+test.describe('Kontrast i statusvarslene for fellesgjeld ved salg', () => {
+  test('Finance og Investment: varselet (feil og ikke avklart) oppfyller WCAG AA, også på mørk flate', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobil', 'Farger er like på mobil');
+    await signIn(page, '');
+    const failures: string[] = [];
+    for (const [variant, root] of [['finance', '[data-testid="fin-debt-status"]'], ['investment', '[data-testid="inv-debt-status"]']] as const) {
+      for (const debt of ['99 000 000', '']) {
+        const status = await debtStatusIn(page, variant, debt);
+        await expect(status).toBeVisible();
+        failures.push(...(await contrastFailures(page, root)).map((x) => `${variant} ${debt || 'tom'}: ${x}`));
+      }
+    }
+    expect(failures, failures.slice(0, 10).join('\n')).toEqual([]);
+  });
+});
+
 test.describe('Investment: bevegelse', () => {
   test('tall som endres animeres og får et lysglimt – og det hoppes over med «reduser bevegelse»', async ({ browser }) => {
     for (const reduce of [false, true]) {
@@ -454,6 +550,70 @@ test.describe('Investment: bevegelse', () => {
     }
   });
 });
+
+/** Måler kontrast (WCAG AA) for all synlig tekst under en rot. Mørke flater med gradient måles mot den lyseste gradientfargen. */
+async function contrastFailures(page: Page, rootSelector: string): Promise<string[]> {
+  await expect(page.locator(rootSelector).first()).toBeVisible();
+  await page.waitForTimeout(450); // la fargeoverganger bli ferdige
+  return page.evaluate((root) => {
+
+        // Nettleseren normaliserer alle fargeformater (også oklch/color-mix fra Tailwind) via canvas
+        const ctx2d = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+        const parse = (c: string) => {
+          if (!c || c === 'transparent') return null;
+          ctx2d.clearRect(0, 0, 1, 1);
+          ctx2d.fillStyle = '#000';
+          ctx2d.fillStyle = c;
+          ctx2d.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx2d.getImageData(0, 0, 1, 1).data;
+          return { r, g, b, a: a / 255 };
+        };
+        const lin = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+        };
+        const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+        const mix = (fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number }) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) });
+        const bgOf = (el: Element) => {
+          // Gradienter: bruk den lyseste fargen i .inv-dark (verste tilfelle for lys tekst)
+          let bg = { r: 238, g: 242, b: 247 };
+          const stack: Element[] = [];
+          for (let a: Element | null = el; a; a = a.parentElement) stack.push(a);
+          for (const a of stack.reverse()) {
+            const cs = getComputedStyle(a);
+            if (a.classList.contains('inv-dark')) bg = { r: 23, g: 41, b: 74 };
+            const c = parse(cs.backgroundColor);
+            if (c && c.a > 0 && !a.classList.contains('inv-dark')) bg = mix(c, bg);
+          }
+          return bg;
+        };
+        const out: string[] = [];
+        const walker = document.createTreeWalker(document.querySelector(root)!, NodeFilter.SHOW_TEXT);
+        const seen = new Set<Element>();
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const el = n.parentElement;
+          if (!el || seen.has(el) || !(n.textContent || '').trim()) continue;
+          seen.add(el);
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          const cs = getComputedStyle(el);
+          if (cs.visibility === 'hidden' || cs.display === 'none' || el.closest('.sr-only, [aria-hidden="true"], option, select, svg, dialog:not([open]), details:not([open]) > :not(summary)')) continue;
+          if (el.closest('[disabled], :disabled')) continue;
+          const fg = parse(cs.color);
+          if (!fg) continue;
+          const bg = bgOf(el);
+          const f = mix(fg, bg);
+          const L1 = lum(f);
+          const L2 = lum(bg);
+          const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+          const size = parseFloat(cs.fontSize);
+          const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
+          if (ratio < (large ? 3 : 4.5)) out.push(`${(n.textContent || '').trim().slice(0, 40)} [${ratio.toFixed(2)}:1, ${cs.color}]`);
+        }
+        return out;
+      
+  }, rootSelector);
+}
 
 test.describe('Tilgjengelighet i Investment', () => {
   test('tastatur: faner med piltaster, glider, referansepunkter og navn på alle knapper og lenker', async ({ page }) => {
@@ -486,67 +646,7 @@ test.describe('Tilgjengelighet i Investment', () => {
 
   test('kontrast: tekst mot bakgrunn oppfyller WCAG AA på alle Investment-flater', async ({ page }) => {
     const failures: string[] = [];
-    const scan = async (label: string) => {
-      await expect(page.locator('.inv').first()).toBeVisible();
-      await page.waitForTimeout(450); // la fargeoverganger (faner) bli ferdige
-      const f = await page.evaluate(() => {
-        // Nettleseren normaliserer alle fargeformater (også oklch/color-mix fra Tailwind) via canvas
-        const ctx2d = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
-        const parse = (c: string) => {
-          if (!c || c === 'transparent') return null;
-          ctx2d.clearRect(0, 0, 1, 1);
-          ctx2d.fillStyle = '#000';
-          ctx2d.fillStyle = c;
-          ctx2d.fillRect(0, 0, 1, 1);
-          const [r, g, b, a] = ctx2d.getImageData(0, 0, 1, 1).data;
-          return { r, g, b, a: a / 255 };
-        };
-        const lin = (v: number) => {
-          const s = v / 255;
-          return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-        };
-        const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
-        const mix = (fg: { r: number; g: number; b: number; a: number }, bg: { r: number; g: number; b: number }) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) });
-        const bgOf = (el: Element) => {
-          // Gradienter: bruk den lyseste fargen i .inv-dark (verste tilfelle for lys tekst)
-          let bg = { r: 238, g: 242, b: 247 };
-          const stack: Element[] = [];
-          for (let a: Element | null = el; a; a = a.parentElement) stack.push(a);
-          for (const a of stack.reverse()) {
-            const cs = getComputedStyle(a);
-            if (a.classList.contains('inv-dark')) bg = { r: 23, g: 41, b: 74 };
-            const c = parse(cs.backgroundColor);
-            if (c && c.a > 0 && !a.classList.contains('inv-dark')) bg = mix(c, bg);
-          }
-          return bg;
-        };
-        const out: string[] = [];
-        const walker = document.createTreeWalker(document.querySelector('.inv')!, NodeFilter.SHOW_TEXT);
-        const seen = new Set<Element>();
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          const el = n.parentElement;
-          if (!el || seen.has(el) || !(n.textContent || '').trim()) continue;
-          seen.add(el);
-          const r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0) continue;
-          const cs = getComputedStyle(el);
-          if (cs.visibility === 'hidden' || cs.display === 'none' || el.closest('.sr-only, [aria-hidden="true"], option, select, svg, dialog:not([open]), details:not([open]) > :not(summary)')) continue;
-          if (el.closest('[disabled], :disabled')) continue;
-          const fg = parse(cs.color);
-          if (!fg) continue;
-          const bg = bgOf(el);
-          const f = mix(fg, bg);
-          const L1 = lum(f);
-          const L2 = lum(bg);
-          const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
-          const size = parseFloat(cs.fontSize);
-          const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
-          if (ratio < (large ? 3 : 4.5)) out.push(`${(n.textContent || '').trim().slice(0, 40)} [${ratio.toFixed(2)}:1, ${cs.color}]`);
-        }
-        return out;
-      });
-      failures.push(...f.map((x) => `${label}: ${x}`));
-    };
+    const scan = async (label: string) => failures.push(...(await contrastFailures(page, '.inv')).map((x) => `${label}: ${x}`));
     await page.goto(`/#${INV}`);
     await scan('forside');
     await signIn(page, INV);

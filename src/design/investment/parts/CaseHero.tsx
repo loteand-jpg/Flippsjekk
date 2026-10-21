@@ -1,4 +1,5 @@
 import { TriangleAlert } from 'lucide-react';
+import type { SaleDebtStatus } from '../../../components/analysis/saleDebtStatus';
 import { recommendedBidOf } from '../../../calc/engine';
 import type { PropertyContext } from '../../../components/analysis/shared';
 import { formatMonths, formatNOK, formatPct } from '../../../lib/format';
@@ -8,12 +9,13 @@ import { OutcomeRange } from '../charts/OutcomeRange';
 import { CountUp } from '../CountUp';
 import { limitRows } from '../model/charts';
 import { KpiDark, Tag } from '../ui';
+import { DebtStatus } from './DebtStatus';
 
 /**
  * «Investeringscase»: toppseksjonen som svarer på det en investor spør om først – hvor høyt kan jeg by, hva kan jeg tjene,
  * hva er oppsiden og nedsiden, hvor mye kapital binder det og hvor lenge. Alle tall er motorens; tallene animeres bare når de endres.
  */
-export function CaseHero({ ctx, activeTitle, recommendedTitle }: { ctx: PropertyContext; activeTitle: string | null; recommendedTitle: string | null }) {
+export function CaseHero({ ctx, activeTitle, recommendedTitle, debtStatus = [] }: { ctx: PropertyContext; activeTitle: string | null; recommendedTitle: string | null; debtStatus?: SaleDebtStatus[] }) {
   const ev = ctx.result.evaluation;
   const b = ev.base;
   const bid = recommendedBidOf(ev);
@@ -34,6 +36,9 @@ export function CaseHero({ ctx, activeTitle, recommendedTitle }: { ctx: Property
           {recommendedTitle && activeTitle === recommendedTitle ? <Tag dark tone="pos">Anbefalt scenario</Tag> : recommendedTitle ? <Tag dark tone="warn">Anbefalt: {recommendedTitle}</Tag> : <Tag dark tone="neutral">Ingen scenario kan anbefales ennå</Tag>}
         </p>
       </div>
+
+      {/* Fellesgjeld ved salg: vises før maksbud og fortjeneste, så tallene ikke leses som sikre når kontantprisen ikke kan fastsettes */}
+      <DebtStatus statuses={debtStatus} dark testId="inv-debt-status" />
 
       <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* Maksbud */}
