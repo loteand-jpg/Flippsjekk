@@ -266,3 +266,28 @@ test('lagrede private scenarioer påvirkes ikke av rangeringen eller av å bytte
   await page.locator('#scenario-select').selectOption({ label: 'Høy pris' });
   await expect(price).toHaveValue(/3\s?400\s?000/);
 });
+
+test('fellesgjeld ved salg: totalverdien beholdes, og kontantprisen og alle scenarioene følger brukerens gjeld', async ({ page }) => {
+  await openElvekanten(page, 'Min kalkyle');
+  const normal = page.getByLabel('Normal', { exact: true });
+  const low = page.getByLabel('Lav', { exact: true });
+  const high = page.getByLabel('Høy', { exact: true });
+  await expect(normal).toHaveValue(/^4\s050\s000$/);
+  const before = await rankProfits(page);
+
+  // Brukeren setter fellesgjeld ved salg til 200 000: markedsmotorens totalverdi (4 050 000 + 0) er uendret, så kontant faller til 3 850 000
+  const debt = page.getByRole('textbox', { name: 'Fellesgjeld ved salg', exact: true });
+  await debt.fill('200 000');
+  await debt.blur();
+  await expect(normal).toHaveValue(/^3\s850\s000$/);
+  await expect(low).toHaveValue(/^3\s721\s000$/); // 3 921 000 − 200 000
+  await expect(high).toHaveValue(/^3\s980\s000$/);
+  const after = await rankProfits(page);
+  // Alle tre scenarioene bruker samme gjeld og beholder sin totalverdi: kontantsalget – og dermed fortjenesten – er 200 000 lavere
+  for (const t of Object.keys(before)) expect(after[t] - before[t], t).toBe(-200_000);
+
+  // Tilbakestill til grunnlaget: verdiene er tilbake
+  await debt.locator('xpath=ancestor::*[.//button[normalize-space(.)="Tilbakestill"]][1]').getByRole('button', { name: 'Tilbakestill' }).click();
+  await expect(normal).toHaveValue(/^4\s050\s000$/);
+  expect(await rankProfits(page)).toEqual(before);
+});

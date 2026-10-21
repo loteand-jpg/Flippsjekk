@@ -146,6 +146,26 @@ Agenten kan ikke levere en helt uavhengig salgsverdi som konkurrerer med markeds
 
 **Referanseklassifisering:** planløsningslikhet varierer per scenario, så `referenceClassification: [{ comparableId, layoutMatch, note }]` gjelder for scenarioet. Et alternativ uten klassifisering for en referanse har **ukjent** planløsningslikhet (ikke samme som basis).
 
+### 5.1 Fellesgjeld ved salg: totalpris, kontantpris og gjeld henger alltid sammen
+
+**Slik er representasjonen i koden.** `ScenarioValues.saleBasis` er `kontant` eller `total`, og `saleLow/Base/High` er oppgitt i det grunnlaget. Kalkylemotoren regner kontantsalget som `S = V − D1` for totalpris (`D1` = brukerens `debtAtSale`, påkrevd, og det er en feil om `V < D1`) og `S = V` for kontantpris (`D1` spiller ingen rolle). Markedsmotoren regner alltid en **totalverdi** (kr/m² × areal); er prisgrunnlaget `kontant`, trekker den fra fellesgjelden den fikk oppgitt (`MarketEstimate.estimate.debtSubtracted`, videreført som `ResolvedSale.debtBasis`) og leverer kontantverdier med den gjelden «bakt inn». Agentens egne estimater og eldre analyser er oppgitt direkte i sitt grunnlag, uten kjent totalverdi.
+
+**Feilen som er rettet.** Overstyrte brukeren fellesgjeld ved salg, kunne kontantverdiene markedsmotoren hadde regnet ut (med analysens gjeld) komme i utakt med brukerens gjeld: gjelden ble trukket fra med ett tall i verdiene og brukt med et annet i kalkylen. Det gjaldt både i brukerens egen kalkyle og i sammenligningen av analysescenarioene.
+
+**Regelen.** **Når salgsverdien er oppgitt som totalpris inkludert fellesgjeld, beholdes totalverdien, og kontant salgsverdi beregnes som totalpris minus brukerens fellesgjeld ved salg.** Det samme gjelder kontantverdier som markedsmotoren har avledet av en totalverdi: totalverdien (kontant + gjelden den ble avledet med) beholdes, og bare fordelingen mellom kontantpris og fellesgjeld endres. Funksjonen `resolveSalePricesForDebt` ([src/calc/saleValue.ts](../src/calc/saleValue.ts)) er den ene definisjonen:
+
+| Grunnlag | Hva skjer når brukerens gjeld endres |
+| --- | --- |
+| totalpris | verdiene beholdes; kontant = totalpris − gjeld (motoren trekker gjelden nøyaktig én gang) |
+| kontantpris avledet av totalverdi (`debtBasis` kjent) | totalverdien = kontant + `debtBasis` beholdes; ny kontant = totalverdi − brukerens gjeld |
+| kontantpris oppgitt direkte (agent, eldre analyse) | ingen endring – kontantprisen er kontantprisen |
+| gjeld ukjent der konverteringen krever den | verdiene beholdes uendret og det meldes `gjeld_ukjent` (aldri 0) |
+| gjeld større enn totalverdien | den verdien blir `null` og det meldes `gjeld_over_totalverdi` (ingen negativ kontantpris); motoren gir da ufullstendig/ugyldig kalkyle med tydelig årsak |
+
+Low, base og high behandles likt. Eksempel: totalverdi 4 000 000 kr og gjeld 300 000 kr gir kontant 3 700 000 kr; settes gjelden til 200 000 kr blir kontant 3 800 000 kr, og totalverdien er fortsatt 4 000 000 kr.
+
+**Hvor den brukes (én gang, delt):** brukerens kalkyle (`saleValuesAfterDebtChange`, kalt fra feltet «Fellesgjeld ved salg» i alle designvarianter; verdier brukeren selv har overstyrt røres ikke), sammenligningen av analysescenarioene og «Bruk i dette scenarioet» (`overlayAnalysisScenario` / `analysisScenarioValues`). Brukerens private fellesgjeld lever bare i hans kalkyle: den delte analysen og andre brukere påvirkes ikke, og lagrede private scenarioer endres ikke.
+
 ## 6. Oppfrisking: 30-dagersregelen (grundig markedsoppfriskning)
 
 En analyse som er **eldre enn 30 dager** (`FRESHNESS.marketRefreshAfterDays`) utløser normalt en **grundigere markedsoppfriskning** (jobbtype `market_refresh`), ikke en full teknisk hovedanalyse. Policy: [src/domain/refreshPolicy.ts](../src/domain/refreshPolicy.ts).
@@ -291,7 +311,9 @@ Rangeringen svarer på «hvilket analysescenario er best ved samme kjøpspris og
 
 **«Bruk i dette scenarioet»** (`applyScenarioToDraft`) bruker samme overlay: kjøpspris, finansiering, rente, egenkapital, mål, timekrav, egeninnsats og oppgjørstid beholdes, mens tiltak, salgsverdi og oppussingstid byttes (ulagret til brukeren lagrer).
 
-**Begrensning.** Scenarioets salgsverdi er fastsatt av markedsmotoren med analysens fellesgjeld ved salg. Overstyrer brukeren fellesgjeld ved salg samtidig som prisgrunnlaget er totalpris, regnes ikke salgsverdien om. «Lag eget scenario» oppretter fortsatt et nytt privat scenario fra scenarioets grunnverdier (profilens standarder), ikke fra aktiv kalkyle.
+**Fellesgjeld ved salg** er en felles brukerforutsetning i sammenligningen (§5.1): hvert scenarios totalverdi beholdes, og kontantverdien fordeles mot brukerens gjeld likt for Basis, A og B.
+
+**Begrensning.** «Lag eget scenario» oppretter fortsatt et nytt privat scenario fra scenarioets grunnverdier (profilens standarder), ikke fra aktiv kalkyle.
 
 ## 12. Migrering
 
