@@ -25,12 +25,15 @@ async function openElvekanten(page: Page, base: string) {
 }
 
 test.describe('designgalleri', () => {
-  test('/design viser Original, Finance, Investment og «kommer senere» for Property', async ({ page }) => {
+  test('/design viser alle fire varianter som tilgjengelige: Original, Finance, Investment og Property', async ({ page }) => {
     await page.goto('/#/design');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/design/i);
     for (const id of ['original', 'finance', 'investment', 'property']) await expect(page.getByTestId(`variant-${id}`)).toBeVisible();
-    await expect(page.getByTestId('variant-investment')).toContainText(/tilgjengelig/i);
-    await expect(page.getByTestId('variant-property')).toContainText(/kommer senere/i);
+    for (const id of ['original', 'finance', 'investment', 'property']) {
+      await expect(page.getByTestId(`variant-${id}`)).toContainText(/tilgjengelig/i);
+      await expect(page.getByTestId(`variant-${id}`)).not.toContainText(/kommer senere/i);
+      await expect(page.getByTestId(`variant-${id}`).getByRole('link').first()).toBeVisible();
+    }
     await noHorizontalScroll(page);
   });
 
@@ -46,11 +49,12 @@ test.describe('designgalleri', () => {
     await expect(page.getByRole('heading', { level: 1 })).not.toContainText(/Vit hva du maksimalt/);
   });
 
-  test('/design/original sender til Original, og «kommer senere»-siden for Property åpnes', async ({ page }) => {
+  test('/design/original sender til Original, og Property åpnes på sitt eget rutertre', async ({ page }) => {
     await page.goto('/#/design/original');
     await expect(page).toHaveURL(/#\/$/);
     await page.goto('/#/design/property');
-    await expect(page.getByText(/kommer senere/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/Se potensialet før du byr/);
+    await expect(page.getByText(/kommer senere/i)).toHaveCount(0);
   });
 
   test('direkte inngang og oppdatering av siden i Finance (dypeste lenker)', async ({ page }) => {
