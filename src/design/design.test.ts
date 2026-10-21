@@ -3,14 +3,15 @@ import { bidMargin, equityLine, floorToThousand, formatResult, hourlyLine, maxBi
 import { VARIANTS, routingVariantFromHash, variantHref } from './variants';
 
 describe('designvarianter og ruting', () => {
-  it('har Original, Finance og Investment tilgjengelig og Property som «kommer senere»', () => {
+  it('har alle fire varianter tilgjengelige: Original, Finance, Investment og Property', () => {
     const by = Object.fromEntries(VARIANTS.map((v) => [v.id, v]));
     expect(by.original.status).toBe('available');
     expect(by.finance.status).toBe('available');
     expect(by.investment.status).toBe('available');
-    expect(by.property.status).toBe('soon');
+    expect(by.property.status).toBe('available');
     // Hver tilgjengelige variant har egen inngang og fargeprøver til galleriet
-    for (const id of ['original', 'finance', 'investment']) expect(by[id].swatches.length).toBeGreaterThan(0);
+    for (const id of ['original', 'finance', 'investment', 'property']) expect(by[id].swatches.length).toBeGreaterThan(0);
+    expect(VARIANTS.map((v) => v.id)).toEqual(['original', 'finance', 'investment', 'property']);
   });
 
   it('velger rutertre ut fra adressen – også ved direkte åpning og oppdatering av siden', () => {
@@ -30,12 +31,17 @@ describe('designvarianter og ruting', () => {
     expect(routingVariantFromHash('#/design/investment/oversikt')).toBe('investment');
     expect(routingVariantFromHash('#/design/investment/objekter/abc?fane=kalkyle')).toBe('investment');
     expect(routingVariantFromHash('#/design/investmentX')).toBe('original');
-    expect(routingVariantFromHash('#/design/property')).toBe('original');
+    expect(routingVariantFromHash('#/design/property')).toBe('property');
+    expect(routingVariantFromHash('#/design/property/')).toBe('property');
+    expect(routingVariantFromHash('#/design/property/oversikt')).toBe('property');
+    expect(routingVariantFromHash('#/design/property/objekter/abc?fane=kalkyle')).toBe('property');
+    expect(routingVariantFromHash('#/design/propertyX')).toBe('original');
   });
 
   it('gir hash-lenker inn i hver variant', () => {
     expect(variantHref('finance')).toBe('#/design/finance');
     expect(variantHref('investment')).toBe('#/design/investment');
+    expect(variantHref('property')).toBe('#/design/property');
     expect(variantHref('original').startsWith('#/')).toBe(true);
   });
 });

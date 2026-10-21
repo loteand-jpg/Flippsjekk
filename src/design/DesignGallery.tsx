@@ -1,5 +1,4 @@
 import { ArrowRight, Check, Clock } from 'lucide-react';
-import { Link } from 'react-router';
 import { Logo } from '../components/layout/AppShell';
 import { VARIANTS, variantHref, type DesignVariant } from './variants';
 
@@ -73,22 +72,9 @@ export function DesignGallery() {
       </ul>
       <p className="mt-8 text-xs text-slate-600">
         Dagens versjon er bevart i Git: grenen <code>main</code> og tag <code>pre-design-baseline</code>. Finance ligger på grenen <code>design-finance</code> (tag <code>design-finance-v1</code>),
-        Investment på <code>design-investment</code>. Direktelenker: <code>#/design/original</code>, <code>#/design/finance</code> og <code>#/design/investment</code>.
+        Investment på <code>design-investment</code> (tagger <code>design-investment-v1</code> og <code>design-investment-v2</code>), Property på <code>design-property</code>. Direktelenker: <code>#/design/original</code>, <code>#/design/finance</code>,{' '}
+        <code>#/design/investment</code> og <code>#/design/property</code>.
       </p>
-    </div>
-  );
-}
-
-export function DesignComingSoon({ id }: { id: 'property' }) {
-  const v = VARIANTS.find((x) => x.id === id)!;
-  return (
-    <div className="mx-auto max-w-lg px-4 py-20 text-center">
-      <Logo />
-      <h1 className="mt-8 text-2xl font-semibold">{v.name} – kommer senere</h1>
-      <p className="mt-2 text-sm text-slate-600">Denne designvarianten er ikke bygget ennå.</p>
-      <Link to="/design" className="mt-6 inline-flex h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-medium hover:bg-slate-50">
-        Til designforslagene
-      </Link>
     </div>
   );
 }

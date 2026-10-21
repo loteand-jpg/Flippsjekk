@@ -1,0 +1,285 @@
+/*
+ * Property – designtokens og hjelpeklasser.
+ *
+ * Alt er avgrenset til .prop, så Original, Finance og Investment ikke påvirkes. Delte komponenter bruker Tailwind-fargene pine (primær)
+ * og slate (nøytral) som CSS-variabler; de settes om her slik at kalender, konto, kurs osv. får uttrykket uten å kopieres.
+ *
+ * Retning: boligorientert og redaksjonelt. Varm off-white/sand/kalkstein som flater, mørk brun-grå som blekk, dempet grønn som
+ * primærfarge og arkitektblå som aksent for plan og informasjon. Serif i overskrifter, stor skrift og god luft; tallene står i
+ * tabulær sans. Ingen glansbilder: bilde og plantegning er tydelig merkede plassholdere til datakilden leverer dem.
+ * Kontrast er målt (se docs/design-varianter.md).
+ */
+.prop {
+  /* Primærfarge: dempet grønn (erstatter «pine») */
+  --color-pine-50: #f0f4ec;
+  --color-pine-100: #dfe9da;
+  --color-pine-200: #c2d5ba;
+  --color-pine-300: #9ab98f;
+  --color-pine-400: #6f9666;
+  --color-pine-500: #547c4c;
+  --color-pine-600: #44663d;
+  --color-pine-700: #385532;
+  --color-pine-800: #2d452a;
+  --color-pine-900: #243823;
+  --color-pine-950: #131f13;
+  /* Nøytrale: varm kalkstein (erstatter «slate») */
+  --color-slate-50: #faf7f1;
+  --color-slate-100: #f2ede2;
+  --color-slate-200: #e6dfcf;
+  --color-slate-300: #d3cab5;
+  --color-slate-400: #8f846d;
+  --color-slate-500: #665c4b;
+  --color-slate-600: #5b5244;
+  --color-slate-700: #443d32;
+  --color-slate-800: #2f2a22;
+  --color-slate-900: #211d17;
+  --color-slate-950: #14110d;
+  --color-canvas: #f6f2ea;
+  --color-ink: #2b2622;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.375rem;
+
+  /* Property-spesifikke tokens */
+  --prop-paper: #fffdf9;
+  --prop-sand: #ece4d2;
+  --prop-sand-2: #f2ede2;
+  --prop-stone: #d9d0bc;
+  --prop-line: #ddd5c3;
+  --prop-line-strong: #c3b9a2;
+  --prop-dark: #2b2622;
+  --prop-dark-2: #3a342d;
+  --prop-on-dark: #f6f2ea;
+  --prop-on-dark-muted: #cdc3ac;
+  --prop-green: #547c4c;
+  --prop-blue: #2a5a85;
+  --prop-blue-bg: #e3edf6;
+  --prop-blue-line: #9db8d1;
+  --prop-pos: #2f6b3c;
+  --prop-pos-bg: #e8f1e4;
+  --prop-neg: #a2392b;
+  --prop-neg-bg: #fbe9e5;
+  --prop-warn: #85560f;
+  --prop-warn-bg: #f8ecd2;
+  /* På mørk flate */
+  --prop-pos-d: #9fc794;
+  --prop-neg-d: #f0a090;
+  --prop-warn-d: #e5bd6a;
+  --prop-blue-d: #a9c8e6;
+  --prop-head: ui-serif, 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Times New Roman', serif;
+
+  min-height: 100dvh;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.prop .prop-serif {
+  font-family: var(--prop-head);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+.prop .prop-fig,
+.prop .num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+.prop .prop-fig {
+  white-space: nowrap;
+}
+
+.prop .prop-label {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-slate-600);
+}
+.prop .prop-dark .prop-label {
+  color: var(--prop-on-dark-muted);
+}
+
+.prop :focus-visible {
+  outline: 2px solid var(--prop-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.prop .prop-dark :focus-visible {
+  outline-color: #a9c8e6;
+}
+
+.prop dialog::backdrop {
+  background: rgb(36 30 24 / 0.55);
+}
+
+/* Mørk «tittelblokk» (som på en arkitekttegning): maksbud og de viktigste tallene */
+.prop .prop-dark {
+  color: var(--prop-on-dark);
+  background: var(--prop-dark);
+}
+.prop .prop-muted-d {
+  color: var(--prop-on-dark-muted);
+}
+
+/* Tegnebrett for plassholdere: fint rutenett, ingen bilde. Merket med tekst – aldri et falskt bilde eller en falsk plantegning. */
+.prop .prop-plate {
+  background-color: var(--prop-sand-2);
+  background-image:
+    linear-gradient(to right, rgb(91 82 68 / 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(91 82 68 / 0.1) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+}
+.prop .prop-plate-plan {
+  background-color: #f1f5f9;
+  background-image:
+    linear-gradient(to right, rgb(42 90 133 / 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(42 90 133 / 0.1) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+}
+
+/* Overgang mellom versjoner: innholdet glir rolig inn. Kort, ingen scrolljacking. */
+@keyframes prop-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.prop .prop-swap {
+  animation: prop-rise 280ms cubic-bezier(0.2, 0.7, 0.2, 1) 1;
+}
+@keyframes prop-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.prop .prop-fadein {
+  animation: prop-fade 220ms ease-out 1;
+}
+@keyframes prop-flash {
+  0% {
+    background-color: rgb(157 184 209 / 0.45);
+  }
+  100% {
+    background-color: rgb(157 184 209 / 0);
+  }
+}
+.prop .prop-flash {
+  animation: prop-flash 900ms ease-out 1;
+  border-radius: 0.375rem;
+}
+.prop .prop-bar {
+  transition: width 420ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+/* Pilen i «fra dette → til dette» tegnes inn én gang når versjonen byttes */
+@keyframes prop-arrow {
+  from {
+    transform: translateX(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.prop .prop-arrow {
+  animation: prop-arrow 360ms cubic-bezier(0.2, 0.7, 0.2, 1) 1;
+}
+
+.prop summary {
+  list-style: none;
+}
+.prop summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prop *,
+  .prop *::before,
+  .prop *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Delte markedsblokker: tre store tall ved siden av hverandre blir for trange på smale skjermer. */
+@media (max-width: 480px) {
+  .prop .num.grid-cols-3 .text-lg {
+    font-size: 0.875rem;
+    letter-spacing: -0.01em;
+  }
+}
+
+/*
+ * Delte (Original-)blokker i fanene har tabeller som kan bli bredere enn en smal skjerm med store beløp. På smale skjermer får de rulle
+ * sideveis inni seg selv (med litt luft mellom kolonnene) i stedet for å gjøre hele siden bredere. På bredere skjermer er de vanlige tabeller.
+ * Gjelder bare Property.
+ */
+@media (max-width: 767px) {
+  .prop [role='tabpanel'] table.num {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .prop [role='tabpanel'] table.num th,
+  .prop [role='tabpanel'] table.num td {
+    padding-inline: 0.5rem;
+  }
+}
+.prop [role='tabpanel'] .grid > * {
+  min-width: 0;
+}
+
+/* Berøringsflater på mobil og nettbrett: delte knapper og forklaringsikoner får minst 44 px treffflate. */
+@media (max-width: 1023px) {
+  .prop main button:not([role='tab']) {
+    min-height: 44px;
+  }
+  .prop main button[aria-label^='Forklaring'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -12px;
+  }
+}
+
+/* WCAG 2.2 (målstørrelse 24 px): små ikonknapper og avkrysningsfelt i delte blokker får større treffflate også på desktop. */
+@media (min-width: 1024px) {
+  .prop main button[aria-label^='Forklaring'] {
+    min-width: 24px;
+    min-height: 24px;
+  }
+}
+.prop input[type='checkbox'],
+.prop input[type='radio'] {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.prop input[type='range'] {
+  min-height: 1.5rem;
+}
+
+/* Fokus og anker-hopp skal ikke havne bak den klebrige toppen eller bunnstripen (WCAG 2.4.11). */
+html:has(.prop) {
+  scroll-padding-top: 5.5rem;
+  scroll-padding-bottom: 8rem;
+}
+.prop [data-prop-section] {
+  scroll-margin-top: 5.5rem;
+}
