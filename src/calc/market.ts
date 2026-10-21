@@ -263,7 +263,17 @@ export interface MarketEstimate {
   };
   anchor: { weightedMedianPerM2: number | null; weightedMeanPerM2: number | null; spreadPct: number | null; used: number };
   /** Estimat i målets prisgrunnlag, avrundet til nærmeste 1 000. null ved «for usikkert». */
-  estimate: { low: number; base: number; high: number; basis: PriceBasis } | null;
+  estimate: {
+    low: number;
+    base: number;
+    high: number;
+    basis: PriceBasis;
+    /**
+     * Fellesgjelden markedsmotoren trakk fra totalverdien for å gi kontantpris (0 når estimatet er totalpris). Kontantverdiene har
+     * denne gjelden «bakt inn»; totalverdien er kontantverdi + denne. Brukes til å rebalansere når brukerens fellesgjeld ved salg er en annen.
+     */
+    debtSubtracted: number;
+  } | null;
   halfWidthPct: number | null;
   /** Hva som flyttet normalverdien bort fra rent statistisk anker (alle prosent er av totalverdien). */
   positioning: {
@@ -727,7 +737,7 @@ export function weighMarket(target: MarketTarget, comparables: readonly MarketCo
     reason: null,
     quality,
     anchor,
-    estimate: { low: roundK(lowTotal - debt), base: roundK(baseTotal - debt), high: roundK(highTotal - debt), basis: target.basis },
+    estimate: { low: roundK(lowTotal - debt), base: roundK(baseTotal - debt), high: roundK(highTotal - debt), basis: target.basis, debtSubtracted: debt },
     halfWidthPct: halfWidth,
     positioning: { anchorBase: roundK(anchorTotal - debt), activeSignalPct: cappedSignalPct, anchorAdjustmentPct, notes: positionNotes },
     standardDocumented: target.standardDocumented,
