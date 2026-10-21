@@ -84,6 +84,11 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
                     <Badge tone={m.feasibility === 'klar' ? 'green' : m.feasibility === 'ikke_gjennomforbar' ? 'red' : 'amber'}>{FEASIBILITY_LABEL[m.feasibility]}</Badge>
                   </p>
                   <p className="text-[11px] text-slate-500">{inf.source}</p>
+                  {inf.saleIssues.length > 0 && (
+                    <p className="mt-0.5 text-[11px] text-amber-900" data-testid="rank-sale-issue">
+                      {inf.saleIssues[0].message}
+                    </p>
+                  )}
                 </div>
                 <p className="num text-right text-sm font-semibold">{r.composite === null ? 'Rangeres ikke' : `Samlet ${Math.round(r.composite)} · plass ${r.position}`}</p>
               </div>

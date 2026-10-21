@@ -2,6 +2,7 @@ import type { RiskBand } from '../domain/assessment';
 import { resolveAnalysisScenarios, type ResolvedAnalysisScenario } from '../domain/analysisScenarios';
 import type { Property, PropertySnapshot, ProfileDefaults, ScenarioValues, SharedAnalysis } from '../domain/schemas';
 import { QUALITY_TIER_LABEL, type MarketComparable } from './market';
+import type { SaleDebtIssue } from './saleValue';
 import { rankScenarios, type RankInput, type RankingResult } from './ranking';
 import { resolveScenarioSale } from './saleValue';
 import { analysisScenarioValues, evaluateScenario } from './scenario';
@@ -10,7 +11,8 @@ import { analysisScenarioValues, evaluateScenario } from './scenario';
  * Automatisk sammenligning av analysens scenarioer (Basis, Alternativ A, Alternativ B) under ÉN felles økonomisk ramme.
  *
  * Rammen er brukerens aktive kalkyle (`draft`): kjøpspris, kjøpskostnader, finansiering, rente, egenkapital, mål, timekrav,
- * arbeidsmodus, kompetanse, salgskostnader, skatt og oppgjørstid er like for alle scenarioene. Bare det som faktisk er
+ * arbeidsmodus, kompetanse, salgskostnader, skatt, fellesgjeld ved salg og oppgjørstid er like for alle scenarioene (totalverdien i
+ * scenarioets salgsverdi beholdes, og fordelingen mellom kontantpris og fellesgjeld følger brukerens gjeld). Bare det som faktisk er
  * scenariospesifikt (tiltak, salgsverdi, oppussingstid, risiko, gjennomførbarhet) varierer – se `SCENARIO_FIELD_CLASS`.
  * Dermed svarer rangeringen på «hvilket scenario er best ved samme kjøpspris og samme brukerforutsetninger?».
  *
@@ -24,6 +26,8 @@ export interface ScenarioComparisonRow {
   marketTier: string | null;
   /** Fullt sett verdier scenarioet er evaluert med. */
   values: ScenarioValues;
+  /** Problemer med fellesgjeld ved salg for dette scenarioet (ukjent gjeld, gjeld over totalverdi). Tom i normaltilfellet. */
+  saleIssues: SaleDebtIssue[];
 }
 
 export interface ScenarioComparison {
@@ -54,13 +58,16 @@ export function buildScenarioComparison(args: {
   for (const d of defs) {
     let values: ScenarioValues | null = null;
     let source = '';
+    let saleIssues: SaleDebtIssue[] = [];
     if (activeId === d.id) {
       // Scenarioet brukeren jobber i: kalkylen hennes (også eventuelle private endringer i selve scenarioet).
       values = draft;
       source = `Din kalkyle: ${activeName}`;
     } else if (snapshot) {
       // De andre scenarioene: samme felles forutsetninger som kalkylen din, med scenarioets egne tiltak, salgsverdi og oppussingstid.
-      values = analysisScenarioValues({ property, snapshot, analysis, defaults, user: draft, analysisScenarioId: d.id }).values;
+      const o = analysisScenarioValues({ property, snapshot, analysis, defaults, user: draft, analysisScenarioId: d.id });
+      values = o.values;
+      saleIssues = o.saleIssues;
       source = 'Scenarioets egne tall med dine forutsetninger';
     }
     if (!values) continue;
@@ -75,6 +82,7 @@ export function buildScenarioComparison(args: {
       source,
       marketTier: tier ? QUALITY_TIER_LABEL[tier] : null,
       values,
+      saleIssues,
     });
   }
   return { defs, rows, result: rankScenarios(rows.map((r) => r.input)), activeId };
