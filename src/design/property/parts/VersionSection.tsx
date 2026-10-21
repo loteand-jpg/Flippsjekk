@@ -65,7 +65,7 @@ function VersionTabs({ versions, viewId, onSelect }: { versions: VersionView[]; 
                 </span>
               )}
             </span>
-            <span className="prop-serif mt-1 hidden text-[1.0625rem] leading-snug sm:line-clamp-2 sm:block">{v.def.title}</span>
+            <span className="prop-serif sr-only text-[1.0625rem] leading-snug sm:not-sr-only sm:mt-1 sm:line-clamp-2 sm:block">{v.def.title}</span>
             <span className="mt-1 text-xs text-slate-700 sm:mt-1.5 sm:text-sm">{v.def.saleSource === 'global' ? 'Ikke vurdert' : bedroomsText(v.def.endProduct.bedrooms)}</span>
             {v.b ? <span className="prop-fig mt-1 text-[0.9375rem] font-semibold sm:text-lg">{mill(v.b.V)}</span> : <span className="mt-1 text-xs font-medium text-slate-600 sm:text-sm">Ikke beregnet</span>}
             <span className="mt-0.5 block text-[11px] text-slate-600">Fortjeneste (kr)</span>
@@ -166,7 +166,7 @@ export function VersionSection({
         )}
         {!view.active && (
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-[var(--prop-blue-bg)] p-3 text-sm text-ink" role="status">
-            <p className="min-w-0 flex-1">
+            <p className="min-w-0 flex-1 basis-full sm:basis-0">
               Du ser på <strong>{view.short}</strong>. Kalkylen din bruker fortsatt <strong>{versions.find((v) => v.active)?.short ?? 'en annen versjon'}</strong> – ingenting er endret.
             </p>
             <button

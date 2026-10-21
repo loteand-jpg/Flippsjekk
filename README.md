@@ -147,7 +147,7 @@ docs/            datamodell, agentkontrakt, formater, integrasjoner og eksempelf
 - [docs/agentkontrakt.md](docs/agentkontrakt.md): kontrakten agenten skal levere, med komplett eksempel ([docs/eksempel-agent-analyse.json](docs/eksempel-agent-analyse.json))
 - [docs/formater.md](docs/formater.md): import v1 (mapping og regler) og eksportformat for scenarioer
 - [docs/integrasjoner.md](docs/integrasjoner.md): hva som er mock, og hva som gjenstår før kommersiell lansering
-- [docs/design-varianter.md](docs/design-varianter.md): designvarianter (Original, Finance og Investment), galleriet på `#/design`, hvordan hver variant hentes tilbake (`pre-design-baseline`, `design-finance-v1`, `design-investment`) og hvordan en ny variant legges til
+- [docs/design-varianter.md](docs/design-varianter.md): designvarianter (Original, Finance, Investment og Property), galleriet på `#/design`, hvordan hver variant hentes tilbake (`pre-design-baseline`, `design-finance-v1`, `design-investment-v1`/`-v2`, grenen `design-property`) og hvordan en ny variant legges til
 
 ## Begrensninger i denne versjonen
 

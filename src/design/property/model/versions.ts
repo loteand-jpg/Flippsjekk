@@ -99,8 +99,8 @@ export function versionDelta(alt: VersionView, base: VersionView): VersionDelta 
     tone: 'neutral',
   });
   facts.push({ id: 'months', label: 'Tid', text: d.months === 0 ? 'Like lang tid' : `${signedNumber(d.months, 'mnd')}`, tone: 'neutral' });
-  facts.push({ id: 'sale', label: 'Salgsverdi', text: d.sale === 0 ? 'Lik salgsverdi' : `Salgsverdi ${signedNOK(d.sale)}`, tone: d.sale === 0 ? 'neutral' : d.sale > 0 ? 'pos' : 'neg' });
-  facts.push({ id: 'profit', label: 'Fortjeneste', text: d.netProfit === 0 ? 'Lik fortjeneste' : `Fortjeneste ${signedNOK(d.netProfit)}`, tone: d.netProfit === 0 ? 'neutral' : d.netProfit > 0 ? 'pos' : 'neg' });
+  facts.push({ id: 'sale', label: 'Salgsverdi', text: d.sale === 0 ? 'Lik salgsverdi' : signedNOK(d.sale), tone: d.sale === 0 ? 'neutral' : d.sale > 0 ? 'pos' : 'neg' });
+  facts.push({ id: 'profit', label: 'Fortjeneste', text: d.netProfit === 0 ? 'Lik fortjeneste' : signedNOK(d.netProfit), tone: d.netProfit === 0 ? 'neutral' : d.netProfit > 0 ? 'pos' : 'neg' });
   if (alt.ranked && base.ranked) {
     const r = alt.ranked.metrics.riskPoints - base.ranked.metrics.riskPoints;
     facts.push({ id: 'risk', label: 'Risiko', text: r === 0 ? 'Lik risiko' : r > 0 ? 'Høyere risiko' : 'Lavere risiko', tone: r === 0 ? 'neutral' : r > 0 ? 'neg' : 'pos' });

@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { ArchiveRestore, ArrowLeft, ArrowRight, ExternalLink, Ruler, Star, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import type { SaleDebtStatus } from '../../../components/analysis/saleDebtStatus';
@@ -23,6 +24,7 @@ import { jumpTo } from './jump';
 function HouseHeader({ p }: { p: PropertyViewProps }) {
   const { it, analysis, state, actions, ctx } = p;
   const snap = it.snapshot;
+  const title = it.link.label ?? it.property.address;
   const facts = [
     { k: 'Bruksareal', v: snap?.areaBRAi != null ? formatArea(snap.areaBRAi) : null },
     { k: 'Soverom', v: snap?.bedrooms != null ? String(snap.bedrooms) : null },
@@ -38,8 +40,8 @@ function HouseHeader({ p }: { p: PropertyViewProps }) {
         {[it.property.district, it.property.city].filter(Boolean).join(', ')} · {PROPERTY_TYPE_LABEL[it.property.propertyType]} · {TENURE_LABEL[it.property.tenure]}
       </p>
       <div className="flex items-start gap-2">
-        <h1 className="prop-serif min-w-0 text-[2rem] leading-[1.08] break-words text-balance sm:text-[2.75rem] lg:text-[3.25rem]" data-testid="prop-title">
-          {it.link.label ?? it.property.address}
+        <h1 className={clsx('prop-serif min-w-0 leading-[1.08] break-words text-balance', title.length > 26 ? 'text-[1.625rem] sm:text-[2.25rem] lg:text-[2.75rem]' : 'text-[2rem] sm:text-[2.75rem] lg:text-[3.25rem]')} data-testid="prop-title">
+          {title}
         </h1>
         <button
           type="button"

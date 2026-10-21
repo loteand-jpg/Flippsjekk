@@ -90,8 +90,9 @@ function HowHigh({ view, ctx }: { view: VersionView; ctx: PropertyContext }) {
       )}
 
       {at && (
-        <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-white/10 pt-5" data-testid="prop-at-bid">
-          <div className="col-span-2 -mb-2"><p className="prop-label">Ved et bud på {formatNOK(at.price)}</p></div>
+        <div className="mt-5 border-t border-white/10 pt-5" data-testid="prop-at-bid">
+          <h4 className="prop-label">Ved et bud på {formatNOK(at.price)}</h4>
+          <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-4">
           <div className="min-w-0">
             <dt className="text-xs text-[var(--prop-on-dark-muted)]">Fortjeneste</dt>
             <dd className="prop-fig mt-0.5 text-lg font-semibold" data-testid="prop-at-bid-profit">{formatNOK(at.profit)}</dd>
@@ -109,7 +110,8 @@ function HowHigh({ view, ctx }: { view: VersionView; ctx: PropertyContext }) {
             <dt className="text-xs text-[var(--prop-on-dark-muted)]">Begrensende faktor</dt>
             <dd className="mt-0.5 text-sm font-semibold">{at.limitedBy ? MAX_BID_LIMIT_LABEL[at.limitedBy] : 'Ikke avklart'}</dd>
           </div>
-        </dl>
+          </dl>
+        </div>
       )}
 
       {rows.length > 0 && (

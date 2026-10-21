@@ -288,3 +288,12 @@ html:has(.prop) {
 .prop [data-prop-section] {
   scroll-margin-top: 5.5rem;
 }
+
+/* WCAG 2.2 (målstørrelse 24 px): sammenleggbare overskrifter og frittstående lenker i delte faner. */
+.prop [role='tabpanel'] summary {
+  min-height: 1.5rem;
+  padding-block: 0.25rem;
+}
+.prop [role='tabpanel'] a {
+  padding-block: 0.25rem;
+}

@@ -13,6 +13,8 @@ export function useScrollableAccess(root: RefObject<HTMLElement | null>) {
       let n = el.querySelectorAll('[data-prop-scroll]').length;
       el.querySelectorAll<HTMLElement>('.overflow-x-auto, table.num, [role="tabpanel"] table').forEach((s) => {
         if (s.closest('details:not([open])') && !s.matches('summary *')) return;
+        // Navigasjon og områder med fokuserbart innhold kan allerede nås og rulles med tastatur (og et <nav> kan ikke ha rollen region).
+        if (s.matches('nav') || s.querySelector('a[href], button, input, select, textarea, [tabindex]')) return;
         const scrolls = s.scrollWidth > s.clientWidth + 1;
         if (scrolls && !s.hasAttribute('data-prop-scroll')) {
           s.setAttribute('data-prop-scroll', '');

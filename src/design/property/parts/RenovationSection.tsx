@@ -54,8 +54,14 @@ function GroupCard({ g, open, onToggle, step }: { g: Group; open: boolean; onTog
             </span>
           </span>
           <span className="shrink-0 text-right">
-            <Fig className="block text-base font-semibold">{g.cost === null ? <span className="text-xs font-medium text-slate-600">Kostnad ikke avklart</span> : formatNOK(g.cost)}</Fig>
-            <span className="block text-xs text-slate-600">{g.ownHours === null ? 'timer ikke avklart' : `${formatHours(g.ownHours)} egne`}</span>
+            {g.includedCount === 0 ? (
+              <span className="block text-xs font-medium text-slate-700">Ingen med i kalkylen</span>
+            ) : (
+              <>
+                <Fig className="block text-base font-semibold">{g.cost === null ? <span className="text-xs font-medium text-slate-600">Kostnad ikke avklart</span> : formatNOK(g.cost)}</Fig>
+                <span className="block text-xs text-slate-600">{g.ownHours === null ? 'timer ikke avklart' : `${formatHours(g.ownHours)} egne`}</span>
+              </>
+            )}
           </span>
           <ChevronDown className={clsx('mt-1 size-4 shrink-0 text-slate-600 transition-transform', open && 'rotate-180')} aria-hidden />
         </button>

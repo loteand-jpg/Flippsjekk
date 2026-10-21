@@ -75,7 +75,8 @@ export function groupByRoom(items: readonly RenovationItem[], labor: Partial<Lab
     }
     buckets.get(key)!.push(v);
   }
-  return order.map((k) => summarize(`rom-${k}`, labels.get(k) as string, buckets.get(k) as ItemView[]));
+  // id brukes i aria-controls og må ikke ha mellomrom: indeks gir unike og gyldige id-er.
+  return order.map((k, i) => summarize(`rom-${i}`, labels.get(k) as string, buckets.get(k) as ItemView[]));
 }
 
 /** Arbeidstypene i en veiledende rekkefølge (riving først, overflater sist). Er ikke en tidsplan og sier ingenting om varighet. */

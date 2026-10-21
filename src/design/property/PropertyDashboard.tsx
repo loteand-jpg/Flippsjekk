@@ -176,14 +176,14 @@ function PipelineCards({ rows }: { rows: PropertyRow[] }) {
                 <div className="mt-1.5"><EndProductLine r={r} /></div>
               </div>
             </div>
-            <dl className="grid grid-cols-2 gap-3 border-t border-[var(--prop-line)] bg-[var(--prop-sand-2)]/60 px-4 py-3">
+            <dl className="grid grid-cols-2 gap-x-2 gap-y-3 border-t border-[var(--prop-line)] bg-[var(--prop-sand-2)]/60 px-4 py-3 min-[380px]:gap-x-3">
               <div className="min-w-0">
                 <dt className="prop-label">Maksbud</dt>
-                <dd className="mt-0.5 text-[1.375rem] leading-tight font-semibold">{r.maxBidStatus === 'none' ? <span className="text-sm text-[var(--prop-neg)]">Ingen pris</span> : <Money value={r.maxBid === null ? null : floorToThousand(r.maxBid)} row={r} />}</dd>
+                <dd className="mt-0.5 text-[1.125rem] leading-tight font-semibold min-[380px]:text-[1.375rem]">{r.maxBidStatus === 'none' ? <span className="text-sm text-[var(--prop-neg)]">Ingen pris</span> : <Money value={r.maxBid === null ? null : floorToThousand(r.maxBid)} row={r} />}</dd>
               </div>
               <div className="min-w-0">
                 <dt className="prop-label">Fortjeneste</dt>
-                <dd className="mt-0.5 text-[1.375rem] leading-tight font-semibold"><Money value={r.profit} row={r} signed /></dd>
+                <dd className="mt-0.5 text-[1.125rem] leading-tight font-semibold min-[380px]:text-[1.375rem]"><Money value={r.profit} row={r} signed /></dd>
               </div>
             </dl>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-xs text-slate-700">
