@@ -4,6 +4,7 @@ import { MAX_BID_LIMIT_LABEL, recommendedBidOf } from '../../../calc/engine';
 import { VALUE_ORIGIN_LABEL } from '../../../calc/scenario';
 import { Results, money, pct, useField } from '../../../components/analysis/CalculatorTab';
 import type { PropertyContext } from '../../../components/analysis/shared';
+import { saleDebtHelp } from '../../../components/analysis/saleDebtStatus';
 import { Field, Segmented, Select, Switch } from '../../../components/ui/forms';
 import { Alert } from '../../../components/ui/primitives';
 import { BUYER_TYPE_LABEL, DUTY_BASES, DUTY_BASIS_LABEL, LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, PRICE_BASIS_LABEL, WORK_MODE_LABEL, WORK_MODES, isRegulatedLabor, type DutyBasis, type WorkMode } from '../../../domain/enums';
@@ -292,7 +293,7 @@ export function FinanceCalculator({ ctx }: { ctx: PropertyContext }) {
               <FinNumberField label="Salg høy" unit="kr" formatBase={money} {...withOrigin('saleHigh')} />
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <FinNumberField label="Fellesgjeld ved salg" unit="kr" formatBase={money} {...withOrigin('debtAtSale')} hint={d.saleBasis === 'total' ? 'Trekkes fra totalprisen én gang.' : 'Påvirker ikke kalkylen ved kontantpris.'} />
+              <FinNumberField label="Fellesgjeld ved salg" unit="kr" formatBase={money} {...withOrigin('debtAtSale')} hint={saleDebtHelp({ draft: d, base: ctx.base }).text} />
               <FinNumberField label="Faste salgskostnader" unit="kr" formatBase={money} {...withOrigin('saleFixedCost')} hint="Markedsføring, takst, styling, oppgjør." />
               <FinNumberField label="Meglerprovisjon" unit="%" decimals={2} formatBase={pct} {...withOrigin('saleCommissionPct')} hint="Av kontantsalget." />
               <FinNumberField

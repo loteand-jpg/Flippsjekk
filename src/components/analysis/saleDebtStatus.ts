@@ -57,6 +57,9 @@ export function saleDebtHelp(args: { draft: DraftSale; base: BaseValues | null }
 
 export type SaleDebtSeverity = 'warning' | 'error';
 
+/** Alvorlighet som ord, så den aldri bare kommuniseres med farge eller ikon. */
+export const SALE_DEBT_SEVERITY_LABEL: Record<SaleDebtSeverity, string> = { warning: 'Ikke avklart', error: 'Feil' };
+
 export interface SaleDebtStatus {
   kind: SaleDebtIssueKind;
   /** warning = ikke avklart (verdiene er ikke sikre). error = umulig (kontantprisen kan ikke beregnes). Alvoret står også i teksten. */

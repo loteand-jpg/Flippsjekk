@@ -262,3 +262,52 @@ test.describe('tilgjengelighet i Finance', () => {
     await ctx.close();
   });
 });
+
+test.describe('Finance: fellesgjeld ved salg', () => {
+  async function openFinanceCalc(page: Page, name: RegExp) {
+    await page.goto(`/#/design/finance/oversikt`);
+    await page.getByRole('link', { name }).first().click();
+    await page.getByRole('tab', { name: 'Kalkyle' }).click();
+  }
+
+  test('hjelpeteksten ved feltet forklarer faktisk kilde', async ({ page }) => {
+    await signIn(page, '/design/finance');
+    await openFinanceCalc(page, /Elvekanten 17 B/);
+    await expect(page.getByText('Salgsverdien bygger på en beregnet totalverdi. Endrer du fellesgjelden ved salg, justeres kontantprisen slik at totalverdien beholdes.')).toBeVisible();
+    await openFinanceCalc(page, /Nardoveien 31/);
+    await expect(page.getByText('Trekkes fra totalprisen én gang. Endrer du fellesgjelden, endres kontantdelen av salgsverdien tilsvarende.')).toBeVisible();
+    await openFinanceCalc(page, /Ladeveien 9 A/);
+    await expect(page.getByText('Salgsverdien er oppgitt som kontantpris. Endring i fellesgjeld endrer ikke denne salgsverdien automatisk.')).toBeVisible();
+  });
+
+  test('ukjent og umulig gjeld vises i beslutningstoppen, før maksbud og fortjeneste – med samme tekst som i Original', async ({ page }) => {
+    await signIn(page, '/design/finance');
+    await openFinanceCalc(page, /Elvekanten 17 B/);
+    await expect(page.getByTestId('fin-debt-status')).toHaveCount(0); // ingen unødvendig varsel
+    const debt = page.getByRole('textbox', { name: 'Fellesgjeld ved salg', exact: true });
+    await debt.fill('99 000 000');
+    await debt.blur();
+    const banner = page.getByTestId('fin-debt-status');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('Fellesgjeld er høyere enn beregnet total salgsverdi');
+    await expect(banner).toContainText('Kontant salgsverdi kan derfor ikke beregnes. Kontroller fellesgjeld eller salgsverdi.');
+    await expect(banner).toContainText('Feil'); // alvor som ord, ikke bare farge
+    await expect(banner.getByRole('alert')).toBeVisible();
+    // varselet ligger over anbefalt maksbud (ikke gjemt i en tabell)
+    const b = await banner.boundingBox();
+    const m = await page.getByTestId('fin-maxbid').boundingBox();
+    expect(b && m && b.y < m.y).toBe(true);
+    await expect(banner).toContainText(/Gjelder: .*Standardheving/);
+
+    await debt.fill('');
+    await debt.blur();
+    await expect(page.getByTestId('fin-debt-status')).toContainText('Fellesgjeld ved salg er ikke avklart');
+    await expect(page.getByTestId('sale-debt-status-gjeld_ukjent')).toContainText('Ukjent er ikke 0 kr');
+    await expect(page.getByTestId('fin-debt-status')).toContainText('Ikke avklart');
+    await noHorizontalScroll(page);
+
+    await debt.fill('0');
+    await debt.blur();
+    await expect(page.getByTestId('fin-debt-status')).toHaveCount(0);
+  });
+});

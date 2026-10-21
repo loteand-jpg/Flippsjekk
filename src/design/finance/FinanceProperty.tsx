@@ -3,6 +3,7 @@ import { OverviewTab, ReportTab } from '../../components/analysis/InfoTabs';
 import { RenovationTab } from '../../components/analysis/RenovationTab';
 import { applyScenarioToDraft, activeScenarioId } from '../../components/analysis/ScenarioPanel';
 import { useScenarioRanking } from '../../components/analysis/ScenarioRankingPanel';
+import { saleDebtStatuses } from '../../components/analysis/saleDebtStatus';
 import { ViewingsTab } from '../../components/analysis/ViewingsTab';
 import { TabPanel } from '../../components/ui/overlay';
 import type { PropertyViewProps, PropertyTabId } from '../../pages/PropertyPage';
@@ -34,12 +35,13 @@ export function FinanceProperty(p: PropertyViewProps) {
   const { defs, data } = useScenarioRanking(ctx);
   const activeId = activeScenarioId(ctx);
   const activeTitle = useMemo(() => defs.find((d) => d.id === activeId)?.title ?? null, [defs, activeId]);
+  const debtStatus = useMemo(() => saleDebtStatuses({ draft: ctx.draft, base: ctx.base, activeTitle: activeTitle ?? ctx.scenario.name, rows: data.rows, activeId }), [ctx.draft, ctx.base, ctx.scenario.name, activeTitle, data.rows, activeId]);
 
   return (
     <div className="space-y-8">
       <PropertyHeader p={p} />
       {alerts}
-      <DecisionPanel ctx={ctx} ranking={data.result} activeScenarioTitle={activeTitle} />
+      <DecisionPanel ctx={ctx} ranking={data.result} activeScenarioTitle={activeTitle} debtStatus={debtStatus} />
       <ScenarioComparison ctx={ctx} defs={defs} data={data} activeId={activeId} onUse={(id) => applyScenarioToDraft(ctx, id)} />
       <MyScenarioBar p={p} />
       <div>

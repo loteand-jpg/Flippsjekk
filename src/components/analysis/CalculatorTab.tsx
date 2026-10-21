@@ -22,7 +22,7 @@ import { Alert } from '../ui/primitives';
 import { BarList, SensitivityChart } from './charts';
 import { ScenarioPanel } from './ScenarioPanel';
 import { ScenarioRankingPanel } from './ScenarioRankingPanel';
-import { saleDebtHelp, saleDebtStatuses } from './saleDebtStatus';
+import { SALE_DEBT_SEVERITY_LABEL, saleDebtHelp, saleDebtStatuses } from './saleDebtStatus';
 import { BasisNote, EXPLAIN, Panel, type PropertyContext } from './shared';
 
 export type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | null ? K : never }[keyof ScenarioValues];
@@ -122,7 +122,17 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
 
       <Panel title="Salg etter oppussing" action={<BasisNote basis={d.saleBasis} />}>
         {debtStatus.map((st) => (
-          <Alert key={st.kind} tone={st.severity === 'error' ? 'danger' : 'warning'} title={st.title} className="mb-4">
+          <Alert
+            key={st.kind}
+            tone={st.severity === 'error' ? 'danger' : 'warning'}
+            title={
+              <>
+                <span className="mr-2 rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ring-1 ring-current/40 ring-inset">{SALE_DEBT_SEVERITY_LABEL[st.severity]}</span>
+                {st.title}
+              </>
+            }
+            className="mb-4"
+          >
             <p data-testid={`sale-debt-status-${st.kind}`}>{st.message}</p>
           </Alert>
         ))}
