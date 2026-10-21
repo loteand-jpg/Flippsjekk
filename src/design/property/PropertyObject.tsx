@@ -109,13 +109,26 @@ export function PropertyObject(p: PropertyViewProps) {
   }, [it.viewings, ctx.now]);
 
   // Dyp lenke med ?fane=… (f.eks. fra en annen side) åpner detaljene.
+  // Siden bygges ut mens markedsdata lastes, så rulles det to ganger – men aldri om brukeren selv har begynt å rulle.
   const hadTab = useRef(params.get('fane') !== null);
   useEffect(() => {
-    if (hadTab.current) {
-      hadTab.current = false;
-      const t = setTimeout(() => jumpTo('detaljer'), 60);
-      return () => clearTimeout(t);
-    }
+    if (!hadTab.current) return;
+    let touched = false;
+    const stop = () => {
+      touched = true;
+    };
+    for (const ev of ['wheel', 'touchstart', 'keydown']) window.addEventListener(ev, stop, { once: true, passive: true });
+    // (ikke nullstilt før siste forsøk: i StrictMode kjøres effekten to ganger i utvikling)
+    const timers = [80, 600].map((ms) =>
+      setTimeout(() => {
+        if (!touched) jumpTo('detaljer');
+        if (ms === 600) hadTab.current = false;
+      }, ms),
+    );
+    return () => {
+      timers.forEach(clearTimeout);
+      for (const ev of ['wheel', 'touchstart', 'keydown']) window.removeEventListener(ev, stop);
+    };
   }, []);
   const openDetails = (t: PropertyTabId) => {
     setTab(t);

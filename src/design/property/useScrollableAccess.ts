@@ -11,7 +11,7 @@ export function useScrollableAccess(root: RefObject<HTMLElement | null>) {
     if (!el) return;
     const apply = () => {
       let n = el.querySelectorAll('[data-prop-scroll]').length;
-      el.querySelectorAll<HTMLElement>('.overflow-x-auto, table.num').forEach((s) => {
+      el.querySelectorAll<HTMLElement>('.overflow-x-auto, table.num, [role="tabpanel"] table').forEach((s) => {
         if (s.closest('details:not([open])') && !s.matches('summary *')) return;
         const scrolls = s.scrollWidth > s.clientWidth + 1;
         if (scrolls && !s.hasAttribute('data-prop-scroll')) {

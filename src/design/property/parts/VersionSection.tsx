@@ -67,9 +67,9 @@ function VersionTabs({ versions, viewId, onSelect }: { versions: VersionView[]; 
             </span>
             <span className="prop-serif mt-1 hidden text-[1.0625rem] leading-snug sm:line-clamp-2 sm:block">{v.def.title}</span>
             <span className="mt-1 text-xs text-slate-700 sm:mt-1.5 sm:text-sm">{v.def.saleSource === 'global' ? 'Ikke vurdert' : bedroomsText(v.def.endProduct.bedrooms)}</span>
-            <span className="prop-fig mt-1 text-[0.9375rem] font-semibold sm:text-lg">{v.b ? mill(v.b.V) : 'Ikke beregnet'}</span>
+            {v.b ? <span className="prop-fig mt-1 text-[0.9375rem] font-semibold sm:text-lg">{mill(v.b.V)}</span> : <span className="mt-1 text-xs font-medium text-slate-600 sm:text-sm">Ikke beregnet</span>}
             <span className="mt-0.5 block text-[11px] text-slate-600">Fortjeneste (kr)</span>
-            <span className={clsx('prop-fig block text-xs font-semibold', profit === null ? '!font-normal text-slate-600' : TONE_TEXT[profit < 0 ? 'neg' : 'pos'])}>{profit === null ? 'Ufullstendig kalkyle' : signedNOK(profit).replace(/\s?kr$/, '')}</span>
+            {profit === null ? <span className="block text-xs text-slate-600">Ufullstendig kalkyle</span> : <span className={clsx('prop-fig block text-xs font-semibold', TONE_TEXT[profit < 0 ? 'neg' : 'pos'])}>{signedNOK(profit).replace(/\s?kr$/, '')}</span>}
             {v.id !== base.id && <span className="mt-0.5 hidden text-[11px] text-slate-600 sm:line-clamp-2 sm:block">{deltaLine(v, base)}</span>}
           </button>
         );
@@ -93,7 +93,7 @@ function Delta({ v, base }: { v: VersionView; base: VersionView }) {
         {d.facts.map((f) => (
           <div key={f.id} className="min-w-0" data-testid={`prop-delta-${f.id}`}>
             <dt className="text-xs text-slate-600">{f.label}</dt>
-            <dd className={clsx('prop-fig mt-0.5 text-sm leading-snug font-semibold whitespace-normal', TONE_TEXT[f.tone])}>{f.text}</dd>
+            <dd className={clsx('prop-num mt-0.5 text-sm leading-snug font-semibold break-words', TONE_TEXT[f.tone])}>{f.text}</dd>
           </div>
         ))}
       </dl>

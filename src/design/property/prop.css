@@ -90,6 +90,11 @@
 .prop .prop-fig {
   white-space: nowrap;
 }
+/* Tabulære siffer i tekst som skal kunne brytes (f.eks. «+228 000 kr mer i oppussing»). */
+.prop .prop-num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
 
 .prop .prop-label {
   font-size: 0.6875rem;
@@ -230,7 +235,7 @@
  * Gjelder bare Property.
  */
 @media (max-width: 767px) {
-  .prop [role='tabpanel'] table.num {
+  .prop [role='tabpanel'] table {
     display: block;
     max-width: 100%;
     overflow-x: auto;

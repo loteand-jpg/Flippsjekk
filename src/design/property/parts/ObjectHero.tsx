@@ -177,7 +177,7 @@ function Opportunity({
                 </p>
               )}
             </div>
-            <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-white/10 pt-5">
+            <dl className="mt-5 grid grid-cols-1 gap-x-5 gap-y-4 border-t border-white/10 pt-5 min-[360px]:grid-cols-2">
               <KpiDark label="Forventet salgsverdi" value={formatNOK(b.V)} sub={b.basis === 'total' ? 'Totalpris · modellert' : 'Kontantpris · modellert'} />
               <KpiDark label="Forventet fortjeneste" tone={profitTone(b.profit)} value={formatNOK(b.profit)} sub="Før skatt" />
               <KpiDark

@@ -138,16 +138,16 @@ export function EconomyBar({ view, debtStatus, onUse, canApply }: { view: Versio
           )}
         </div>
       )}
-      <button type="button" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)} className="flex min-h-14 w-full items-center gap-3 px-4 text-left" data-testid="prop-econ-toggle">
+      <button type="button" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)} className="flex min-h-14 w-full items-center gap-2 px-3 text-left min-[360px]:gap-3 min-[360px]:px-4" data-testid="prop-econ-toggle">
         <span className="min-w-0 flex-1">
           <span className="prop-label block">Maksbud · {view.short}</span>
-          <span className="prop-fig block truncate text-[1.0625rem] font-semibold" data-testid="prop-bar-maxbid">
+          <span className="prop-fig block text-[0.9375rem] font-semibold min-[360px]:text-[1.0625rem]" data-testid="prop-bar-maxbid">
             {view.bidStatus === 'none' ? 'Ingen pris' : view.bidFloor === null ? 'Ikke beregnet' : formatNOK(view.bidFloor)}
           </span>
         </span>
         <span className="min-w-0 flex-1">
           <span className="prop-label block">Fortjeneste</span>
-          <span className={clsx('prop-fig block truncate text-[1.0625rem] font-semibold', b && TONE_TEXT[profitTone(b.profit)])} data-testid="prop-bar-profit">
+          <span className={clsx('prop-fig block text-[0.9375rem] font-semibold min-[360px]:text-[1.0625rem]', b && TONE_TEXT[profitTone(b.profit)])} data-testid="prop-bar-profit">
             {b ? formatNOK(b.profit) : 'Ikke beregnet'}
           </span>
         </span>

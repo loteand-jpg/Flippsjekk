@@ -145,7 +145,7 @@ export function KpiDark({
     <div className={clsx('min-w-0', className)}>
       <dt className="prop-label">{label}</dt>
       <dd className="mt-1">
-        <span data-testid={testId} className={clsx('prop-fig block text-[1.375rem] leading-tight font-semibold', unknown ? '!text-base !font-medium text-[var(--prop-on-dark-muted)]' : TONE_TEXT_DARK[tone])}>
+        <span data-testid={testId} className={clsx('prop-fig block text-[1.25rem] leading-tight font-semibold min-[420px]:text-[1.375rem]', unknown ? '!text-base !font-medium text-[var(--prop-on-dark-muted)]' : TONE_TEXT_DARK[tone])}>
           {value}
         </span>
         {sub && <span className="prop-muted-d mt-0.5 block text-xs leading-snug">{sub}</span>}
