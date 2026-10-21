@@ -22,6 +22,7 @@ import { Alert } from '../ui/primitives';
 import { BarList, SensitivityChart } from './charts';
 import { ScenarioPanel } from './ScenarioPanel';
 import { ScenarioRankingPanel } from './ScenarioRankingPanel';
+import { SALE_DEBT_SEVERITY_LABEL, saleDebtHelp, saleDebtStatuses } from './saleDebtStatus';
 import { BasisNote, EXPLAIN, Panel, type PropertyContext } from './shared';
 
 export type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | null ? K : never }[keyof ScenarioValues];
@@ -77,6 +78,7 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
     center ? { min: Math.round((center * (1 - spread)) / step) * step, max: Math.round((center * (1 + spread)) / step) * step, step } : undefined;
   const rule = ctx.analysis.estimates.dutyRule;
   const b = ctx.result.evaluation.base;
+  const debtStatus = saleDebtStatuses({ draft: d, base: ctx.base, activeTitle: ctx.scenario.name });
   return (
     <div className="space-y-4">
       <Panel title="Kjøp">
@@ -119,6 +121,21 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
       </Panel>
 
       <Panel title="Salg etter oppussing" action={<BasisNote basis={d.saleBasis} />}>
+        {debtStatus.map((st) => (
+          <Alert
+            key={st.kind}
+            tone={st.severity === 'error' ? 'danger' : 'warning'}
+            title={
+              <>
+                <span className="mr-2 rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ring-1 ring-current/40 ring-inset">{SALE_DEBT_SEVERITY_LABEL[st.severity]}</span>
+                {st.title}
+              </>
+            }
+            className="mb-4"
+          >
+            <p data-testid={`sale-debt-status-${st.kind}`}>{st.message}</p>
+          </Alert>
+        ))}
         <div className="mb-4">
           <Segmented
             label="Prisgrunnlag for salgspris"
@@ -143,7 +160,7 @@ function Inputs({ ctx }: { ctx: PropertyContext }) {
             unit="kr"
             formatBase={money}
             {...f('debtAtSale')}
-            hint={d.saleBasis === 'total' ? 'Trekkes fra totalprisen én gang. Avdrag som allerede inngår i månedlige kostnader skal ikke trekkes på nytt.' : 'Påvirker ikke kalkylen når salgsprisen er kontantpris.'}
+            hint={saleDebtHelp({ draft: d, base: ctx.base }).text}
           />
           <ScenarioNumberField label="Faste salgskostnader" unit="kr" formatBase={money} {...f('saleFixedCost')} hint="Markedsføring, takst, styling, oppgjør." />
           <ScenarioNumberField label="Meglerprovisjon" unit="%" decimals={2} formatBase={pct} {...f('saleCommissionPct')} hint="Av kontantsalget." />

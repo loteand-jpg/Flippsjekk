@@ -8,6 +8,7 @@ import { FEASIBILITY_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, UNCER
 import { effectiveRisks } from '../../domain/risks';
 import { formatHours, formatMonths, formatNOK, formatPct, NO_BASIS } from '../../lib/format';
 import { Badge } from '../ui/primitives';
+import { describeSaleDebtIssue } from './saleDebtStatus';
 import { Panel, type PropertyContext } from './shared';
 import { useMarketComparables } from './useMarket';
 
@@ -86,7 +87,7 @@ export function ScenarioRankingPanel({ ctx }: { ctx: PropertyContext }) {
                   <p className="text-[11px] text-slate-500">{inf.source}</p>
                   {inf.saleIssues.length > 0 && (
                     <p className="mt-0.5 text-[11px] text-amber-900" data-testid="rank-sale-issue">
-                      {inf.saleIssues[0].message}
+                      <strong>{describeSaleDebtIssue(inf.saleIssues[0]).title}.</strong> {describeSaleDebtIssue(inf.saleIssues[0]).message}
                     </p>
                   )}
                 </div>

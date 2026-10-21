@@ -1,16 +1,17 @@
-import { ShieldCheck, TriangleAlert } from 'lucide-react';
+import { CircleAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useMemo } from 'react';
 import { MAX_BID_LIMIT_LABEL, recommendedBidOf } from '../../../calc/engine';
 import type { RankingResult } from '../../../calc/ranking';
 import { aggregateRisk, dataQuality, QUALITY_LABEL, RISK_BAND_LABEL } from '../../../domain/assessment';
 import { effectiveRisks } from '../../../domain/risks';
 import { formatNOK, formatPct } from '../../../lib/format';
+import { SALE_DEBT_SEVERITY_LABEL, type SaleDebtStatus } from '../../../components/analysis/saleDebtStatus';
 import type { PropertyContext } from '../../../components/analysis/shared';
 import { Fig, Metric, TONE_TEXT, type FinTone } from './primitives';
 import { bidMargin, equityLine, floorToThousand, hourlyLine, maxBidLine, profitTone } from '../present';
 
 /** «Beslutningstoppen»: svar på de åtte spørsmålene en kjøper stiller i løpet av 10–15 sekunder. Alle tall kommer fra motoren. */
-export function DecisionPanel({ ctx, ranking, activeScenarioTitle }: { ctx: PropertyContext; ranking: RankingResult | null; activeScenarioTitle: string | null }) {
+export function DecisionPanel({ ctx, ranking, activeScenarioTitle, debtStatus = [] }: { ctx: PropertyContext; ranking: RankingResult | null; activeScenarioTitle: string | null; debtStatus?: SaleDebtStatus[] }) {
   const ev = ctx.result.evaluation;
   const b = ev.base;
   const bid = recommendedBidOf(ev);
@@ -32,6 +33,24 @@ export function DecisionPanel({ ctx, ranking, activeScenarioTitle }: { ctx: Prop
       <h2 id="beslutning" className="sr-only">
         Beslutningsgrunnlag
       </h2>
+      {/* Fellesgjeld ved salg: vises før maksbud og fortjeneste, så de ikke tolkes som sikre når kontantprisen ikke kan fastsettes */}
+      {debtStatus.length > 0 && (
+        <div className="border-b border-[var(--fin-line)]" data-testid="fin-debt-status">
+          {debtStatus.map((st) => (
+            <div key={st.kind} role={st.severity === 'error' ? 'alert' : 'status'} className={`flex gap-3 px-5 py-3.5 text-sm sm:px-7 ${st.severity === 'error' ? 'bg-[var(--fin-neg-bg)] text-[var(--fin-neg)]' : 'bg-[var(--fin-warn-bg)] text-[var(--fin-warn)]'}`}>
+              {st.severity === 'error' ? <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden /> : <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />}
+              <div className="min-w-0">
+                <p className="font-semibold">
+                  <span className="mr-2 rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ring-1 ring-current/40 ring-inset">{SALE_DEBT_SEVERITY_LABEL[st.severity]}</span>
+                  {st.title}
+                </p>
+                <p className="mt-0.5" data-testid={`sale-debt-status-${st.kind}`}>{st.message}</p>
+                {st.affects.length > 0 && <p className="mt-0.5 text-xs">Gjelder: {st.affects.join(', ')}. Fortjeneste og maksbud under er ikke sikre før dette er rettet.</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* Maksbud */}
         <div className="min-w-0 border-b border-[var(--fin-line)] p-5 sm:p-7 lg:border-r lg:border-b-0">
