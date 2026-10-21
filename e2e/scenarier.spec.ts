@@ -291,3 +291,55 @@ test('fellesgjeld ved salg: totalverdien beholdes, og kontantprisen og alle scen
   await expect(normal).toHaveValue(/^4\s050\s000$/);
   expect(await rankProfits(page)).toEqual(before);
 });
+
+async function openProperty(page: Page, name: RegExp, tab = 'Min kalkyle') {
+  if (!page.url().includes('#/')) {
+    await page.goto('/#/logg-inn');
+    await page.getByRole('button', { name: /Ada Aksnes/ }).click();
+  } else {
+    await page.goto('/#/oversikt');
+  }
+  await expect(page).toHaveURL(/#\/oversikt/);
+  await page.getByRole('link', { name }).first().click();
+  await page.getByRole('tab', { name: tab }).click();
+}
+
+test('fellesgjeld ved salg: hjelpeteksten forklarer faktisk kilde (beregnet totalverdi, totalpris, direkte kontantpris)', async ({ page }) => {
+  // Elvekanten: salgsverdien er beregnet av markedsmotoren ut fra en totalverdi
+  await openProperty(page, /Elvekanten 17 B/);
+  await expect(page.getByText('Salgsverdien bygger på en beregnet totalverdi. Endrer du fellesgjelden ved salg, justeres kontantprisen slik at totalverdien beholdes.')).toBeVisible();
+  // Nardoveien 31: prisgrunnlaget er totalpris
+  await openProperty(page, /Nardoveien 31/);
+  await expect(page.getByText('Trekkes fra totalprisen én gang. Endrer du fellesgjelden, endres kontantdelen av salgsverdien tilsvarende.')).toBeVisible();
+  // Ladeveien 9 A: kontantpris oppgitt direkte (eldre analyse)
+  await openProperty(page, /Ladeveien 9 A/);
+  await expect(page.getByText('Salgsverdien er oppgitt som kontantpris. Endring i fellesgjeld endrer ikke denne salgsverdien automatisk.')).toBeVisible();
+});
+
+test('fellesgjeld ved salg: ukjent og umulig gjeld gir tydelig, felles status – ikke 0 og ikke negativ pris', async ({ page }) => {
+  await openProperty(page, /Elvekanten 17 B/);
+  const debt = page.getByRole('textbox', { name: 'Fellesgjeld ved salg', exact: true });
+  const normal = page.getByLabel('Normal', { exact: true });
+  await expect(page.getByTestId('sale-debt-status-gjeld_ukjent')).toHaveCount(0); // ingen unødvendig varsel
+  await expect(page.getByTestId('sale-debt-status-gjeld_over_totalverdi')).toHaveCount(0);
+
+  await debt.fill('99 000 000');
+  await debt.blur();
+  const tooMuch = page.getByTestId('sale-debt-status-gjeld_over_totalverdi');
+  await expect(tooMuch).toContainText('Kontant salgsverdi kan derfor ikke beregnes');
+  await expect(page.getByText('Fellesgjeld er høyere enn beregnet total salgsverdi').first()).toBeVisible();
+  await expect(normal).toHaveValue(/^4\s050\s000$/); // verdien er ikke endret til noe meningsløst
+  // alternativene i sammenligningen melder det samme
+  await expect(page.getByTestId('rank-sale-issue').first()).toContainText('Fellesgjeld er høyere enn beregnet total salgsverdi');
+
+  await debt.fill('');
+  await debt.blur();
+  await expect(page.getByTestId('sale-debt-status-gjeld_ukjent')).toContainText('Ukjent er ikke 0 kr');
+  await expect(page.getByText('Fellesgjeld ved salg er ikke avklart').first()).toBeVisible();
+  await expect(normal).toHaveValue(/^4\s050\s000$/);
+
+  await debt.fill('0');
+  await debt.blur();
+  await expect(page.getByTestId('sale-debt-status-gjeld_ukjent')).toHaveCount(0);
+  await expect(page.getByTestId('sale-debt-status-gjeld_over_totalverdi')).toHaveCount(0);
+});
