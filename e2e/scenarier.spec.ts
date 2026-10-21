@@ -188,3 +188,81 @@ test('30 dager: gammel analyse tilbyr grundig markedsoppfriskning – ikke full 
   await expect(page.getByText(/Markedsdataene er \d+ dager gamle/)).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText('Markedsoppfriskning pågår')).toHaveCount(0, { timeout: 15_000 });
 });
+
+/** Fortjeneste før skatt per scenario i rangeringen («Sammenligning av scenarioer»). */
+async function rankProfits(page: Page): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  const rows = page.getByTestId('rank-row');
+  await expect(rows).toHaveCount(3);
+  for (let i = 0; i < 3; i++) {
+    const row = rows.nth(i);
+    const title = (await row.locator('.font-semibold').first().innerText()).trim();
+    const text = (await row.locator('xpath=.//dt[normalize-space(.)="Fortjeneste før skatt"]/following-sibling::dd[1]').innerText()).replace(/[  \s]/g, '');
+    out[title] = Number(text.match(/[−-]?\d+/)![0].replace('−', '-'));
+  }
+  return out;
+}
+
+test('rangering: Basis, Alternativ A og B sammenlignes med samme kjøpspris som kalkylen din', async ({ page }) => {
+  await openElvekanten(page, 'Min kalkyle');
+  const price = page.getByRole('textbox', { name: 'Kjøpspris (kontant)' });
+  await expect(price).toHaveValue(/2\s?950\s?000/); // brukerens private kalkyle; analysens grunnlag er 2 890 000
+  const atPrivate = await rankProfits(page);
+
+  // Samme kjøpspris som analysens grunnlag (tilbakestill feltet) – alle tre får da 60 000 kr lavere kjøpspris
+  await price.locator('xpath=ancestor::*[.//button[normalize-space(.)="Tilbakestill"]][1]').getByRole('button', { name: 'Tilbakestill' }).click();
+  await expect(price).toHaveValue(/2\s?890\s?000/);
+  const atBase = await rankProfits(page);
+
+  // Før rettingen endret bare det aktive scenarioet seg (alternativene lå fast på 2 890 000). Nå flytter prisen alle tre
+  // omtrent like mye (60 000 kr + 2,5 % avgift + renter), så forskjellen mellom dem er ren scenarioeffekt.
+  const delta = (t: string) => atBase[t] - atPrivate[t];
+  const titles = Object.keys(atBase);
+  expect(titles).toHaveLength(3);
+  const basisDelta = delta('Standardheving');
+  expect(basisDelta).toBeGreaterThan(60_000);
+  for (const t of titles) expect(Math.abs(delta(t) - basisDelta), `${t}: prisendringen skal slå likt ut`).toBeLessThan(1500);
+});
+
+test('«Bruk i dette scenarioet» beholder private forutsetninger (kjøpspris, rente, finansiering) og bytter tiltak og salgsverdi', async ({ page }) => {
+  await openElvekanten(page, 'Min kalkyle');
+  const cards = page.getByTestId('scenario-card');
+  const set = async (name: string, value: string) => {
+    const f = page.getByRole('textbox', { name, exact: true });
+    await f.fill(value);
+    await f.blur();
+  };
+  await set('Kjøpspris (kontant)', '3 050 000');
+  await set('Rente', '7,2');
+  await set('Låneandel kjøpesum', '85');
+  await set('Låneandel oppussing', '25');
+  await cards.nth(1).getByRole('button', { name: 'Bruk i dette scenarioet' }).click();
+  await expect(cards.nth(1)).toContainText('Brukt i dette scenarioet');
+  await expect(page.getByRole('textbox', { name: 'Kjøpspris (kontant)', exact: true })).toHaveValue(/3\s?050\s?000/);
+  await expect(page.getByRole('textbox', { name: 'Rente', exact: true })).toHaveValue(/7,2/);
+  await expect(page.getByRole('textbox', { name: 'Låneandel kjøpesum', exact: true })).toHaveValue('85');
+  await expect(page.getByRole('textbox', { name: 'Låneandel oppussing', exact: true })).toHaveValue('25');
+  // scenarioets egne verdier er byttet
+  expect(await page.getByLabel('Normal', { exact: true }).inputValue()).toMatch(/^4\s131\s000$/);
+});
+
+test('lagrede private scenarioer påvirkes ikke av rangeringen eller av å bytte analysescenario', async ({ page }) => {
+  await openElvekanten(page, 'Min kalkyle');
+  const price = page.getByRole('textbox', { name: 'Kjøpspris (kontant)', exact: true });
+  const profitsBefore = await rankProfits(page);
+  // Lagre et ekstra privat scenario med en helt annen kjøpspris
+  await price.fill('3 400 000');
+  await price.blur();
+  await page.getByRole('button', { name: 'Lagre som nytt' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Lagre som nytt scenario' });
+  await dlg.getByRole('textbox').fill('Høy pris');
+  await dlg.getByRole('button', { name: 'Lagre', exact: true }).click();
+  await expect(dlg).toBeHidden();
+  // Tilbake til hovedscenarioet: kjøpsprisen er uendret (2 950 000), og rangeringen er som før
+  await page.locator('#scenario-select').selectOption({ label: 'Hovedscenario (primært)' });
+  await expect(price).toHaveValue(/2\s?950\s?000/);
+  expect(await rankProfits(page)).toEqual(profitsBefore);
+  // Og scenarioet med høy pris har fortsatt sin egen pris
+  await page.locator('#scenario-select').selectOption({ label: 'Høy pris' });
+  await expect(price).toHaveValue(/3\s?400\s?000/);
+});
