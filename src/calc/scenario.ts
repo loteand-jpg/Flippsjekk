@@ -11,7 +11,7 @@ import type {
   SharedAnalysis,
 } from '../domain/schemas';
 import { evaluate, type EngineInput, type Evaluation, type Issue, type MissingInput } from './engine';
-import { resolveScenarioSale, type SaleResolution } from './saleValue';
+import { resolveSalePricesForDebt, resolveScenarioSale, type SaleDebtIssue, type SalePrices, type SaleResolution } from './saleValue';
 
 // ---------------------------------------------------------------------------
 // Oppussing
@@ -553,7 +553,12 @@ export function scenarioHasOwnDuration(scenario: Pick<ResolvedAnalysisScenario, 
  * @param user brukerens aktive kalkyle (den felles økonomiske rammen)
  * @param scenario grunnverdiene for analysescenarioet (`buildBaseValues(...).values`), som gir scenarioets egne felt
  */
-export function valuesForAnalysisScenario(args: { user: ScenarioValues; scenario: ScenarioValues; ownDuration: boolean }): ScenarioValues {
+export function valuesForAnalysisScenario(args: { user: ScenarioValues; scenario: ScenarioValues; ownDuration: boolean; saleDebtBasis?: number | null }): ScenarioValues {
+  return overlayAnalysisScenario(args).values;
+}
+
+/** Som `valuesForAnalysisScenario`, men returnerer også eventuelle problemer med fellesgjeld ved salg (ukjent gjeld, gjeld over totalverdi). */
+export function overlayAnalysisScenario(args: { user: ScenarioValues; scenario: ScenarioValues; ownDuration: boolean; saleDebtBasis?: number | null }): { values: ScenarioValues; saleIssues: SaleDebtIssue[] } {
   const { user, scenario, ownDuration } = args;
   const out: Record<string, unknown> = { ...user };
   for (const key of Object.keys(SCENARIO_FIELD_CLASS) as (keyof ScenarioValues)[]) {
@@ -561,7 +566,18 @@ export function valuesForAnalysisScenario(args: { user: ScenarioValues; scenario
   }
   const reno = renovationMonthsOf(scenario);
   if (ownDuration && reno !== null) out.months = Math.round((reno + (user.settlementMonths ?? 0)) * 100) / 100;
-  return out as ScenarioValues;
+  // Fellesgjeld ved salg er en felles brukerforutsetning. Scenarioets salgsverdi beholder sin totalverdi, og fordelingen mellom
+  // kontantpris og fellesgjeld følger brukerens gjeld (se resolveSalePricesForDebt).
+  const sale = resolveSalePricesForDebt({
+    basis: scenario.saleBasis,
+    prices: { low: scenario.saleLow, base: scenario.saleBase, high: scenario.saleHigh },
+    derivedWithDebt: args.saleDebtBasis ?? null,
+    debtAtSale: user.debtAtSale,
+  });
+  out.saleLow = sale.prices.low;
+  out.saleBase = sale.prices.base;
+  out.saleHigh = sale.prices.high;
+  return { values: out as ScenarioValues, saleIssues: sale.issues };
 }
 
 /**
@@ -575,11 +591,39 @@ export function analysisScenarioValues(args: {
   defaults: ProfileDefaults;
   user: ScenarioValues;
   analysisScenarioId: string;
-}): { values: ScenarioValues; scenarioBase: BaseValues; scenario: ResolvedAnalysisScenario } {
+}): { values: ScenarioValues; scenarioBase: BaseValues; scenario: ResolvedAnalysisScenario; saleIssues: SaleDebtIssue[] } {
   const { user, analysisScenarioId, ...rest } = args;
   const scenarioBase = buildBaseValues({ ...rest, analysisScenarioId });
   const scenario = findAnalysisScenario(args.analysis, analysisScenarioId);
-  return { values: valuesForAnalysisScenario({ user, scenario: scenarioBase.values, ownDuration: scenarioHasOwnDuration(scenario) }), scenarioBase, scenario };
+  const o = overlayAnalysisScenario({ user, scenario: scenarioBase.values, ownDuration: scenarioHasOwnDuration(scenario), saleDebtBasis: scenarioBase.saleResolution.sale.debtBasis });
+  return { values: o.values, scenarioBase, scenario, saleIssues: o.saleIssues };
+}
+
+/**
+ * Brukeren endrer fellesgjeld ved salg i kalkylen. Salgsverdier som er avledet av en totalverdi (markedsmotoren, kontantpris) følger
+ * med, så totalverdien beholdes og bare fordelingen mellom kontantpris og fellesgjeld endres. Verdier brukeren selv har overstyrt
+ * (ulik grunnverdiene) beholdes uendret, og totalpris- og direkte kontantverdier påvirkes ikke (motoren trekker gjelden fra totalpris
+ * selv). Ukjent eller umulig gjeld (større enn totalverdien) gir aldri en falsk 0 eller negativ pris – verdiene beholdes.
+ *
+ * @param baseSale grunnverdiene kalkylen bygger på (`BaseValues.saleResolution.sale`) – avgjør hva som er uendret fra grunnlaget
+ */
+export function saleValuesAfterDebtChange(args: {
+  draft: ScenarioValues;
+  nextDebt: number | null;
+  baseSale: ({ basis: ScenarioValues['saleBasis']; debtBasis: number | null } & SalePrices) | null;
+}): Pick<ScenarioValues, 'debtAtSale' | 'saleLow' | 'saleBase' | 'saleHigh'> {
+  const { draft, nextDebt, baseSale } = args;
+  // Alltid alle tre salgsverdiene med, slik at `{ ...draft, ...resultat }` er eksplisitt (uendrede verdier står som de er).
+  const out: Pick<ScenarioValues, 'debtAtSale' | 'saleLow' | 'saleBase' | 'saleHigh'> = { debtAtSale: nextDebt, saleLow: draft.saleLow, saleBase: draft.saleBase, saleHigh: draft.saleHigh };
+  if (!baseSale || draft.saleBasis !== baseSale.basis) return out;
+  const at = (debt: number | null) => resolveSalePricesForDebt({ basis: baseSale.basis, prices: { low: baseSale.low, base: baseSale.base, high: baseSale.high }, derivedWithDebt: baseSale.debtBasis, debtAtSale: debt });
+  const prev = at(draft.debtAtSale);
+  const next = at(nextDebt);
+  // Umulig eller ukjent gjeld: ikke endre noe (ingen falsk 0, ingen negativ pris).
+  if (next.issues.length > 0) return out;
+  const field = { low: 'saleLow', base: 'saleBase', high: 'saleHigh' } as const;
+  for (const k of ['low', 'base', 'high'] as const) if (draft[field[k]] === prev.prices[k]) out[field[k]] = next.prices[k];
+  return out;
 }
 
 // ---------------------------------------------------------------------------

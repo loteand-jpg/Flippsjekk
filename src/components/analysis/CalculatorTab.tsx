@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { CALC_MODEL_LABEL, CASE_LABEL, MAX_BID_LIMIT_LABEL, recommendedBidOf, sensitivity, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
-import { VALUE_ORIGIN_LABEL } from '../../calc/scenario';
+import { saleValuesAfterDebtChange, VALUE_ORIGIN_LABEL } from '../../calc/scenario';
 import {
   BUYER_TYPE_LABEL,
   DUTY_BASIS_LABEL,
@@ -29,7 +29,13 @@ type NumKey = { [K in keyof ScenarioValues]: ScenarioValues[K] extends number | 
 function useField(ctx: PropertyContext) {
   return (key: NumKey) => ({
     value: ctx.draft[key] as number | null,
-    onChange: (v: number | null) => ctx.setDraft((d) => ({ ...d, [key]: v })),
+    // Fellesgjeld ved salg: salgsverdier avledet av en totalverdi følger med (se saleValuesAfterDebtChange), så totalverdien beholdes.
+    onChange: (v: number | null) =>
+      ctx.setDraft((d) =>
+        key === 'debtAtSale'
+          ? { ...d, ...saleValuesAfterDebtChange({ draft: d, nextDebt: v, baseSale: ctx.base ? { basis: ctx.base.values.saleBasis, low: ctx.base.values.saleLow, base: ctx.base.values.saleBase, high: ctx.base.values.saleHigh, debtBasis: ctx.base.saleResolution.sale.debtBasis } : null }) }
+          : { ...d, [key]: v },
+      ),
     baseValue: ctx.base ? (ctx.base.values[key] as number | null) : undefined,
     origin: ctx.base?.origins[key] ? VALUE_ORIGIN_LABEL[ctx.base.origins[key]!] : undefined,
     disabled: !ctx.editable,
