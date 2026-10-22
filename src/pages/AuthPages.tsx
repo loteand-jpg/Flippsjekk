@@ -1,7 +1,7 @@
 import { FlaskConical, Mail, MailCheck } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router';
-import { useServices } from '../app/services';
+import { useHomePath, useServices } from '../app/services';
 import { useSession } from '../app/session';
 import { useLiveQuery } from '../app/hooks';
 import { Logo } from '../components/layout/AppShell';
@@ -93,14 +93,17 @@ function SimulatedMail({ mail }: { mail: NonNullable<EmailChallenge['simulatedEm
 
 function AuthFlow({ mode }: { mode: 'login' | 'signup' }) {
   const services = useServices();
-  const { session, refresh } = useSession();
+  const { ready, session, refresh } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? '/oversikt';
+  const home = useHomePath();
+  const nav = location.state as { from?: string; authError?: string; authReturned?: boolean } | null;
+  const from = nav?.from ?? home;
   const [email, setEmail] = useState('');
   const [challenge, setChallenge] = useState<EmailChallenge | null>(null);
   const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // Feil fra en avbrutt innlogging med Google (retur fra Supabase, se AuthReturn i App.tsx).
+  const [error, setError] = useState<string | null>(nav?.authError ?? null);
   const [busy, setBusy] = useState(false);
   const [googleOpen, setGoogleOpen] = useState(false);
   const [newUser, setNewUser] = useState(false);
@@ -197,6 +200,8 @@ function AuthFlow({ mode }: { mode: 'login' | 'signup' }) {
           </Alert>
         )}
 
+        {nav?.authReturned && ready && !session && !error && <Alert tone="danger">Innloggingen ble ikke fullført. Prøv igjen.</Alert>}
+
         {!challenge ? (
           <>
             <p className="text-sm text-slate-700">{signup ? 'Velg hvordan du vil opprette kontoen. Det finnes ingen passord.' : 'Logg inn med Google, eller få en engangskode på e-post. Det finnes ingen passord.'}</p>
@@ -223,7 +228,7 @@ function AuthFlow({ mode }: { mode: 'login' | 'signup' }) {
               Vi har sendt en kode til <strong>{challenge.email}</strong>. Skriv den inn for å bekrefte innloggingen.
             </p>
             {challenge.simulatedEmail && <SimulatedMail mail={challenge.simulatedEmail} />}
-            <Field label="Bekreftelseskode" hint={`${CODE_LENGTH} siffer. Koden varer i 10 minutter.`}>
+            <Field label="Bekreftelseskode" hint={services.demo ? `${CODE_LENGTH} siffer. Koden varer i 10 minutter.` : `${CODE_LENGTH} siffer fra e-posten vi har sendt.`}>
               {(p) => (
                 <TextInput {...p} inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={CODE_LENGTH + 2} value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d\s]/g, ''))} placeholder="123456" />
               )}

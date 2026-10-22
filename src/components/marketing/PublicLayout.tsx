@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router';
+import { useHomePath, useServices } from '../../app/services';
 import { useSession } from '../../app/session';
 import { Logo } from '../layout/AppShell';
 import { buttonClass } from '../ui/primitives';
@@ -7,7 +8,9 @@ import { buttonClass } from '../ui/primitives';
 /** Felles ramme for åpne sider (forside og «Slik fungerer det»). */
 export function PublicLayout({ children }: { children: ReactNode }) {
   const { session } = useSession();
-  const cta = session ? '/oversikt' : '/logg-inn';
+  const services = useServices();
+  const home = useHomePath();
+  const cta = session ? home : '/logg-inn';
   return (
     <div className="bg-white">
       <header className="border-b border-slate-100">
@@ -18,7 +21,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
               Slik fungerer det
             </NavLink>
             <Link to={cta} className={buttonClass('primary', 'sm', 'ml-1')}>
-              {session ? 'Til oversikten' : 'Logg inn'}
+              {session ? (home === '/oversikt' ? 'Til oversikten' : 'Til kontoen') : 'Logg inn'}
             </Link>
           </nav>
         </div>
@@ -27,7 +30,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <footer className="border-t border-slate-100">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-xs text-slate-600 sm:flex-row sm:justify-between">
           <p>Flippsjekk er et analyseverktøy. Anslag er ikke pristilbud, verdivurdering, skatteråd eller budfullmakt.</p>
-          <p>Demoversjon – fiktive data.</p>
+          <p>{services.demo ? 'Demoversjon – fiktive data.' : 'Tidlig produksjonsversjon: innlogging og profil er koblet til.'}</p>
         </div>
       </footer>
     </div>

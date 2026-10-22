@@ -79,6 +79,10 @@ export function AccountPage() {
     else setPortalOpen(true);
   };
 
+  // Produksjon, backend fase 2A: bare innlogging og profil er koblet til. Det som ikke er det, sies ærlig – aldri som «ingen abonnement» eller «ingen kurs».
+  const subscriptionUnavailable = services.unavailable.includes('subscription');
+  const coursesUnavailable = services.unavailable.includes('courses');
+  const importsUnavailable = services.unavailable.includes('imports');
   const hasActive = entitlements?.access === 'full';
   const ended = subscription && !hasActive;
   const setD = <K extends keyof ProfileDefaults>(k: K, v: ProfileDefaults[K]) => setDefaults((d) => (d ? { ...d, [k]: v } : d));
@@ -89,104 +93,114 @@ export function AccountPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Konto</h1>
       {welcome && (
         <Alert tone="success" title="Kontoen er opprettet">
-          Start abonnementet med Vipps for å analysere boliger.
+          {subscriptionUnavailable ? 'Du er innlogget, og profilen din er klar.' : 'Start abonnementet med Vipps for å analysere boliger.'}
         </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card className="p-5">
-          <SectionTitle sub="Betales med Vipps. Simulert i demoen – ingen betaling behandles.">Abonnement</SectionTitle>
-          {subscription ? (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-lg font-semibold">{entitlements?.plan?.name ?? subscription.planId}</p>
-                <Badge tone={hasActive ? 'green' : subscription.status === 'past_due' ? 'amber' : 'neutral'}>
-                  {entitlements?.reason === 'canceling' ? 'Oppsagt – aktiv ut perioden' : entitlements?.reason === 'expired' ? 'Utløpt' : SUBSCRIPTION_STATUS_LABEL[subscription.status]}
-                </Badge>
-                <Badge tone="outline">{subscription.interval === 'year' ? 'Årlig' : 'Månedlig'}</Badge>
-              </div>
-              <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-slate-600">Betalingsmåte</dt>
-                  <dd className="font-medium">{subscription.provider === 'vipps' ? 'Vipps' : 'Simulert'}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-600">Gjeldende periode</dt>
-                  <dd className="font-medium">
-                    {formatDate(subscription.currentPeriodStart)} – {formatDate(subscription.currentPeriodEnd)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-600">{subscription.cancelAtPeriodEnd ? 'Avsluttes' : hasActive ? 'Fornyes' : 'Tilgang'}</dt>
-                  <dd className="font-medium">
-                    {hasActive ? formatDate(subscription.currentPeriodEnd) : subscription.status === 'past_due' ? 'Lesemodus til betaling er ordnet' : 'Lesemodus'}
-                  </dd>
-                </div>
-              </dl>
-              {entitlements && entitlements.limits.newAnalyses > 0 && (
-                <div className="space-y-3">
-                  <UsageBar label="Nye analyser" used={entitlements.used.newAnalyses + entitlements.used.pendingNewAnalyses} limit={entitlements.limits.newAnalyses} />
-                  <UsageBar label="Oppfriskinger av annonse" used={entitlements.used.refreshes} limit={entitlements.limits.refreshes} />
-                  <p className="text-xs text-slate-600">
-                    Endringer i egne scenarioer belastes aldri.
-                  </p>
-                </div>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <Button variant="primary" icon={<CreditCard className="size-4" aria-hidden />} onClick={openPortal}>
-                  Administrer abonnement
-                </Button>
-                {ended && subscription.status !== 'past_due' && <Button onClick={() => setCheckoutOpen(true)}>Start nytt abonnement</Button>}
-              </div>
+          <SectionTitle sub={subscriptionUnavailable ? undefined : 'Betales med Vipps. Simulert i demoen – ingen betaling behandles.'}>Abonnement</SectionTitle>
+          {subscriptionUnavailable ? (
+            <div data-testid="subscription-unavailable">
+              <Alert tone="info" title="Abonnement og betaling er ikke koblet til ennå">
+                Betaling med Vipps kommer i en senere fase. Ingen abonnement er opprettet, og ingen tilgang er gitt.
+              </Alert>
             </div>
           ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-700">Du har ikke et abonnement. Du kan fortsatt administrere kontoen og se lagrede data.</p>
-              <Button variant="primary" onClick={() => setCheckoutOpen(true)}>
-                Velg abonnement
-              </Button>
-            </div>
-          )}
-          <section className="mt-5 border-t border-slate-100 pt-4" aria-labelledby="plan-innhold">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 id="plan-innhold" className="font-semibold">
-                Dette får du med {PRIMARY_PLAN.name}
-              </h3>
-              <Badge tone="violet">Eksempelpris i demo</Badge>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">{PRIMARY_PLAN.tagline}</p>
-            <p className="mt-2 text-sm">
-              <span className="num text-2xl font-semibold">{formatNOK(PRIMARY_PLAN.priceMonthly)}</span>
-              <span className="text-slate-600"> / måned</span>
-              <span className="mx-2 text-slate-400" aria-hidden>
-                ·
-              </span>
-              <span className="num font-semibold">{formatNOK(PRIMARY_PLAN.priceYearly)}</span>
-              <span className="text-slate-600"> / år (tilsvarer {formatNOK(PRIMARY_PLAN.priceMonthly * 12 - PRIMARY_PLAN.priceYearly)} lavere enn tolv måneder)</span>
-            </p>
-            <ul className="mt-3 space-y-1.5 text-sm">
-              <li className="flex gap-2">
-                <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
-                <span>
-                  <strong>{PRIMARY_PLAN.limits.newAnalysesPerPeriod} nye analyser</strong> per periode.
+            <>
+            {subscription ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-lg font-semibold">{entitlements?.plan?.name ?? subscription.planId}</p>
+                  <Badge tone={hasActive ? 'green' : subscription.status === 'past_due' ? 'amber' : 'neutral'}>
+                    {entitlements?.reason === 'canceling' ? 'Oppsagt – aktiv ut perioden' : entitlements?.reason === 'expired' ? 'Utløpt' : SUBSCRIPTION_STATUS_LABEL[subscription.status]}
+                  </Badge>
+                  <Badge tone="outline">{subscription.interval === 'year' ? 'Årlig' : 'Månedlig'}</Badge>
+                </div>
+                <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-slate-600">Betalingsmåte</dt>
+                    <dd className="font-medium">{subscription.provider === 'vipps' ? 'Vipps' : 'Simulert'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-600">Gjeldende periode</dt>
+                    <dd className="font-medium">
+                      {formatDate(subscription.currentPeriodStart)} – {formatDate(subscription.currentPeriodEnd)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-600">{subscription.cancelAtPeriodEnd ? 'Avsluttes' : hasActive ? 'Fornyes' : 'Tilgang'}</dt>
+                    <dd className="font-medium">
+                      {hasActive ? formatDate(subscription.currentPeriodEnd) : subscription.status === 'past_due' ? 'Lesemodus til betaling er ordnet' : 'Lesemodus'}
+                    </dd>
+                  </div>
+                </dl>
+                {entitlements && entitlements.limits.newAnalyses > 0 && (
+                  <div className="space-y-3">
+                    <UsageBar label="Nye analyser" used={entitlements.used.newAnalyses + entitlements.used.pendingNewAnalyses} limit={entitlements.limits.newAnalyses} />
+                    <UsageBar label="Oppfriskinger av annonse" used={entitlements.used.refreshes} limit={entitlements.limits.refreshes} />
+                    <p className="text-xs text-slate-600">
+                      Endringer i egne scenarioer belastes aldri.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="primary" icon={<CreditCard className="size-4" aria-hidden />} onClick={openPortal}>
+                    Administrer abonnement
+                  </Button>
+                  {ended && subscription.status !== 'past_due' && <Button onClick={() => setCheckoutOpen(true)}>Start nytt abonnement</Button>}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-700">Du har ikke et abonnement. Du kan fortsatt administrere kontoen og se lagrede data.</p>
+                <Button variant="primary" onClick={() => setCheckoutOpen(true)}>
+                  Velg abonnement
+                </Button>
+              </div>
+            )}
+            <section className="mt-5 border-t border-slate-100 pt-4" aria-labelledby="plan-innhold">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id="plan-innhold" className="font-semibold">
+                  Dette får du med {PRIMARY_PLAN.name}
+                </h3>
+                <Badge tone="violet">Eksempelpris i demo</Badge>
+              </div>
+              <p className="mt-1 text-sm text-slate-600">{PRIMARY_PLAN.tagline}</p>
+              <p className="mt-2 text-sm">
+                <span className="num text-2xl font-semibold">{formatNOK(PRIMARY_PLAN.priceMonthly)}</span>
+                <span className="text-slate-600"> / måned</span>
+                <span className="mx-2 text-slate-400" aria-hidden>
+                  ·
                 </span>
-              </li>
-              <li className="flex gap-2">
-                <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
-                <span>{PRIMARY_PLAN.limits.refreshesPerPeriod} oppfriskinger av pris, visninger og salgsstatus per periode.</span>
-              </li>
-              {PRIMARY_PLAN.features.map((f) => (
-                <li key={f} className="flex gap-2">
+                <span className="num font-semibold">{formatNOK(PRIMARY_PLAN.priceYearly)}</span>
+                <span className="text-slate-600"> / år (tilsvarer {formatNOK(PRIMARY_PLAN.priceMonthly * 12 - PRIMARY_PLAN.priceYearly)} lavere enn tolv måneder)</span>
+              </p>
+              <ul className="mt-3 space-y-1.5 text-sm">
+                <li className="flex gap-2">
                   <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
-                  <span>{f}</span>
+                  <span>
+                    <strong>{PRIMARY_PLAN.limits.newAnalysesPerPeriod} nye analyser</strong> per periode.
+                  </span>
                 </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-slate-600">Pris og grenser er eksempelverdier i demoen – ingen kommersiell pris er besluttet.</p>
-          </section>
-          <p className="mt-4 text-xs text-slate-500">
-            I produksjon opprettes Vipps-avtalen av serveren, og tilgang oppdateres først når en signert bekreftelse fra Vipps er mottatt – ikke ved retur fra Vipps.
-          </p>
+                <li className="flex gap-2">
+                  <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
+                  <span>{PRIMARY_PLAN.limits.refreshesPerPeriod} oppfriskinger av pris, visninger og salgsstatus per periode.</span>
+                </li>
+                {PRIMARY_PLAN.features.map((f) => (
+                  <li key={f} className="flex gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate-600">Pris og grenser er eksempelverdier i demoen – ingen kommersiell pris er besluttet.</p>
+            </section>
+            <p className="mt-4 text-xs text-slate-500">
+              I produksjon opprettes Vipps-avtalen av serveren, og tilgang oppdateres først når en signert bekreftelse fra Vipps er mottatt – ikke ved retur fra Vipps.
+            </p>
+            </>
+          )}
         </Card>
 
         <Card className="p-5">
@@ -212,21 +226,25 @@ export function AccountPage() {
           </div>
           <div className="mt-5 border-t border-slate-100 pt-4">
             <p className="text-sm font-semibold">Dine data</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                icon={<Download className="size-4" aria-hidden />}
-                onClick={async () => {
-                  const f = await services.imports.exportScenarios();
-                  downloadText(f.filename, f.content, 'application/json');
-                }}
-              >
-                Eksporter scenarioer (JSON)
-              </Button>
-              <Link to="/import" className={buttonClass('secondary', 'sm')}>
-                <FileJson className="size-4" aria-hidden /> Importer v1-fil
-              </Link>
-            </div>
+            {importsUnavailable ? (
+              <p className="mt-2 text-sm text-slate-700">Eksport og import av scenarioer er ikke koblet til ennå.</p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  icon={<Download className="size-4" aria-hidden />}
+                  onClick={async () => {
+                    const f = await services.imports.exportScenarios();
+                    downloadText(f.filename, f.content, 'application/json');
+                  }}
+                >
+                  Eksporter scenarioer (JSON)
+                </Button>
+                <Link to="/import" className={buttonClass('secondary', 'sm')}>
+                  <FileJson className="size-4" aria-hidden /> Importer v1-fil
+                </Link>
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -382,7 +400,9 @@ export function AccountPage() {
 
       <Card className="p-5">
         <SectionTitle sub="Kurs kjøpes én gang og gir varig tilgang – uavhengig av abonnementet.">Mine kurs</SectionTitle>
-        {(purchases.data ?? []).length === 0 ? (
+        {coursesUnavailable ? (
+          <p className="text-sm text-slate-700">Kurs er ikke koblet til ennå.</p>
+        ) : (purchases.data ?? []).length === 0 ? (
           <p className="text-sm text-slate-700">
             Du har ikke kjøpt noen kurs ennå. <Link to="/kurs" className="font-medium text-pine-800 underline">Se kursene</Link>.
           </p>

@@ -227,6 +227,7 @@ export function createMockServices(opts: MockServiceOptions): MockServices {
     imports: new MockImportService(ctx),
     events: { subscribe: (l) => db.subscribe(l) },
     demo,
+    unavailable: [],
     db,
   };
   return services;

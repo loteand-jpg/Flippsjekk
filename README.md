@@ -20,7 +20,8 @@ npm run dev          # http://localhost:5173
 | `npm run preview` | Serverer `dist/` lokalt |
 | `npm test` | Enhets- og tjenestetester (Vitest) |
 | `npm run typecheck` | TypeScript for app, tester og konfig |
-| `npm run test:e2e` | Hovedflyten i Chromium, desktop og mobil (Playwright). Første gang: `npx playwright install chromium` |
+| `npm run test:e2e` | Hovedflyten i Chromium, desktop og mobil, pluss produksjonsmodus med stubbet Supabase-nettverk (Playwright). Første gang: `npx playwright install chromium` |
+| `npm run test:sql` | Bare Supabase-testene (migrasjoner mot PGlite, RLS-matrise, Auth/profil-adaptere) |
 | `npm run check` | Typekontroll + tester + bygg |
 
 Appen bruker hash-ruting (`#/oversikt`), så `dist/` kan legges på hvilken som helst statisk server.
@@ -67,7 +68,7 @@ Andre ting å prøve:
 - **Sandmoflata 8 C** har høy fellesgjeld og bruker totalpris.
 - **Ladeveien 9 A** har ingen offisiell visning, bare en privat.
 
-Testtilganger finnes bare med mocktjenestene. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) vises ingen testkontroller, og det finnes ingen URL-parameter eller localStorage-verdi som gir betalt tilgang.
+Testtilganger finnes bare med mocktjenestene. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`, med `VITE_SUPABASE_URL` og `VITE_SUPABASE_PUBLISHABLE_KEY`) vises ingen testkontroller, innlogging og profil går mot Supabase, og alt annet er «ikke koblet til ennå». Det finnes ingen URL-parameter eller localStorage-verdi som gir betalt tilgang, og produksjonsmodus gir aldri et abonnement.
 
 ## Beregningsmotor
 
@@ -147,7 +148,7 @@ docs/            datamodell, agentkontrakt, formater, integrasjoner, supabase og
 - [docs/agentkontrakt.md](docs/agentkontrakt.md): kontrakten agenten skal levere, med komplett eksempel ([docs/eksempel-agent-analyse.json](docs/eksempel-agent-analyse.json))
 - [docs/formater.md](docs/formater.md): import v1 (mapping og regler) og eksportformat for scenarioer
 - [docs/integrasjoner.md](docs/integrasjoner.md): hva som er mock, og hva som gjenstår før kommersiell lansering
-- [docs/supabase.md](docs/supabase.md): backend fase 1 – Supabase-migrasjoner, RLS, SQL-testmatrise (`npm run test:sql`), klientgrunnlag og hva som må verifiseres i faktisk Supabase. Skrevet og testet bare i repoet; ikke anvendt eller verifisert mot Supabase ennå
+- [docs/supabase.md](docs/supabase.md): backend – Supabase-migrasjoner, RLS og SQL-testmatrise (fase 1, live-verifisert av ChatGPT), Auth og profil (fase 2A: Google og e-postkode, skrevet og testet i repoet, ikke live-verifisert), klientgrunnlag og hva som må konfigureres og verifiseres i faktisk Supabase
 
 ## Begrensninger i denne versjonen
 
