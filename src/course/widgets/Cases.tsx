@@ -92,7 +92,7 @@ export function CaseAWidget() {
         <div className="mt-3">
           <BarList rows={cases.map(({ k, b }) => ({ label: `${CASE_LABEL[k]} salg`, value: b.profit }))} />
         </div>
-        <p className="mt-2 text-xs text-slate-600">Med den forenklede modellen blir resultatet omtrent –284 000 kr (lav), –87 000 kr (base) og +208 000 kr (høy). Etter verdsetting av 250 egne timer à 350 kr er høyt scenario ca. 121 000 kr.</p>
+        <p className="mt-2 text-xs text-slate-600">Med gjeldende modell blir resultatet omtrent –282 000 kr (lav), –85 000 kr (base) og +210 000 kr (høy). Etter separat illustrativ verdsetting av 250 egne timer à 350 kr er høyt scenario ca. 123 000 kr. Timeverdien er ikke en kontant prosjektkostnad.</p>
       </section>
 
       <FactBox kind="tips" title="Budskap">
