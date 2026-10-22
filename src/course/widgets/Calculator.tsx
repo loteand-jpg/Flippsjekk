@@ -41,7 +41,7 @@ function CalcField({ label, k, unit, decimals, hint, tag }: { label: string; k: 
   const { calc, setCalc } = useCalc();
   return (
     <Field label={label} hint={hint} labelAside={tag ? <EvidenceTag kind={tag} /> : undefined}>
-      {(p) => <NumberInput {...p} value={calc[k] as number | null} onChange={(v) => setCalc({ [k]: v, ...(k === 'purchaseFinancingPct' ? { renovationFinancingPct: v } : {}) } as Partial<ScenarioValues>)} unit={unit} decimals={decimals} />}
+      {(p) => <NumberInput {...p} value={calc[k] as number | null} onChange={(v) => setCalc({ [k]: v } as Partial<ScenarioValues>)} unit={unit} decimals={decimals} />}
     </Field>
   );
 }
@@ -173,7 +173,8 @@ export function FlippCalculator() {
             <CalcField label="Prosjektmåneder (m)" k="months" unit="mnd" decimals={1} tag="mine" />
             <CalcField label="Månedlige kostnader (M)" k="monthlyCost" unit="kr" tag="analyse" hint="Felleskostnader, strøm, forsikring, avgifter m.m." />
             <CalcField label="Årlig rente (r)" k="interestPct" unit="%" decimals={2} tag="mine" />
-            <CalcField label="Finansiert andel (f)" k="purchaseFinancingPct" unit="%" decimals={0} tag="mine" />
+            <CalcField label="Låneandel av kjøpesum (fP)" k="purchaseFinancingPct" unit="%" decimals={0} tag="mine" hint="Regnes kun av kontant kjøpesum (P), ikke kjøpskostnadene." />
+            <CalcField label="Låneandel av oppussing (fR)" k="renovationFinancingPct" unit="%" decimals={0} tag="mine" hint="Egen låneandel av oppussing inklusive reserve (RB)." />
           </Group>
 
           <Group title="Salg" sub="Lav, base og høy – ikke én magisk salgspris.">
@@ -199,7 +200,7 @@ export function FlippCalculator() {
 
           <Group title="Egen tid og krav">
             <CalcField label="Egne timer (H)" k="lumpSumHours" unit="t" />
-            <CalcField label="Timeverdi (h)" k="hourValue" unit="kr/t" tag="mine" />
+            <CalcField label="Illustrativ verdi av egen tid (h)" k="hourValue" unit="kr/t" tag="mine" hint="Vises separat som alternativverdi. Trekkes ikke fra resultatet eller som kostnad i maksbudet." />
             <CalcField label="Ønsket minimumsfortjeneste" k="profitTarget" unit="kr" tag="mine" hint="Brukes til maksbud." />
           </Group>
         </div>
@@ -425,7 +426,7 @@ export function HurdlePanel() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="1. Minimum fortjeneste" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr" value={calc.profitTarget} onChange={(v) => setCalc({ profitTarget: v })} />}</Field>
         <Field label="2. Minimum prosjektavkastning" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="%" decimals={1} value={h.minReturnPct} onChange={(v) => setH({ minReturnPct: v })} />}</Field>
-        <Field label="3. Minimum verdi per egen time" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr/t" value={h.minHourValue} onChange={(v) => setH({ minHourValue: v })} />}</Field>
+        <Field label="3. Minimum fortjeneste per egen time" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr/t" value={h.minHourValue} onChange={(v) => setH({ minHourValue: v })} />}</Field>
       </div>
       {ev.status === 'complete' ? (
         <table className="num w-full text-sm">
@@ -474,7 +475,7 @@ export function HurdlePanel() {
       ) : (
         <Alert tone="warning">Kalkylen er ufullstendig, så kravene kan ikke sjekkes. Åpne modul 8.</Alert>
       )}
-      <p className="text-xs text-slate-600">Eksempelinnstillinger er 400 000 kr, 15–20 % prosjektavkastning og 350 kr/time. De er eksempler – ikke universelle fasiter.</p>
+      <p className="text-xs text-slate-600">Eksempelinnstillinger er 400 000 kr i fortjenestemål, 15 % prosjektavkastning og 500 kr i fortjeneste per egeninnsatstime. Timekravet er en redigerbar grense for maksbud – ikke en ekstra prosjektkostnad eller automatisk dom over lønnsomheten.</p>
     </div>
   );
 }
