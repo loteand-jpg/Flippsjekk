@@ -17,6 +17,21 @@
 - `src/course/marketData.ts` inneholder manuelle markeds- og oppussingsindikasjoner, ikke direkte kildeoppslag.
 - Kurskjøp/Vipps er simulert, og innholdet ligger i klientbygget. Dette er **ikke** produksjonsklar tilgangskontroll.
 
+## Status for første endringspakke (22. oktober 2026)
+
+**Implementert på `kurs-v2`, ikke i `main`:**
+- Kurskalkylen kaller nå standardmodellen direkte, uten eldre lånegrunnlag.
+- Modul 8.1 beskriver kjøpslån, oppussingslån og renteberegning med separate satser.
+- Case A-teksten og enhetstestfasiten er oppdatert til avrundet −282 000 / −85 000 / +210 000 kr, og etter separat illustrativ verdsetting av 250 timer à 350 kr: +123 000 kr i høyt scenario.
+- En eksplisitt paritetstest krever identisk utfall i kurs og standardmotor for Case A og kontrollerer at kjøpslånet er 90 % av 3 millioner kroner.
+- AI-overblikk og beregningsdokumentasjon er oppdatert.
+
+**Verifisert:** GitHub-readback av de endrede filene og en uavhengig kontrollregning av Case A.
+
+**Ikke verifisert:** `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`, mobilvisning, hele kursets faglige innhold og kjøpsflyten. Repository kunne ikke klones til tilgjengelig lokalt testmiljø. Dette er derfor ikke en godkjent eller komplett kursversjon 2.
+
+**Neste kontrollport:** Kjør testene i et repository-miljø. Rett eventuelle regresjoner, og kvalitetssikre deretter regelkilder og de 53 kurssidene. Kursinnhold og produksjonsbetaling skal ikke endres i `main` ennå.
+
 ## Leveranser
 
 ### A. Økonomisk samsvar (første prioritet)
