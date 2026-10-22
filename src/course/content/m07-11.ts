@@ -250,14 +250,14 @@ export const M7_11: CourseModule[] = [
         blocks: [
           {
             t: 'p',
-            x: 'Se på tre tall samtidig: resultat før skatt og egen tid, resultat etter verdsatt egen tid og prosjektavkastning. Prosjektavkastning er ikke det samme som egenkapitalavkastning.',
+            x: 'Se på tre tall samtidig: prosjektresultat før skatt, prosjektavkastning og fortjeneste per egeninnsatstime. En separat verdsetting av egen tid kan brukes til å sammenligne alternativer, men trekkes ikke som kontantkostnad i resultatet. Prosjektavkastning er ikke det samme som egenkapitalavkastning.',
           },
           { t: 'widget', id: 'returns' },
           {
             t: 'box',
             kind: 'eksempel',
             title: 'Eksempel – ikke fasit',
-            x: ['Eksempelinnstillinger kan være 400 000 kr fortjenestemål, 15–20 % prosjektavkastning og 350 kr/time. Du setter dine egne krav.'],
+            x: ['Eksempelinnstillinger kan være 400 000 kr fortjenestemål, 15 % prosjektavkastning og 500 kr i fortjeneste per egeninnsatstime. Dette er redigerbare mål, ikke universelle fasiter. Timekravet setter en egen grense for maksbud og er ikke en prosjektkostnad.'],
           },
         ],
       },
@@ -271,7 +271,7 @@ export const M7_11: CourseModule[] = [
           { t: 'lead', x: 'Hva kan jeg betale og fortsatt få resultatet jeg krever?' },
           {
             t: 'p',
-            x: 'Velg et resultatkrav i kalkulatoren under og se modellert maks kjøpspris i lavt, normalt og høyt scenario. Kjøpsavgift og renter beregnes på nytt for hver pris.',
+            x: 'Velg fortjenestemål i kalkulatoren under og se modellert maksimal kjøpspris i lavt, normalt og høyt scenario. Kjøpsavgift og renter beregnes på nytt for hver pris. Et eget krav til fortjeneste per egeninnsatstime kan gi et lavere forsvarlig maksbud; et prosjekt under timekravet er ikke automatisk ulønnsomt, men må vurderes ved en lavere kjøpspris.'
           },
           { t: 'widget', id: 'maxbud' },
           {
