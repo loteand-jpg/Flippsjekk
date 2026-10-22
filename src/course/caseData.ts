@@ -111,4 +111,4 @@ export interface HurdleState {
 }
 
 /** Eksempelinnstillinger – ikke fasiter. */
-export const DEFAULT_HURDLE: HurdleState = { minReturnPct: 15, minHourValue: 350 };
+export const DEFAULT_HURDLE: HurdleState = { minReturnPct: 15, minHourValue: 500 };
