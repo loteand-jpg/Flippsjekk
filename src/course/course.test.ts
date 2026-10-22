@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { solveMaxBid } from '../calc/engine';
 import { evaluateCourseScenario as evaluateScenario } from './evaluate';
+import { evaluateScenario as evaluateStandardScenario } from '../calc/scenario';
 import { termKeysIn } from './components';
 import { MODULES, MODULE_COUNT, PAGE_COUNT, TOTAL_UNITS, allPages, pageKey } from './content';
 import { FINAL_QUIZ } from './content/finalQuiz';
@@ -123,18 +124,27 @@ describe('sluttquiz', () => {
 });
 
 describe('Case A (modul 8) – tall fra kursteksten stemmer med motoren', () => {
+  it('kurs bruker standardmotorens kjøpslån og scenarioresultater', () => {
+    const kurs = evaluateScenario(CASE_A).evaluation;
+    const standard = evaluateStandardScenario(CASE_A).evaluation;
+    expect(kurs.resolved?.loanBasis).toBe('kjopesum');
+    expect(kurs.cases.base?.purchaseLoan).toBe(2_700_000);
+    for (const scenario of ['low', 'base', 'high'] as const) {
+      expect(kurs.cases[scenario]).toEqual(standard.cases[scenario]);
+    }
+  });
   const ev = evaluateScenario(CASE_A).evaluation;
   it('delsummer', () => {
     expect(ev.base!.duty).toBe(75_000);
     expect(ev.base!.RB).toBe(264_000);
   });
-  it('resultat lav/base/høy ≈ –284 000 / –87 000 / +208 000', () => {
-    expect(Math.round(ev.cases.low!.profit / 1000) * 1000).toBe(-284_000);
-    expect(Math.round(ev.cases.base!.profit / 1000) * 1000).toBe(-87_000);
-    expect(Math.round(ev.cases.high!.profit / 1000) * 1000).toBe(208_000);
+  it('resultat lav/base/høy ≈ –282 000 / –85 000 / +210 000', () => {
+    expect(Math.round(ev.cases.low!.profit / 1000) * 1000).toBe(-282_000);
+    expect(Math.round(ev.cases.base!.profit / 1000) * 1000).toBe(-85_000);
+    expect(Math.round(ev.cases.high!.profit / 1000) * 1000).toBe(210_000);
   });
-  it('høyt scenario etter 250 t à 350 kr ≈ 121 000', () => {
-    expect(Math.round(ev.cases.high!.profitAfterOwnWork! / 1000) * 1000).toBe(121_000);
+  it('høyt scenario etter illustrativ verdsetting av 250 t à 350 kr ≈ 123 000', () => {
+    expect(Math.round(ev.cases.high!.profitAfterOwnWork! / 1000) * 1000).toBe(123_000);
   });
   it('maksbud ved 300 000 kr resultatkrav: høy ≈ 2,91 mill., base ≈ 2,63 mill.', () => {
     const x = ev.resolved!;
