@@ -198,7 +198,9 @@ export const M7_11: CourseModule[] = [
             list: [
               'Kjøpskostnader **K = A × d + F**',
               'Oppussing med reserve **RB = R × (1 + b)**',
-              'Prosjektlånsrenter **I = f × ((P + K) + RB/2) × r × m/12**. Modellen antar forenklet at oppussingsmidlene i snitt bindes halvveis gjennom prosjektet.',
+              'Kjøpslån **Lp = fP × P**. Kjøpskostnadene inngår ikke automatisk i lånegrunnlaget.',
+              'Oppussingslån **Lr = fR × RB**. Kjøps- og oppussingslån har hver sin redigerbare låneandel.',
+              'Renter **I = (Lp + Lr/2) × r × m/12** når løpende kostnader betales med egenkapital. Oppussingslånet trekkes gradvis (i snitt halvveis). Hvis løpende kostnader lånefinansieres, tilkommer også rente på gradvis opptrekk.',
               'Drift **O = M × m**',
               'Ved totalpris er kontantsalget **S = V − D1**. Ved kontantpris er **S = V**.',
               'Salgskostnader **Csale = Sf + s × S**, og samlede kostnader **C = P + K + RB + I + O + Csale**',
