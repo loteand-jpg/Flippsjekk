@@ -5,6 +5,7 @@ import { SessionProvider } from './app/session';
 import { ToastProvider } from './app/toast';
 import { DemoFrame, Logo, RequireAuth } from './components/layout/AppShell';
 import { Alert, buttonClass } from './components/ui/primitives';
+import { supabaseConfigFromEnv } from './services/supabase/config';
 import type { Services } from './services/types';
 import { AccountPage } from './pages/AccountPage';
 import { LoginPage, SignupPage } from './pages/AuthPages';
@@ -103,13 +104,20 @@ export function App({ services }: { services: Services }) {
 }
 
 export function NotConfigured() {
+  // Bare diagnostikk: viser om offentlig Supabase-konfigurasjon er funnet. Verdiene vises aldri, og ingenting kobles til Supabase her.
+  const supabase = supabaseConfigFromEnv();
   return (
     <div className="mx-auto max-w-xl px-4 py-20">
       <Logo />
       <h1 className="mt-6 text-xl font-semibold">Produksjonsbackend er ikke koblet til</h1>
       <p className="mt-2 text-sm text-slate-700">
         Appen er bygget i produksjonsmodus (VITE_FLIPPROM_MODE=production), men Supabase Auth (Google og e-postkode), database, Vipps og analyseagenten er ikke koblet til ennå. Demomodus og
-        testkontroller er av i denne modusen. Se docs/integrasjoner.md.
+        testkontroller er av i denne modusen. Se docs/integrasjoner.md og docs/supabase.md.
+      </p>
+      <p className="mt-3 text-sm text-slate-700" data-testid="supabase-config-status">
+        {supabase.ok
+          ? 'Supabase-konfigurasjon (URL og offentlig nøkkel) er funnet, men appen bruker den ikke ennå.'
+          : `Supabase-konfigurasjon mangler eller er ugyldig: ${supabase.problems.join(' ')}`}
       </p>
     </div>
   );

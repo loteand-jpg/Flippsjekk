@@ -5,3 +5,12 @@ dist
 coverage
 test-results
 playwright-report
+
+# Miljøfiler og Supabase CLI: eksempelfilen skal med, alt annet (som kan inneholde nøkler) skal ikke
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/.env.*

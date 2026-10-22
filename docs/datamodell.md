@@ -94,7 +94,13 @@ Sammenlignbare objekter har samme felt i grunnlaget og hos brukeren: `name`, `ur
 - **Hver bruker som ber om en analyse belastes for en ny analyse**, uavhengig av om grunnlaget fantes fra før eller andre har analysert samme bolig (nøkkel `new_analysis:<dedupe_key>[:<user>]`). Åpner brukeren en bolig som allerede ligger i egen liste (eller er betalt tidligere), belastes ikke på nytt. `reuse`-hendelser registreres ikke lenger for nye forespørsler og vises ikke for brukeren.
 - Kvoten for nye analyser telles som belastede hendelser i perioden pluss egne pågående analysejobber (også de brukeren er koblet til).
 
-## Forslag til Postgres/Supabase
+## Supabase-skjemaet (backend fase 1)
+
+Postgres-skjemaet med RLS, constraints og indekser ligger nå i [supabase/migrations](../supabase/migrations) og er beskrevet i [supabase.md](supabase.md), inkludert **avvikene fra denne siden** (bl.a. `start_at`/`end_at`, `profiles.defaults` nullable, `finn_id`-regex etter Zod, sammensatte fremmednøkler i stedet for `exists`-policyer, og konservative lese-policyer uten `has_active_subscription()`). Skjemaet er skrevet og testet i repoet, men ikke anvendt eller verifisert i Supabase ennå. Skjemaendringer leveres alltid som en ny migrasjon.
+
+SQL-utdragene under er det opprinnelige forslaget og er erstattet av migrasjonene.
+
+## Forslag til Postgres/Supabase (opprinnelig utkast)
 
 ```sql
 create table properties (
