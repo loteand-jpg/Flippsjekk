@@ -1,5 +1,7 @@
 # ai.md – Flippsjekk: oversikt for AI-agenter og utviklere
 
+> **Arbeidsgren kurs-v2:** Se [docs/kurs-v2.md](docs/kurs-v2.md) for innføring, kvalitetssikring og godkjenningsporter. Denne grenen er en utviklingsutgave; `main` og dagens kurs endres ikke før godkjenning.
+
 Denne filen er skrevet for AI-kodeassistenter (og mennesker som tar over). Den samler **hva produktet er, hvordan det er bygget, hvorfor valgene er gjort, alle krav som er gitt, og hvordan det bygges videre** mot ekte innlogging, abonnement, Vipps, Supabase og analyseagent. Les den først, og bruk så `README.md` (kjøring/demo) og `docs/*.md` (detaljer).
 
 > **Språk:** All brukertekst er norsk bokmål. Kommentarer i kode og kommitmeldinger er også norske. Behold det.
@@ -146,7 +148,7 @@ Egenkapitalbehov = (P − Lp) + K + (RB − Lr) + [ikke lånefinansiert] (I + O)
 Finansieringsgap = max(0, egenkapitalbehov − tilgjengelig egenkapital)
 ```
 
-* **Kjøpslånet gjelder kjøpesummen (1.2.0).** Før (1.0/1.1) ble låneandelen brukt på P + K. Historiske tall er derfor **ikke bit-for-bit identiske** når K > 0 – bevisst produktbeslutning (eksempel i `docs/scenarier-og-marked.md` §2.1: renter 55 350 → 54 000, resultat 504 650 → 506 000, egenkapitalbehov 530 350 → 574 000). Kurset beholder den eldre regelen via `purchaseLoanBasis: 'kjopesum_og_kostnader'` (`src/course/evaluate.ts`) slik at kursteksten ikke endres; analyser bruker aldri den.
+* **Kjøpslånet gjelder kjøpesummen (1.2.0).** Før (1.0/1.1) ble låneandelen brukt på P + K. Historiske tall er derfor **ikke bit-for-bit identiske** når K > 0 – bevisst produktbeslutning (eksempel i `docs/scenarier-og-marked.md` §2.1: renter 55 350 → 54 000, resultat 504 650 → 506 000, egenkapitalbehov 530 350 → 574 000). Kursversjon 2 bruker nå standardregelen via `src/course/evaluate.ts`. Det eldre lånegrunnlaget finnes fortsatt for eksplisitt historisk etterprøving, men er ikke kursstandard.
 * **Maksbud: flere grenser, hver for seg.** Fortjenestemål (`maxBid`) og timekrav (`maxBidHourly` – høyeste pris som gir minst `minProfitPerOwnHour` per egeninnsatstime ved oppgitte egne timer). `Evaluation.recommendedMaxBid` = laveste grense med `limitedBy`; `recommendedBidOf(ev)` brukes av alle visninger. Avkastningsmål står i tabellen og blandes ikke inn. Uten egne timer gir timekravet ingen grense.
 * **Timekravet er verken kostnad eller port.** Det er en mål-/maksbudparameter og en rangeringsfaktor. Et scenario under kravet kan fortsatt anbefales (lavere maksbud).
 * `hourValue`/`profitAfterOwnWork` er utfaset (kurset bruker dem) og styrer ikke hovedøkonomien.
@@ -297,7 +299,7 @@ Etter en skadelig skjemaendring forsvant analyser i en brukers lokale data. Rege
 * **Prosa først**; faste komponenttyper: Gjeldende regel, Regelradar, Flippsjekk-tips, Rødt flagg, Eksempel, Dette må avklares, Kort forklart, Husk. Utdypinger i åpne/lukkbare seksjoner. Skatte-/finansieringsregler har faglig kontrolldato **17. oktober 2026** (`COURSE_CHECKED`, vises på infosiden, under sider og i utskrifter).
 * **Sluttcase** (6 trinn, utenfor modulene) og **sluttquiz** (15 spørsmål, **bestått ≥ 12**) og fullføringsside (åpnes bare etter bestått quiz).
 * Side regnes som **lest først når brukeren trykker Neste eller markerer den selv**. Fremdrift lagres per bruker i `usePref` (`…course.flipping-privat.v2`); gammel v1 overføres bare for kalkyle/budsjett/avkrysninger.
-* **Før-bud-sjekklisten** er et verktøy som kan åpnes fra relevante moduler og på slutten. Kalkulatoren bruker samme motor; Case A/B/C i modul 8.6 (Case A: −284k / −87k / +208k; maksbud ≈ 2,91 mill. høy / 2,63 mill. base ved 300k mål).
+* **Før-bud-sjekklisten** er et verktøy som kan åpnes fra relevante moduler og på slutten. Kalkulatoren bruker samme motor; Case A/B/C i modul 8.6 (Case A etter gjeldende lånemodell: −282k / −85k / +210k; maksbud ≈ 2,91 mill. høy / 2,63 mill. base ved 300k mål).
 * Ukjent er ikke 0; utdypende regler i widgetene (budsjett, risiko, stresstest, maksbud) følger samme prinsipp.
 * Kursinnholdet er data (`content/*.ts`, `Block`-typer i `types.ts`), rendret av `BlockView.tsx`. Ordlistebegreper skrives `{{nøkkel|tekst}}` og må finnes i `glossary.ts` (testet).
 
@@ -416,7 +418,7 @@ Repo: `https://github.com/loteand-jpg/Flippsjekk` (`origin`, gren `main`). `.git
 | Markedsvekting V1 er ren, versjonert funksjon uten datahenting | Testbar og forklarbar; parametere er ikke validert mot reelle salg ennå |
 | Rangering som åpne kriterier + materialitetsgrenser | Små forskjeller skal ikke gi full uttelling; ingen skjult AI-score |
 | Betinget scenario styrer ikke anbefalt maksbud | Et bud skal ikke bygge på noe som ikke er avklart |
-| Kjøpslånet gjelder kjøpesummen P, ikke P + K (modell 1.2.0) | Produktbeslutning: kjøpskostnader dekkes av egenkapital. Historiske tall er ikke bit-for-bit identiske – dokumentert, ikke skjult. Kurset beholder den eldre regelen (`purchaseLoanBasis`) så kursteksten ikke endres |
+| Kjøpslånet gjelder kjøpesummen P, ikke P + K (modell 1.2.0) | Produktbeslutning: kjøpskostnader dekkes av egenkapital. Historiske tall er ikke bit-for-bit identiske – dokumentert, ikke skjult. Kursversjon 2 bruker standardregelen, og kurstekst og fasit er tilpasset |
 | Timekravet som egen maksbudgrense + rangeringsfaktor, ikke port | Kravet er brukerens lønnsomhetsmål. Et scenario under kravet kan likevel være attraktivt ved lav kjøpspris; anbefalt maksbud er den laveste grensen med synlig begrensning |
 | Scenariorisiko (teknisk, kostnad, tid, myndighet) i rangeringen | Basis og et bad-/kjøkkenflyttingsscenario har ulik risiko; samme objektrisiko for alle var ikke nok. Ikke vurdert = uavklart (ukjent er ikke middels) |
 | Én autoritativ salgsverdiflyt: kode fastsetter low/base/high | Agentens estimat og markedsmotoren ga to konkurrerende fasiter. Agenten leverer nå bare sluttprodukt, klassifisering og en begrenset (±5 %), begrunnet ankerjustering. Markedsvurderingen regnes per analysens dato så grunnverdiene er stabile |
