@@ -1,0 +1,44 @@
+name: Kurs v2 – kvalitetssjekk
+
+on:
+  push:
+    branches: [kurs-v2]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/course/**'
+      - 'src/calc/**'
+      - 'src/domain/**'
+      - 'src/config/**'
+      - 'src/pages/Course*'
+      - 'e2e/**'
+      - 'package*.json'
+      - '.github/workflows/kurs-v2-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kurs:
+    name: Typekontroll, enhetstest, bygg og nettlesertest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installer avhengigheter
+        run: npm ci
+      - name: Typekontroll
+        run: npm run typecheck
+      - name: Enhetstester
+        run: npm test
+      - name: Produksjonsbygg
+        run: npm run build
+      - name: Installer Chromium for e2e
+        run: npx playwright install --with-deps chromium
+      - name: Ende-til-ende-tester (PC og mobil)
+        run: npm run test:e2e
