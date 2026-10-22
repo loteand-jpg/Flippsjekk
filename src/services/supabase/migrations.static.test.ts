@@ -235,7 +235,7 @@ describe('ingen hemmeligheter i repoet', () => {
 });
 
 /**
- * Migrasjon 1–6 er anvendt i Flippsjekks faktiske Supabase-utviklingsdatabase og er en del av historikken. De skal aldri redigeres:
+ * Migrasjon 1–7 er anvendt i Flippsjekks faktiske Supabase-utviklingsdatabase og er en del av historikken. De skal aldri redigeres:
  * endringer leveres som en NY migrasjon. Sjekksummene låser filene; feiler denne testen, lag en ny migrasjon i stedet for å endre en gammel.
  */
 const APPLIED_MIGRATION_SHA256: Record<string, string> = {
@@ -245,18 +245,19 @@ const APPLIED_MIGRATION_SHA256: Record<string, string> = {
   '20261022100300_shared_analysis_data.sql': 'b05a53bcec04469f3d7eecb1848df753e9cbec3bbf414cbe63d587724aab42a9',
   '20261022100400_user_data.sql': '114aa2671867ef0e7055d867994299fdddee81cb9e2e4b2765320cac023aca76',
   '20261022100500_billing_usage_jobs.sql': '58dee79e7358cd7cfe3a16a7a6b05a336e28356de31e91a9a2ab7c15ea8f8c79',
+  '20261022100600_service_role_grants.sql': '8bb5292e8cf6ddf80739856dce74c29c1ee663005d434695a4c8b656e398018e',
 };
 
 describe('anvendte migrasjoner er urørt', () => {
-  it('migrasjon 1–6 har uendret innhold (sjekksum), og alt nytt ligger i senere migrasjoner', () => {
+  it('migrasjon 1–7 har uendret innhold (sjekksum), og alt nytt ligger i senere migrasjoner', () => {
     for (const [file, expected] of Object.entries(APPLIED_MIGRATION_SHA256)) {
       const text = sql.find((s) => s.file === file)?.text;
       expect(text, `${file} finnes`).toBeDefined();
       expect(createHash('sha256').update(text as string).digest('hex'), `${file} er endret – lag en NY migrasjon i stedet`).toBe(expected);
     }
     const later = files.filter((f) => !(f in APPLIED_MIGRATION_SHA256));
-    expect(later).toEqual(['20261022100600_service_role_grants.sql']);
-    for (const f of later) expect(f > '20261022100500').toBe(true);
+    expect(later).toEqual(['20261022100700_service_role_privilege_reset.sql']);
+    for (const f of later) expect(f > '20261022100600').toBe(true);
   });
 });
 
@@ -306,5 +307,76 @@ describe('migrasjon 7: eksplisitte service_role-rettigheter og rls_auto_enable()
 
   it('endrer ingenting for anon og authenticated (ingen nye grants til dem i denne migrasjonen)', () => {
     expect(m7).not.toMatch(/grant[^;]*\bto\b[^;]*\b(anon|authenticated)\b/i);
+  });
+});
+
+describe('migrasjon 8: REVOKE før GRANT for service_role og deny-by-default for nye tabeller', () => {
+  const FILE = '20261022100700_service_role_privilege_reset.sql';
+  const m8 = sql.find((x) => x.file === FILE)!.text.replace(/--[^\n]*/g, '');
+  const m7 = sql.find((x) => x.file === '20261022100600_service_role_grants.sql')!.text.replace(/--[^\n]*/g, '');
+  const stmts = m8.split(';').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const grantsOf = (text: string): Record<string, string[]> => {
+    const out: Record<string, string[]> = {};
+    for (const m of text.matchAll(/grant ([a-z, ]+) on table public\.(\w+) to service_role;/gi)) out[m[2]] = m[1].split(',').map((x) => x.trim().toUpperCase()).sort();
+    return out;
+  };
+
+  it('fjerner ALLE eksisterende tabellrettigheter fra service_role på nøyaktig de 15 tabellene – før noe GRANT', () => {
+    const revoke = stmts.find((x) => /^revoke all privileges on table /i.test(x))!;
+    expect(revoke, 'REVOKE ALL PRIVILEGES ON TABLE finnes').toBeDefined();
+    expect(revoke).toMatch(/ from service_role$/);
+    const tables = [...revoke.matchAll(/public\.(\w+)/g)].map((m) => m[1]).sort();
+    expect(tables).toEqual([...FLIPPSJEKK_TABLES].sort());
+    // Den første rettighets-setningen i filen er REVOKE ALL, og den står foran alle GRANT-ene.
+    const firstGrant = m8.search(/\bgrant\b/i);
+    expect(m8.search(/revoke all privileges on table/i)).toBeGreaterThanOrEqual(0);
+    expect(m8.search(/revoke all privileges on table/i)).toBeLessThan(firstGrant);
+    // Eksakt ett slikt REVOKE (ikke bare for noen tabeller), og aldri mot andre roller.
+    expect(stmts.filter((x) => /^revoke all privileges on table /i.test(x))).toHaveLength(1);
+  });
+
+  it('gir tilbake nøyaktig de samme tabellrettighetene som migrasjon 7 (og det matrisen forventer) – aldri TRUNCATE, REFERENCES, TRIGGER eller ALL', () => {
+    const granted = grantsOf(m8);
+    expect(granted).toEqual(grantsOf(m7));
+    expect(Object.keys(granted).sort()).toEqual([...FLIPPSJEKK_TABLES].sort());
+    expect(granted.profiles).toEqual(['INSERT', 'SELECT', 'UPDATE']);
+    expect(granted.usage_events).toEqual(['INSERT', 'SELECT']);
+    expect(granted.course_purchases).toEqual(['INSERT', 'SELECT']);
+    expect(granted.subscriptions).toEqual(['INSERT', 'SELECT', 'UPDATE']);
+    expect(granted.property_snapshots).toEqual(['INSERT', 'SELECT', 'UPDATE']);
+    const grants = stmts.filter((x) => /^grant\b/i.test(x));
+    expect(grants).toHaveLength(16); // 15 tabeller + USAGE på schema public
+    for (const g of grants) {
+      expect(g, g).toMatch(/ to service_role$/);
+      expect(g, g).not.toMatch(/\ball\b|truncate|references|trigger|sequence|function|\banon\b|\bauthenticated\b|\bpublic$|grant option/i);
+    }
+  });
+
+  it('schema public: USAGE gis eksplisitt og CREATE tas bort fra service_role', () => {
+    expect(stmts).toContain('revoke create on schema public from service_role');
+    expect(stmts).toContain('grant usage on schema public to service_role');
+    expect(m8).not.toMatch(/grant[^;]*\bcreate\b/i);
+  });
+
+  it('standardrettigheter: bare REVOKE ALL ON TABLES for postgres i schema public, for service_role, anon og authenticated – ingen GRANT, ingen globale, ingen andre objekttyper eller roller', () => {
+    const defaults = stmts.filter((x) => /^alter default privileges/i.test(x));
+    expect(defaults.sort()).toEqual([
+      'alter default privileges for role postgres in schema public revoke all on tables from anon',
+      'alter default privileges for role postgres in schema public revoke all on tables from authenticated',
+      'alter default privileges for role postgres in schema public revoke all on tables from service_role',
+    ]);
+    for (const d of defaults) expect(d, d).not.toMatch(/\bgrant\b|functions|sequences|supabase_admin|schemas|types/i);
+    expect(m8).not.toMatch(/alter default privileges\s+(?!for role postgres in schema public)/i);
+  });
+
+  it('rører verken klientrollenes tabell-/kolonnerettigheter, policyer, funksjoner, triggere eller rls_auto_enable()', () => {
+    const rest = stmts.filter((x) => !/^alter default privileges/i.test(x));
+    for (const x of rest) expect(x, x).not.toMatch(/\banon\b|\bauthenticated\b/i);
+    // «revoke all privileges on table … from service_role» lister kolonner ikke; ingen kolonnerettigheter for noen rolle
+    expect(m8).not.toMatch(/\bgrant\b[^;]*\(\s*\w+\s*(,\s*\w+\s*)*\)/i);
+    expect(m8).not.toMatch(/rls_auto_enable|\bdrop\b|create policy|alter policy|alter table|create (or replace )?function|alter function|create trigger|event trigger|security definer|security invoker|disable row level|force row level/i);
+    expect(m8).not.toMatch(/grant execute|revoke execute|on all (tables|sequences|functions)|on function|on sequence|truncate/i);
+    // Hele migrasjonen er fastlåst til nøyaktig disse setningene: 1 REVOKE ALL + 15 GRANT (tabeller) + REVOKE CREATE + GRANT USAGE + 3 standardregler.
+    expect(stmts).toHaveLength(1 + 15 + 1 + 1 + 3);
   });
 });

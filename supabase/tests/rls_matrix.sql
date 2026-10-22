@@ -1,11 +1,12 @@
 -- Flippsjekk: RLS- og eierskapstest (testmatrise) for backend fase 1.
 --
 -- HVORDAN DEN KJØRES
---   * Lokalt, uten Supabase: `npm test` kjører denne mot PGlite etter local_supabase_stub.sql (som IKKE gir service_role noen
---     standardrettigheter) og migrasjonene
+--   * Lokalt, uten Supabase: `npm test` kjører denne mot PGlite etter local_supabase_stub.sql (som gir anon, authenticated og service_role
+--     brede standardrettigheter på nye tabeller, slik at REVOKE i migrasjon 8 faktisk må virke) og migrasjonene
 --     (src/services/supabase/supabase.pglite.test.ts). Det er en ETTERLIGNING av Supabase, ikke Supabase.
 --   * Mot det faktiske Supabase-utviklingsprosjektet (etter at migrasjonene er anvendt): kjør hele filen som postgres
---     (SQL-editor, `psql` eller MCP execute_sql). Scriptet oppretter egne testbrukere og testdata inne i en transaksjon og
+--     (SQL-editor, `psql` eller MCP execute_sql). Test 0.16 oppretter en prøvetabell som rollen postgres og krever derfor at scriptet kjøres som
+--     postgres. Scriptet oppretter egne testbrukere og testdata (og prøvetabellen) inne i en transaksjon og
 --     ender med ROLLBACK, så ingenting blir liggende. Siste uttrykk før ROLLBACK returnerer ett resultat per test: kolonnen
 --     «ok» skal være true på alle rader. Kjør ALDRI mot et prosjekt med ekte brukerdata uten å først lese gjennom scriptet.
 --   * Rollebytte: scriptet bruker `set local role authenticated|anon|service_role` og setter JWT-claims
@@ -351,9 +352,25 @@ from (
     ) x where x.actual <> x.expected
 ) m;
 
+-- Kolonnerettigheter (pg_attribute.attacl) overlever ikke REVOKE ALL på tabellen hvis de ble gitt separat – og has_table_privilege i 0.8 ser dem ikke.
+select pg_temp.check(
+  '0.8b service_role har ingen kolonnenivå-rettigheter på noen Flippsjekk-tabell (bare tabellnivå, som i 0.8)',
+  m.n = 0, case when m.n = 0 then 'ingen kolonnerettigheter' else m.list end)
+from (
+  select count(*) as n, string_agg(t.name || '.' || a.attname || '=' || x.privilege_type, '; ') as list
+    from _tables t
+    join pg_attribute a on a.attrelid = format('public.%I', t.name)::regclass and a.attnum > 0 and not a.attisdropped and a.attacl is not null
+    cross join lateral aclexplode(a.attacl) x
+   where x.grantee = (select oid from pg_roles where rolname = 'service_role')
+) m;
+
 select pg_temp.check(
   '0.9 service_role har USAGE på schema public',
   has_schema_privilege('service_role', 'public', 'USAGE'), null);
+
+select pg_temp.check(
+  '0.9b service_role kan ikke opprette objekter i schema public (ikke CREATE; DDL skjer bare i migrasjoner)',
+  not has_schema_privilege('service_role', 'public', 'CREATE'), null);
 
 select pg_temp.check(
   '0.10 authenticated har NØYAKTIG de bestemte tabellrettighetene (tabellnivå) – ikke utvidet av service_role-korrekturen',
@@ -417,6 +434,40 @@ select pg_temp.check(
       from pg_proc p where p.oid = to_regprocedure('public.rls_auto_enable()')
   ), true),
   case when to_regprocedure('public.rls_auto_enable()') is null then 'funksjonen finnes ikke i dette miljøet (hoppet over)' else 'funksjon og event-trigger er på plass' end);
+
+-- Standardrettigheter for FREMTIDIGE tabeller (migrasjon 8): tabeller som postgres oppretter i public skal ikke automatisk gi service_role, anon
+-- eller authenticated noe. 0.15 leser katalogen (pg_default_acl), 0.16 prøver det i praksis med en kortlevd tabell.
+select pg_temp.check(
+  '0.15 standardrettigheter for nye tabeller (postgres i schema public) gir ikke service_role, anon eller authenticated noe',
+  m.n = 0, case when m.n = 0 then 'ingen slike oppføringer i pg_default_acl' else m.list end)
+from (
+  select count(*) as n, string_agg(r.rolname || '=' || a.privilege_type, ', ') as list
+    from pg_default_acl d
+    cross join lateral aclexplode(d.defaclacl) a
+    join pg_roles r on r.oid = a.grantee
+   where d.defaclrole = (select oid from pg_roles where rolname = 'postgres')
+     and d.defaclnamespace = 'public'::regnamespace and d.defaclobjtype = 'r'
+     and r.rolname in ('service_role', 'anon', 'authenticated')
+) m;
+
+do $probe$
+declare
+  v_list text;
+begin
+  create table public.__rls_probe_default_privs (id integer);
+  select string_agg(r.rolname || '=' || a.privilege_type, ', ' order by r.rolname, a.privilege_type) into v_list
+    from pg_class c
+    cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    join pg_roles r on r.oid = a.grantee
+   where c.oid = 'public.__rls_probe_default_privs'::regclass and r.rolname in ('service_role', 'anon', 'authenticated');
+  drop table public.__rls_probe_default_privs;
+  perform pg_temp.check(
+    '0.16 en NY tabell opprettet av postgres i public får ingen rettigheter for service_role, anon eller authenticated (deny-by-default)',
+    v_list is null and current_user = 'postgres',
+    case when current_user <> 'postgres' then 'scriptet må kjøres som postgres (kjørte som ' || current_user || ')'
+         when v_list is null then 'prøvetabellen fikk ingen rettigheter for klient- eller backendrollene (og er slettet igjen)'
+         else 'prøvetabellen fikk: ' || v_list end);
+end $probe$;
 
 -- ===========================================================================
 -- 1. PROFILER
@@ -775,6 +826,10 @@ select pg_temp.expect_fail('8.17 backend kan ikke slette kurskjøp', $$delete fr
 select pg_temp.expect_fail('8.18 backend kan ikke slette profiler direkte (de følger auth.users via cascade)', $$delete from public.profiles where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$, array['42501'], 'permission denied%');
 select pg_temp.expect_fail('8.19 backend kan ikke slette snapshots direkte', $$delete from public.property_snapshots where id = 'a1111111-1111-4111-8111-111111111111'$$, array['42501'], 'permission denied%');
 select pg_temp.expect_fail('8.20 backend kan ikke TRUNCATE tabeller', $$truncate public.properties cascade$$, array['42501'], 'permission denied%');
+-- Samme for alle 15 tabeller (meldingen må være «permission denied», ikke f.eks. en fremmednøkkel- eller feil-tabell-feil).
+select pg_temp.expect_fail('8.20b backend kan ikke TRUNCATE ' || t.name, format('truncate table public.%I cascade', t.name), array['42501'], 'permission denied%')
+  from unnest(array['profiles','properties','property_snapshots','analyses','viewings','user_properties','scenarios','user_comparables',
+                    'user_risks','private_events','calendar_overrides','subscriptions','course_purchases','usage_events','analysis_jobs']) t(name);
 select pg_temp.as_owner();
 
 -- ===========================================================================
