@@ -34,7 +34,7 @@ Fra 1.2.0 gjelder `purchaseFinancingPct` kun den kontante kjøpesummen **P**. Do
 | 1.0/1.1 (90 % av P + K) | 1 845 000 | 55 350 | 504 650 | 530 350 | 1 845 000 |
 | **1.2 (90 % av P)** | 1 800 000 | 54 000 | **506 000** | **574 000** | 1 800 000 |
 
-Rentene synker med lånet på kjøpskostnadene (90 % × 50 000 × 6 % × ½ = 1 350 kr), mens egenkapitalbehovet øker med 90 % av kjøpskostnadene (45 000 kr) minus den lavere renten. Gammel kalkylemodell kan reproduseres med motorinngangen `purchaseLoanBasis: 'kjopesum_og_kostnader'`; den brukes **bare av kurset** ([src/course/evaluate.ts](../src/course/evaluate.ts)), slik at kursteksten og kursets regneeksempler (Case A: −284k / −87k / +208k) ikke endres. Analyser i appen bruker aldri den eldre regelen.
+Rentene synker med lånet på kjøpskostnadene (90 % × 50 000 × 6 % × ½ = 1 350 kr), mens egenkapitalbehovet øker med 90 % av kjøpskostnadene (45 000 kr) minus den lavere renten. Gammel kalkylemodell kan fortsatt reproduseres eksplisitt med motorinngangen `purchaseLoanBasis: 'kjopesum_og_kostnader'` for kontroll av historiske beregninger. **Kursversjon 2 bruker ikke dette unntaket.** [src/course/evaluate.ts](../src/course/evaluate.ts) kaller standardmotoren. Kurscaset A har derfor nye fasittall (avrundet: −282k / −85k / +210k; høyt scenario etter separat illustrativ verdsetting av 250 egne timer à 350 kr: +123k). Analyser i appen bruker også standardmodellen.
 
 Oppdatert: renter, toppgjeld, egenkapitalbehov, finansieringsgap, maksbud (alle løsere bruker samme `computeCore`), stresstester og tester.
 
