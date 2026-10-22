@@ -93,7 +93,7 @@ test('kurs: kalkulator, stresstest, maksbud, scenarioer og sjekkliste', async ({
   await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
   await expect(page.getByRole('heading', { level: 1, name: /^8\.1 / })).toBeVisible();
   await page.getByRole('button', { name: /eksempel/i }).first().click();
-  await expect(page.getByText(/[−-]87\s?\d{3}\s?kr/).first()).toBeVisible();
+  await expect(page.getByText(/[−-]85\s?\d{3}\s?kr/).first()).toBeVisible();
   await noHorizontalScroll(page);
 
   await page.goto('/#/kurs/flipping-privat?modul=8&side=5');
@@ -108,6 +108,22 @@ test('kurs: kalkulator, stresstest, maksbud, scenarioer og sjekkliste', async ({
   await dlg.getByRole('checkbox').first().check();
   await expect(dlg.getByRole('checkbox').first()).toBeChecked();
   await noHorizontalScroll(page);
+});
+
+test('kurs: låneandel for kjøp og oppussing kan endres uavhengig', async ({ page }) => {
+  await login(page);
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
+  const buy = page.getByRole('textbox', { name: 'Låneandel av kjøpesum (fP)' });
+  const renovation = page.getByRole('textbox', { name: 'Låneandel av oppussing (fR)' });
+  await expect(buy).toHaveValue('90');
+  await expect(renovation).toHaveValue('90');
+  await buy.fill('75');
+  await expect(renovation).toHaveValue('90');
+  await renovation.fill('20');
+  await expect(buy).toHaveValue('75');
+  await page.reload();
+  await expect(buy).toHaveValue('75');
+  await expect(renovation).toHaveValue('20');
 });
 
 test('kurs: sluttcase, sluttquiz (bestått ≥ 12 av 15) og fullføringsside', async ({ page }) => {
