@@ -1,8 +1,9 @@
 -- Flippsjekk: RLS- og eierskapstest (testmatrise) for backend fase 1.
 --
 -- HVORDAN DEN KJØRES
---   * Lokalt, uten Supabase: `npm test` kjører denne mot PGlite etter local_supabase_stub.sql og migrasjonene
---     (src/services/supabase/rls.matrix.test.ts). Det er en ETTERLIGNING av Supabase, ikke Supabase.
+--   * Lokalt, uten Supabase: `npm test` kjører denne mot PGlite etter local_supabase_stub.sql (som IKKE gir service_role noen
+--     standardrettigheter) og migrasjonene
+--     (src/services/supabase/supabase.pglite.test.ts). Det er en ETTERLIGNING av Supabase, ikke Supabase.
 --   * Mot det faktiske Supabase-utviklingsprosjektet (etter at migrasjonene er anvendt): kjør hele filen som postgres
 --     (SQL-editor, `psql` eller MCP execute_sql). Scriptet oppretter egne testbrukere og testdata inne i en transaksjon og
 --     ender med ROLLBACK, så ingenting blir liggende. Siste uttrykk før ROLLBACK returnerer ett resultat per test: kolonnen
@@ -71,8 +72,10 @@ begin
 end $$;
 
 -- Statementet SKAL avvises med en av de oppgitte SQLSTATE-kodene. Uventet suksess (eller feil kode) gir ok = false.
+-- p_like (valgfri): feilmeldingen må matche mønsteret (ilike). Brukes der koden er 42501, som både «permission denied» (manglende GRANT)
+-- og våre egne guard-triggere bruker – uten mønster kunne en manglende GRANT utgi seg for å være guarden.
 -- Virkningen rulles alltid tilbake (delt transaksjon i en underblokk), så testene påvirker ikke hverandre.
-create function pg_temp.expect_fail(p_name text, p_stmt text, p_states text[]) returns void
+create function pg_temp.expect_fail(p_name text, p_stmt text, p_states text[], p_like text default null) returns void
 language plpgsql as $$
 begin
   begin
@@ -81,10 +84,12 @@ begin
   exception when others then
     if sqlerrm = '__uventet_suksess__' then
       perform pg_temp.check(p_name, false, 'FORVENTET AVVIST, men statementet gikk gjennom');
-    elsif sqlstate = any (p_states) then
-      perform pg_temp.check(p_name, true, 'avvist ' || sqlstate || ': ' || left(sqlerrm, 110));
-    else
+    elsif not (sqlstate = any (p_states)) then
       perform pg_temp.check(p_name, false, 'avvist med uventet kode ' || sqlstate || ' (forventet ' || array_to_string(p_states, '/') || '): ' || left(sqlerrm, 110));
+    elsif p_like is not null and sqlerrm not ilike p_like then
+      perform pg_temp.check(p_name, false, 'avvist ' || sqlstate || ', men av feil grunn (forventet melding som ' || p_like || '): ' || left(sqlerrm, 110));
+    else
+      perform pg_temp.check(p_name, true, 'avvist ' || sqlstate || ': ' || left(sqlerrm, 110));
     end if;
   end;
 end $$;
@@ -275,6 +280,144 @@ select pg_temp.check('0.7 triggeren oppretter profil for nye brukere (visningsna
      from public.profiles where user_id in ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')),
   null);
 
+-- Forventede rettigheter. GitHub (migrasjonene) er autoritativ: testene under feiler hvis det hostede Supabase har gitt mer ELLER mindre.
+create temp table _expected_service (tbl text not null, priv text not null);
+insert into _expected_service (tbl, priv)
+select t, p from (values
+  ('profiles', array['SELECT','INSERT','UPDATE']),
+  ('properties', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('property_snapshots', array['SELECT','INSERT','UPDATE']),
+  ('analyses', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('viewings', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('user_properties', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('scenarios', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('user_comparables', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('user_risks', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('private_events', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('calendar_overrides', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('subscriptions', array['SELECT','INSERT','UPDATE']),
+  ('course_purchases', array['SELECT','INSERT']),
+  ('usage_events', array['SELECT','INSERT']),
+  ('analysis_jobs', array['SELECT','INSERT','UPDATE','DELETE'])
+) v(t, ps), unnest(v.ps) p;
+
+create temp table _expected_authenticated (tbl text not null, priv text not null);
+insert into _expected_authenticated (tbl, priv)
+select t, p from (values
+  ('profiles', array['SELECT']),
+  ('properties', array['SELECT']),
+  ('property_snapshots', array['SELECT']),
+  ('analyses', array['SELECT','INSERT','UPDATE','DELETE']),
+  ('viewings', array['SELECT']),
+  ('user_properties', array['SELECT','DELETE']),
+  ('scenarios', array['SELECT','DELETE']),
+  ('user_comparables', array['SELECT','DELETE']),
+  ('user_risks', array['SELECT','DELETE']),
+  ('private_events', array['SELECT','DELETE']),
+  ('calendar_overrides', array['SELECT','DELETE']),
+  ('subscriptions', array['SELECT']),
+  ('course_purchases', array['SELECT']),
+  ('usage_events', array['SELECT']),
+  ('analysis_jobs', array['SELECT'])
+) v(t, ps), unnest(v.ps) p;
+
+-- Kolonnerettigheter for authenticated (INSERT/UPDATE) på tabeller uten tabellnivå-rettighet. analyses har tabellnivå (alle kolonner) og hoppes over.
+create temp table _expected_cols (tbl text not null, priv text not null, cols text[] not null);
+insert into _expected_cols (tbl, priv, cols) values
+  ('profiles', 'UPDATE', array['display_name','defaults']),
+  ('user_properties', 'INSERT', array['property_id','favorite','work_status','notes','label','last_seen_analysis_version','checks']),
+  ('user_properties', 'UPDATE', array['favorite','work_status','notes','primary_scenario_id','label','archived_at','last_seen_analysis_version','checks']),
+  ('scenarios', 'INSERT', array['property_id','analysis_id','analysis_version','name','values']),
+  ('scenarios', 'UPDATE', array['analysis_id','analysis_version','name','values']),
+  ('user_comparables', 'INSERT', array['property_id','name','url','kind','asking_price','sold_price','common_costs','sold_total_price','area','date','notes','bedrooms','property_type','tenure','shared_debt','location_level','standard_class','layout_match','floor','elevator','balcony','parking','view_note','data_quality','market_adjustment','original_asking_price']),
+  ('user_comparables', 'UPDATE', array['name','url','kind','asking_price','sold_price','common_costs','sold_total_price','area','date','notes','bedrooms','property_type','tenure','shared_debt','location_level','standard_class','layout_match','floor','elevator','balcony','parking','view_note','data_quality','market_adjustment','original_asking_price']),
+  ('user_risks', 'INSERT', array['property_id','base_risk_id','removed','title','category','level','cost_low','cost_high','rationale','action']),
+  ('user_risks', 'UPDATE', array['removed','title','category','level','cost_low','cost_high','rationale','action']),
+  ('private_events', 'INSERT', array['property_id','kind','start_at','end_at','note','confirmed']),
+  ('private_events', 'UPDATE', array['kind','start_at','end_at','note','confirmed']),
+  ('calendar_overrides', 'INSERT', array['property_id','event_key','start_at','note','origin','derived_start_at_override']),
+  ('calendar_overrides', 'UPDATE', array['start_at','note','origin','derived_start_at_override']);
+
+select pg_temp.check(
+  '0.8 service_role har NØYAKTIG de bestemte tabellrettighetene (ikke flere, ikke færre) – uavhengig av Supabase-standarder',
+  m.n = 0, case when m.n = 0 then 'alle 15 tabeller stemmer' else m.list end)
+from (
+  select count(*) as n, string_agg(x.tbl || ' ' || x.priv || (case when x.actual then ' finnes men skal ikke' else ' mangler' end), '; ') as list
+    from (
+      select t.name as tbl, p.priv,
+             has_table_privilege('service_role', format('public.%I', t.name), p.priv) as actual,
+             exists (select 1 from _expected_service e where e.tbl = t.name and e.priv = p.priv) as expected
+        from _tables t cross join unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(priv)
+    ) x where x.actual <> x.expected
+) m;
+
+select pg_temp.check(
+  '0.9 service_role har USAGE på schema public',
+  has_schema_privilege('service_role', 'public', 'USAGE'), null);
+
+select pg_temp.check(
+  '0.10 authenticated har NØYAKTIG de bestemte tabellrettighetene (tabellnivå) – ikke utvidet av service_role-korrekturen',
+  m.n = 0, case when m.n = 0 then 'alle 15 tabeller stemmer' else m.list end)
+from (
+  select count(*) as n, string_agg(x.tbl || ' ' || x.priv || (case when x.actual then ' finnes men skal ikke' else ' mangler' end), '; ') as list
+    from (
+      select t.name as tbl, p.priv,
+             has_table_privilege('authenticated', format('public.%I', t.name), p.priv) as actual,
+             exists (select 1 from _expected_authenticated e where e.tbl = t.name and e.priv = p.priv) as expected
+        from _tables t cross join unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(priv)
+    ) x where x.actual <> x.expected
+) m;
+
+select pg_temp.check(
+  '0.11 authenticated har NØYAKTIG de bestemte kolonnerettighetene for INSERT og UPDATE',
+  m.n = 0, case when m.n = 0 then 'alle stemmer' else m.list end)
+from (
+  select count(*) as n, string_agg(x.tbl || ' ' || x.priv || ': har {' || array_to_string(x.actual, ',') || '} skal ha {' || array_to_string(x.expected, ',') || '}', '; ') as list
+    from (
+      select t.name as tbl, p.priv,
+             (select coalesce(array_agg(a.attname::text order by a.attname::text), '{}')
+                from pg_attribute a
+               where a.attrelid = format('public.%I', t.name)::regclass and a.attnum > 0 and not a.attisdropped
+                 and has_column_privilege('authenticated', a.attrelid, a.attnum, p.priv)) as actual,
+             (select coalesce(array_agg(c order by c), '{}') from unnest(coalesce(e.cols, '{}'::text[])) c) as expected
+        from _tables t
+        cross join (values ('INSERT'), ('UPDATE')) p(priv)
+        left join _expected_cols e on e.tbl = t.name and e.priv = p.priv
+       where t.name <> 'analyses'
+    ) x where x.actual <> x.expected
+) m;
+
+select pg_temp.check(
+  '0.12 ingen av tabellene bruker sekvenser (alle id-er er uuid), så ingen sekvensrettigheter trengs',
+  (select count(*) = 0 from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name in (select name from _tables)
+      and (c.column_default like 'nextval(%' or c.is_identity = 'YES'))
+  and (select count(*) = 0 from pg_class s join pg_depend d on d.objid = s.oid and d.deptype in ('a', 'i')
+         join pg_class t on t.oid = d.refobjid
+        where s.relkind = 'S' and t.relnamespace = 'public'::regnamespace and t.relname in (select name from _tables)),
+  null);
+
+-- rls_auto_enable() er en Supabase-funksjon (ikke vår) som finnes i det hostede prosjektet, men ikke nødvendigvis lokalt.
+-- Finnes den ikke, er testene bestått (ikke feilet) og sier det i detaljene.
+select pg_temp.check(
+  '0.13 public.rls_auto_enable() (hvis den finnes) kan ikke kjøres av PUBLIC, anon eller authenticated',
+  coalesce((
+    select not (
+             has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute')
+          or exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'))
+      from pg_proc p where p.oid = to_regprocedure('public.rls_auto_enable()')
+  ), true),
+  case when to_regprocedure('public.rls_auto_enable()') is null then 'funksjonen finnes ikke i dette miljøet (hoppet over)' else 'funksjonen finnes og er lukket for klientrollene' end);
+
+select pg_temp.check(
+  '0.14 public.rls_auto_enable() (hvis den finnes) er uendret SECURITY DEFINER og event-triggeren som bruker den finnes fortsatt',
+  coalesce((
+    select p.prosecdef and exists (select 1 from pg_event_trigger e where e.evtfoid = p.oid)
+      from pg_proc p where p.oid = to_regprocedure('public.rls_auto_enable()')
+  ), true),
+  case when to_regprocedure('public.rls_auto_enable()') is null then 'funksjonen finnes ikke i dette miljøet (hoppet over)' else 'funksjon og event-trigger er på plass' end);
+
 -- ===========================================================================
 -- 1. PROFILER
 -- ===========================================================================
@@ -325,7 +468,7 @@ select pg_temp.expect_fail('2.18 A kan ikke opprette en privat analyse med B som
 select pg_temp.expect_fail('2.19 A kan ikke opprette en privat analyse for en bolig som ikke er i egen liste (P2)',
   $$insert into public.analyses (property_id, snapshot_id, version, schema_version, model_version, status, visibility, owner_id, origin, estimates) values ('22222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222', 1, 1, '1.2.0', 'draft', 'private', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'import_v1', '{}')$$, array['23503']);
 select pg_temp.expect_fail('2.20 A kan ikke gjøre en privat analyse felles (visibility kan ikke endres)',
-  $$update public.analyses set visibility = 'shared', owner_id = null where id = 'c3333335-3333-4333-8333-333333333333'$$, array['42501']);
+  $$update public.analyses set visibility = 'shared', owner_id = null where id = 'c3333335-3333-4333-8333-333333333333'$$, array['42501'], '%kan ikke endres etter opprettelse%');
 select pg_temp.expect_ok('2.21 A kan endre sin egen private analyse', $$update public.analyses set summary = 'Mitt utkast' where id = 'c3333335-3333-4333-8333-333333333333'$$);
 
 select pg_temp.as_user('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
@@ -344,13 +487,13 @@ select pg_temp.as_service();
 select pg_temp.expect_ok_rollback('2.29 service_role kan skrive felles data (omgår RLS)',
   $$insert into public.properties (finn_id, canonical_url, address, city, municipality, property_type, tenure, data_origin) values ('900000998', 'https://x.invalid', 'Y', 'Y', 'Y', 'leilighet', 'selveier', 'demo')$$);
 select pg_temp.expect_fail('2.30 en publisert felles analyse kan ikke endres, heller ikke av backend',
-  $$update public.analyses set summary = 'Endret' where id = 'c1111111-1111-4111-8111-111111111111'$$, array['42501']);
+  $$update public.analyses set summary = 'Endret' where id = 'c1111111-1111-4111-8111-111111111111'$$, array['42501'], '%publisert felles analyse kan ikke endres%');
 select pg_temp.expect_ok_rollback('2.31 published -> superseded er tillatt', $$update public.analyses set status = 'superseded' where id = 'c1111111-1111-4111-8111-111111111111'$$);
 select pg_temp.expect_fail('2.32 superseded -> published er ikke tillatt',
   $stmt$do $do$ begin
       update public.analyses set status = 'superseded' where id = 'c1111111-1111-4111-8111-111111111111';
       update public.analyses set status = 'published' where id = 'c1111111-1111-4111-8111-111111111111';
-    end $do$$stmt$, array['42501']);
+    end $do$$stmt$, array['42501'], '%bare gå fra published til superseded%');
 select pg_temp.expect_fail('2.33 to felles analyser for samme eiendom kan ikke ha samme versjon (partial unique)',
   $$insert into public.analyses (property_id, snapshot_id, version, schema_version, model_version, status, visibility, origin, recommendation, estimates) values ('11111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 1, 1, '1.2.0', 'published', 'shared', 'demo', 'interessant', '{}')$$, array['23505']);
 select pg_temp.expect_fail('2.34 en felles analyse kan ikke ha eier',
@@ -399,15 +542,15 @@ select pg_temp.expect_ok('4.2 A kan opprette scenario på egen bolig med felles 
 select pg_temp.expect_ok_rollback('4.3 A kan bygge scenario på egen privat analyse (P3)',
   $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('33333333-3333-4333-8333-333333333333', 'c3333335-3333-4333-8333-333333333333', 1, 'På privat', '{}')$$);
 select pg_temp.expect_fail('4.4 A kan ikke bygge scenario på Bs private analyse (samme eiendom)',
-  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('33333333-3333-4333-8333-333333333333', 'c3333336-3333-4333-8333-333333333333', 1, 'Stjålet', '{}')$$, array['42501']);
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('33333333-3333-4333-8333-333333333333', 'c3333336-3333-4333-8333-333333333333', 1, 'Stjålet', '{}')$$, array['42501'], '%må bygge på en analyse%');
 select pg_temp.expect_fail('4.5 A kan ikke bygge scenario på et felles analyseutkast',
-  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('33333333-3333-4333-8333-333333333333', 'c3333334-3333-4333-8333-333333333333', 2, 'På utkast', '{}')$$, array['42501']);
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('33333333-3333-4333-8333-333333333333', 'c3333334-3333-4333-8333-333333333333', 2, 'På utkast', '{}')$$, array['42501'], '%må bygge på en analyse%');
 select pg_temp.expect_fail('4.6 analysen må gjelde samme eiendom som scenarioet (P1 med P2 sin analyse)',
-  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('11111111-1111-4111-8111-111111111111', 'c2222222-2222-4222-8222-222222222222', 1, 'Feil analyse', '{}')$$, array['42501', '23503']);
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('11111111-1111-4111-8111-111111111111', 'c2222222-2222-4222-8222-222222222222', 1, 'Feil analyse', '{}')$$, array['42501'], '%må bygge på en analyse%');
 select pg_temp.expect_fail('4.7 analysis_version må stemme med analysen',
   $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('11111111-1111-4111-8111-111111111111', 'c1111111-1111-4111-8111-111111111111', 2, 'Feil versjon', '{}')$$, array['23514']);
 select pg_temp.expect_fail('4.8 A kan ikke lage scenario på bolig som ikke er i egen liste (P2)',
-  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('22222222-2222-4222-8222-222222222222', 'c2222222-2222-4222-8222-222222222222', 1, 'Utenfor liste', '{}')$$, array['42501', '23503']);
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('22222222-2222-4222-8222-222222222222', 'c2222222-2222-4222-8222-222222222222', 1, 'Utenfor liste', '{}')$$, array['42501'], '%må bygge på en analyse%');
 select pg_temp.expect_fail('4.9 A kan ikke opprette scenario med B som eier (owner_id er ikke skrivbar)',
   $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '11111111-1111-4111-8111-111111111111', 'c1111111-1111-4111-8111-111111111111', 1, 'Falsk eier', '{}')$$, array['42501']);
 select pg_temp.expect_fail('4.10 A kan ikke opprette et låst scenario selv', $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, locked, "values") values ('11111111-1111-4111-8111-111111111111', 'c1111111-1111-4111-8111-111111111111', 1, 'Låst', true, '{}')$$, array['42501']);
@@ -416,8 +559,8 @@ select pg_temp.expect_fail('4.12 navn kan ikke være tomt', $$insert into public
 select pg_temp.expect_rows('4.13 A kan endre eget scenario', $$update public.scenarios set name = 'Omdøpt' where id = 'd1111111-1111-4111-8111-111111111111'$$, 1);
 select pg_temp.expect_fail('4.14 A kan ikke flytte scenarioet til en annen eiendom', $$update public.scenarios set property_id = '33333333-3333-4333-8333-333333333333' where id = 'd1111111-1111-4111-8111-111111111111'$$, array['42501']);
 -- Låst scenario
-select pg_temp.expect_fail('4.15 A kan ikke gi låst scenario nytt navn', $$update public.scenarios set name = 'Mitt' where id = 'd1111112-1111-4111-8111-111111111111'$$, array['42501']);
-select pg_temp.expect_fail('4.16 A kan ikke redigere verdiene i et låst scenario', $$update public.scenarios set "values" = '{"purchasePrice": 5}' where id = 'd1111112-1111-4111-8111-111111111111'$$, array['42501']);
+select pg_temp.expect_fail('4.15 A kan ikke gi låst scenario nytt navn', $$update public.scenarios set name = 'Mitt' where id = 'd1111112-1111-4111-8111-111111111111'$$, array['42501'], '%er låst%');
+select pg_temp.expect_fail('4.16 A kan ikke redigere verdiene i et låst scenario', $$update public.scenarios set "values" = '{"purchasePrice": 5}' where id = 'd1111112-1111-4111-8111-111111111111'$$, array['42501'], '%er låst%');
 select pg_temp.expect_fail('4.17 A kan ikke låse opp et låst scenario (locked er ikke skrivbar)', $$update public.scenarios set locked = false where id = 'd1111112-1111-4111-8111-111111111111'$$, array['42501']);
 select pg_temp.expect_ok_rollback('4.18 A kan flytte låst scenario til ny analyseversjon (rebase)', $$update public.scenarios set analysis_id = 'c1111112-1111-4111-8111-111111111111', analysis_version = 2, "values" = '{"purchasePrice": 9}' where id = 'd1111112-1111-4111-8111-111111111111'$$);
 select pg_temp.expect_rows('4.19 A kan ikke slette låst scenario (0 rader)', $$delete from public.scenarios where id = 'd1111112-1111-4111-8111-111111111111'$$, 0);
@@ -428,7 +571,7 @@ select pg_temp.expect_count('4.21 B kan ikke lese As scenario', $$select count(*
 select pg_temp.expect_rows('4.22 B kan ikke endre As scenario (0 rader)', $$update public.scenarios set name = 'Hacket' where id = 'd1111111-1111-4111-8111-111111111111'$$, 0);
 select pg_temp.expect_rows('4.23 B kan ikke slette As scenario (0 rader)', $$delete from public.scenarios where id = 'd1111111-1111-4111-8111-111111111111'$$, 0);
 select pg_temp.expect_fail('4.24 B kan ikke lage scenario på As eiendom P1 (ikke i Bs liste)',
-  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('11111111-1111-4111-8111-111111111111', 'c1111111-1111-4111-8111-111111111111', 1, 'Utenfor liste', '{}')$$, array['42501', '23503']);
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('11111111-1111-4111-8111-111111111111', 'c1111111-1111-4111-8111-111111111111', 1, 'Utenfor liste', '{}')$$, array['42501'], '%må bygge på en analyse%');
 -- primary_scenario_id (sammensatt fremmednøkkel: samme eier og samme eiendom)
 select pg_temp.expect_fail('4.25 B kan ikke sette As scenario som primært på Bs bolig (feil eier og eiendom)',
   $$update public.user_properties set primary_scenario_id = 'd1111111-1111-4111-8111-111111111111' where property_id = '22222222-2222-4222-8222-222222222222'$$, array['23503']);
@@ -456,11 +599,11 @@ select pg_temp.as_service();
 select pg_temp.expect_fail('4.35 (som backend) scenario for en bolig som ikke er i brukerens liste avvises av fremmednøkkelen',
   $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'c2222222-2222-4222-8222-222222222222', 1, 'Feil', '{}')$$, array['23503']);
 select pg_temp.expect_fail('4.36 (som backend) scenario med analyse for en annen eiendom avvises',
-  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'c2222222-2222-4222-8222-222222222222', 1, 'Feil', '{}')$$, array['42501', '23503']);
+  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'c2222222-2222-4222-8222-222222222222', 1, 'Feil', '{}')$$, array['42501'], '%må bygge på en analyse%');
 select pg_temp.expect_fail('4.37 (som backend) scenario som bygger på en annen brukers private analyse avvises',
-  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333336-3333-4333-8333-333333333333', 1, 'Feil', '{}')$$, array['42501']);
+  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333336-3333-4333-8333-333333333333', 1, 'Feil', '{}')$$, array['42501'], '%annen brukers private analyse%');
 select pg_temp.expect_fail('4.38 (som backend) scenario på et felles analyseutkast avvises',
-  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333334-3333-4333-8333-333333333333', 2, 'Feil', '{}')$$, array['42501']);
+  $$insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333334-3333-4333-8333-333333333333', 2, 'Feil', '{}')$$, array['42501'], '%felles analyseutkast%');
 select pg_temp.expect_fail('4.39 (som backend) primary_scenario_id kan ikke peke på en annen brukers scenario',
   $$update public.user_properties set primary_scenario_id = 'd3333332-3333-4333-8333-333333333333' where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and property_id = '33333333-3333-4333-8333-333333333333'$$, array['23503']);
 select pg_temp.expect_fail('4.40 (som backend) primary_scenario_id kan ikke peke på scenario for en annen eiendom',
@@ -548,6 +691,90 @@ select pg_temp.expect_ok_rollback('6.24 mislykkede jobber med samme dedupe_key k
 select pg_temp.expect_fail('6.25 samme kurs kan ikke kjøpes to ganger av samme bruker', $$insert into public.course_purchases (user_id, course_id, amount_paid, payment_id) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'flipping-privat', 2999, 'pay_a_2')$$, array['23505']);
 select pg_temp.expect_fail('6.26 samme betaling kan ikke gi to kjøp (payment_id er unik)', $$insert into public.course_purchases (user_id, course_id, amount_paid, payment_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'flipping-privat', 2999, 'pay_a_1')$$, array['23505']);
 select pg_temp.expect_fail('6.27 ugyldig abonnementsstatus avvises', $$update public.subscriptions set status = 'gratis' where id = '91111111-1111-4111-8111-111111111111'$$, array['23514']);
+select pg_temp.as_owner();
+
+-- ===========================================================================
+-- 6b. SERVICE_ROLE (backend): nødvendige operasjoner lykkes, og minste privilegium gjelder (ingen sletting av regnskap, ingen TRUNCATE).
+--     Constraints, fremmednøkler og triggere gjelder fortsatt – de er testet over (2.x, 4.35–4.41, 6.19–6.27).
+-- ===========================================================================
+select pg_temp.as_service();
+select pg_temp.expect_ok_rollback('8.1 backend kan opprette, endre og slette en felles eiendom',
+  $stmt$do $do$ declare pid uuid; begin
+      insert into public.properties (finn_id, canonical_url, address, city, municipality, property_type, tenure, data_origin) values ('900000997', 'https://x.invalid', 'Z', 'Z', 'Z', 'leilighet', 'selveier', 'demo') returning id into pid;
+      update public.properties set address = 'Z2' where id = pid;
+      delete from public.properties where id = pid;
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.2 backend kan lese og endre profiler',
+  $stmt$do $do$ begin
+      perform 1 from public.profiles limit 1;
+      update public.profiles set display_name = 'Endret av backend' where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.3 backend kan skrive en ny versjon av annonsefaktaene og rette en eksisterende',
+  $stmt$do $do$ begin
+      insert into public.property_snapshots (property_id, version, observed_at, fetched_at, origin, sale_status) values ('11111111-1111-4111-8111-111111111111', 2, now(), now(), 'demo', 'aktiv');
+      update public.property_snapshots set asking_price = 3000000 where property_id = '11111111-1111-4111-8111-111111111111' and version = 2;
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.4 backend kan publisere en ny felles analyse og sette forrige til superseded',
+  $stmt$do $do$ begin
+      update public.analyses set status = 'superseded' where id = 'c1111112-1111-4111-8111-111111111111';
+      insert into public.analyses (property_id, snapshot_id, version, schema_version, model_version, status, visibility, origin, recommendation, estimates) values ('11111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 3, 1, '1.2.0', 'published', 'shared', 'agent', 'interessant', '{}');
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.5 backend kan slette et felles analyseutkast (opprydding)', $$delete from public.analyses where id = 'c3333334-3333-4333-8333-333333333333'$$);
+select pg_temp.expect_ok_rollback('8.6 backend kan opprette, endre og slette visninger',
+  $stmt$do $do$ declare vid uuid; begin
+      insert into public.viewings (property_id, start_at, status, verified_at) values ('11111111-1111-4111-8111-111111111111', now() + interval '5 days', 'planlagt', now()) returning id into vid;
+      update public.viewings set status = 'avlyst' where id = vid;
+      delete from public.viewings where id = vid;
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.7 backend kan legge en bolig i brukerens liste og sette analyzed_at (klienten kan ikke)',
+  $stmt$do $do$ begin
+      insert into public.user_properties (user_id, property_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '11111111-1111-4111-8111-111111111111');
+      update public.user_properties set analyzed_at = now() where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and property_id = '11111111-1111-4111-8111-111111111111';
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.8 backend kan opprette, flytte og slette et LÅST scenario (guarden gjelder bare innloggede brukere)',
+  $stmt$do $do$ declare sid uuid; begin
+      insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, locked, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333333-3333-4333-8333-333333333333', 1, 'Nettsidens vurdering', true, '{}') returning id into sid;
+      update public.scenarios set "values" = '{"endret": true}' where id = sid;
+      delete from public.scenarios where id = sid;
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.9 backend kan skrive og slette brukerens private data (import, support, vedlikehold)',
+  $stmt$do $do$ begin
+      -- P3 (ikke P1): A har allerede 50 referanser på P1, og radgrensen gjelder også backend.
+      insert into public.user_comparables (user_id, property_id, name, kind, asking_price) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'Importert', 'prisantydning', 1);
+      insert into public.user_risks (user_id, property_id, title, category) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'Importert', 'annet');
+      update public.user_comparables set notes = 'Backend' where name = 'Importert';
+      delete from public.user_comparables where name = 'Importert';
+      delete from public.user_risks where title = 'Importert';
+      update public.private_events set note = 'Backend' where id = 'b3333333-3333-4333-8333-333333333333';
+      delete from public.calendar_overrides where id = 'b4444444-4444-4444-8444-444444444444';
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.10 backend kan opprette og endre abonnement (Vipps-webhook)',
+  $stmt$do $do$ begin
+      insert into public.subscriptions (user_id, plan_id, interval, status, current_period_start, current_period_end, provider, agreement_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'flipprom-pro', 'year', 'active', now(), now() + interval '1 year', 'vipps', 'agr_test');
+      update public.subscriptions set cancel_at_period_end = true where agreement_id = 'agr_test';
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.11 backend kan registrere kurskjøp og forbruk',
+  $stmt$do $do$ begin
+      insert into public.course_purchases (user_id, course_id, amount_paid, payment_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'flipping-privat', 2999, 'pay_b_1');
+      insert into public.usage_events (user_id, kind, property_id, idempotency_key, chargeable) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'refresh', '22222222-2222-4222-8222-222222222222', 'refresh:test:1', true);
+    end $do$$stmt$);
+select pg_temp.expect_ok_rollback('8.12 backend kan opprette, oppdatere og rydde bort analysejobber',
+  $stmt$do $do$ declare jid uuid; begin
+      insert into public.analysis_jobs (property_id, finn_id, type, schema_version, model_version, dedupe_key, status, requested_by) values ('22222222-2222-4222-8222-222222222222', '900000902', 'light_refresh', 1, '1.2.0', 'job:p2:light:v1', 'queued', array['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']::uuid[]) returning id into jid;
+      update public.analysis_jobs set status = 'running', step_index = 1 where id = jid;
+      update public.analysis_jobs set status = 'succeeded', finished_at = now() where id = jid;
+      delete from public.analysis_jobs where id = jid;
+    end $do$$stmt$);
+-- Minste privilegium: regnskap og betalingshistorikk kan ikke slettes eller endres bakover, heller ikke av backend.
+select pg_temp.expect_fail('8.12b radgrensen (50 per bolig) gjelder også backend', $$insert into public.user_comparables (user_id, property_id, name, kind, asking_price) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Nr 51 fra backend', 'prisantydning', 1)$$, array['54000']);
+select pg_temp.expect_fail('8.13 backend kan ikke slette forbruk', $$delete from public.usage_events where id = '94444444-4444-4444-8444-444444444444'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.14 backend kan ikke endre forbruk', $$update public.usage_events set chargeable = false where id = '94444444-4444-4444-8444-444444444444'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.15 backend kan ikke slette abonnement', $$delete from public.subscriptions where id = '91111111-1111-4111-8111-111111111111'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.16 backend kan ikke endre eller slette kurskjøp', $$update public.course_purchases set amount_paid = 0 where id = '93333333-3333-4333-8333-333333333333'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.17 backend kan ikke slette kurskjøp', $$delete from public.course_purchases where id = '93333333-3333-4333-8333-333333333333'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.18 backend kan ikke slette profiler direkte (de følger auth.users via cascade)', $$delete from public.profiles where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.19 backend kan ikke slette snapshots direkte', $$delete from public.property_snapshots where id = 'a1111111-1111-4111-8111-111111111111'$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('8.20 backend kan ikke TRUNCATE tabeller', $$truncate public.properties cascade$$, array['42501'], 'permission denied%');
 select pg_temp.as_owner();
 
 -- ===========================================================================

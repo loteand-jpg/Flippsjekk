@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -230,5 +231,80 @@ describe('ingen hemmeligheter i repoet', () => {
     expect(assignmentsOnly).not.toMatch(/service_role|DB_PASSWORD|DATABASE_URL|sb_secret/i);
     const ignore = readFileSync(`${repo}.gitignore`, 'utf8').split('\n').map((l) => l.trim());
     for (const rule of ['.env', '.env.*', '!.env.example', 'supabase/.temp/', 'supabase/.env']) expect(ignore, rule).toContain(rule);
+  });
+});
+
+/**
+ * Migrasjon 1–6 er anvendt i Flippsjekks faktiske Supabase-utviklingsdatabase og er en del av historikken. De skal aldri redigeres:
+ * endringer leveres som en NY migrasjon. Sjekksummene låser filene; feiler denne testen, lag en ny migrasjon i stedet for å endre en gammel.
+ */
+const APPLIED_MIGRATION_SHA256: Record<string, string> = {
+  '20261022100000_helpers.sql': '4849a9be811a2cb49f345f8e1ef2e50e23e9471cff67721c7a5943ff7991c748',
+  '20261022100100_profiles.sql': '7511ad50cc7615af85d5b69c28294f2d570185e2ecf53fb184c4d57a14bf8364',
+  '20261022100200_properties_and_user_properties.sql': 'f3a1aafc6a3076734c8cb00dc6ce6c6e0b3a1ae7ef156a16098d8c00af8eb06b',
+  '20261022100300_shared_analysis_data.sql': 'b05a53bcec04469f3d7eecb1848df753e9cbec3bbf414cbe63d587724aab42a9',
+  '20261022100400_user_data.sql': '114aa2671867ef0e7055d867994299fdddee81cb9e2e4b2765320cac023aca76',
+  '20261022100500_billing_usage_jobs.sql': '58dee79e7358cd7cfe3a16a7a6b05a336e28356de31e91a9a2ab7c15ea8f8c79',
+};
+
+describe('anvendte migrasjoner er urørt', () => {
+  it('migrasjon 1–6 har uendret innhold (sjekksum), og alt nytt ligger i senere migrasjoner', () => {
+    for (const [file, expected] of Object.entries(APPLIED_MIGRATION_SHA256)) {
+      const text = sql.find((s) => s.file === file)?.text;
+      expect(text, `${file} finnes`).toBeDefined();
+      expect(createHash('sha256').update(text as string).digest('hex'), `${file} er endret – lag en NY migrasjon i stedet`).toBe(expected);
+    }
+    const later = files.filter((f) => !(f in APPLIED_MIGRATION_SHA256));
+    expect(later).toEqual(['20261022100600_service_role_grants.sql']);
+    for (const f of later) expect(f > '20261022100500').toBe(true);
+  });
+});
+
+describe('migrasjon 7: eksplisitte service_role-rettigheter og rls_auto_enable()', () => {
+  const m7 = sql.find((s) => s.file === '20261022100600_service_role_grants.sql')!.text.replace(/--[^\n]*/g, '');
+  const matrix = readFileSync(fileURLToPath(new URL('../../../supabase/tests/rls_matrix.sql', import.meta.url)), 'utf8');
+
+  /** tabell -> sortert liste over privilegier fra «grant … on table public.X to service_role». */
+  const grantsOf = (text: string): Record<string, string[]> => {
+    const out: Record<string, string[]> = {};
+    for (const m of text.matchAll(/grant ([a-z, ]+) on table public\.(\w+) to service_role;/gi)) out[m[2]] = m[1].split(',').map((x) => x.trim().toUpperCase()).sort();
+    return out;
+  };
+
+  it('gir bare rettigheter til service_role – aldri anon, authenticated eller public – og aldri ALL, TRUNCATE, REFERENCES eller TRIGGER', () => {
+    const grants = [...m7.matchAll(/\bgrant\b[\s\S]*?;/gi)].map((g) => g[0].replace(/\s+/g, ' '));
+    expect(grants.length).toBe(16); // 15 tabeller + USAGE på schema public
+    for (const g of grants) {
+      expect(g, g).toMatch(/ to service_role;$/);
+      expect(g, g).not.toMatch(/\bto\b[^;]*\b(anon|authenticated)\b/i);
+      expect(g, g).not.toMatch(/\ball\b|truncate|references|trigger|sequence|function/i);
+    }
+    expect(grants).toContain('grant usage on schema public to service_role;');
+  });
+
+  it('gir nøyaktig de bestemte tabellrettighetene til alle 15 tabeller, og det samme som matrisen forventer', () => {
+    const granted = grantsOf(m7);
+    expect(Object.keys(granted).sort()).toEqual([...FLIPPSJEKK_TABLES].sort());
+    // matrisens forventning (_expected_service) leses fra SQL-filen og må være identisk
+    const block = /insert into _expected_service \(tbl, priv\)([\s\S]*?)\) v\(t, ps\)/.exec(matrix)![1];
+    const expected: Record<string, string[]> = {};
+    for (const m of block.matchAll(/\('(\w+)', array\[([^\]]*)\]\)/g)) expected[m[1]] = [...m[2].matchAll(/'(\w+)'/g)].map((x) => x[1]).sort();
+    expect(expected).toEqual(granted);
+    // minste privilegium: regnskap og betalingshistorikk kan ikke slettes eller endres bakover
+    expect(granted.usage_events).toEqual(['INSERT', 'SELECT']);
+    expect(granted.course_purchases).toEqual(['INSERT', 'SELECT']);
+    expect(granted.subscriptions).not.toContain('DELETE');
+    for (const p of Object.values(granted)) expect(p).toContain('SELECT');
+  });
+
+  it('lukker EXECUTE på rls_auto_enable() for public, anon og authenticated – betinget, uten å røre funksjonen eller event-triggeren', () => {
+    expect(m7).toMatch(/if to_regprocedure\('public\.rls_auto_enable\(\)'\) is not null then\s+revoke execute on function public\.rls_auto_enable\(\) from public, anon, authenticated;\s+end if;/);
+    expect(m7).not.toMatch(/\bdrop\b|\balter function\b|\balter event trigger\b|create (or replace )?function|security invoker|security definer|\bgrant\b[^;]*rls_auto_enable/i);
+    // service_role og andre roller røres ikke på funksjonen, og ingen EXECUTE gis til noen
+    expect(m7).not.toMatch(/grant execute/i);
+  });
+
+  it('endrer ingenting for anon og authenticated (ingen nye grants til dem i denne migrasjonen)', () => {
+    expect(m7).not.toMatch(/grant[^;]*\bto\b[^;]*\b(anon|authenticated)\b/i);
   });
 });

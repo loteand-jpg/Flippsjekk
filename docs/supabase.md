@@ -6,9 +6,9 @@ Denne siden beskriver databasegrunnmuren som ligger i repoet: migrasjoner, RLS, 
 
 | | Status |
 |---|---|
-| Skjema, constraints, indekser (15 tabeller) | Skrevet som 6 migrasjoner i `supabase/migrations/` |
+| Skjema, constraints, indekser (15 tabeller) | 6 migrasjoner (anvendt og verifisert i utviklingsprosjektet av ChatGPT) + migrasjon 7 med eksplisitte `service_role`-rettigheter (korrigering etter den verifiseringen; ikke anvendt ennå) |
 | RLS og eksplisitte rettigheter | Skrevet; 37 policyer; RLS på alle tabeller |
-| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, 176 sjekker – **kjørt lokalt mot PGlite (PostgreSQL 18 i WASM), ikke mot Supabase** |
+| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, 204 sjekker – lokalt kjørt mot PGlite (PostgreSQL 18 i WASM). Den første versjonen (176 sjekker) og migrasjon 1–6 er kjørt mot faktisk Supabase av ChatGPT; **migrasjon 7 og den utvidede matrisen er ikke kjørt mot Supabase ennå** |
 | Statiske SQL-kontroller og skjema-mot-Zod-sjekk | Kjører i `npm test` |
 | Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og klientfabrikk finnes, men ingen tjenester bruker dem ennå |
 | Anvendt i Supabase / RLS bekreftet / Auth testet | **Nei.** Skal gjøres separat mot utviklingsprosjektet (se «Må verifiseres i faktisk Supabase») |
@@ -25,9 +25,11 @@ supabase/
     20261022100300_shared_analysis_data.sql        property_snapshots, analyses, viewings
     20261022100400_user_data.sql                   scenarios, user_comparables, user_risks, private_events, calendar_overrides
     20261022100500_billing_usage_jobs.sql          subscriptions, course_purchases, analysis_jobs, usage_events
+    20261022100600_service_role_grants.sql         eksplisitte rettigheter til service_role + lukket EXECUTE på rls_auto_enable()
   tests/
     rls_matrix.sql                    testmatrise (kan kjøres mot Supabase)
     support/local_supabase_stub.sql   etterligning av Supabase-roller/auth – KUN for lokal testing, aldri i Supabase
+    support/local_rls_auto_enable_stub.sql   omtrentlig etterligning av Supabase-funksjonen rls_auto_enable() (kun lokal testing)
 src/services/supabase/
   config.ts, client.ts, index.ts      klientgrunnlag (offentlig nøkkel, validering)
   *.test.ts                           konfigurasjon, statiske SQL-kontroller, PGlite-kjøring av migrasjoner og matrise
@@ -104,6 +106,15 @@ Mocklaget lar enhver innlogget bruker slå opp en eiendom og lese felles analyse
 - **Kjent begrensning:** `user_properties` kan opprettes av klienten (som spesifisert), så en innlogget bruker som kjenner en eiendoms UUID kan legge den i egen liste og dermed lese de felles dataene, uavhengig av abonnement. UUID-er kan ikke listes opp (ingen lesing av `properties` uten medlemskap), men dette må lukkes før lansering, enten ved å fjerne klientens INSERT på `user_properties` når serverfunksjonen finnes, eller ved å legge abonnementssjekk inn i policyene. Testen `3.13` i matrisen dokumenterer dagens oppførsel.
 - Mock-semantikken «leserettigheter etter utløpt abonnement» (se egne data, ikke endre) kan ikke uttrykkes i databasen ennå; endring av egne data er ikke abonnementsstyrt i fase 1.
 
+## Rettigheter (grants) og `service_role`
+
+Hostede Supabase-prosjekter kan ha ulike standardrettigheter på nye tabeller (`default privileges`), og de er ikke noe vi kan stole på. Ved faktisk verifisering manglet `service_role` tabellrettigheter på de nye tabellene, så alle backendtester stoppet på `42501 permission denied` før fremmednøkler, unike indekser og guard-triggere ble prøvd. Derfor definerer migrasjonene **eksplisitt rettighetene til alle tre rollene**: `anon` og `authenticated` i migrasjon 1–6, og `service_role` i migrasjon 7 (`20261022100600_service_role_grants.sql`). GitHub er autoritativ for grants, ikke Supabase-standardene.
+
+- **`service_role`** er backendrollen. Den omgår RLS, men GRANT, fremmednøkler, check-constraints, unike indekser og triggere (uforanderlige analyser, låste scenarioer, radgrenser) gjelder fortsatt. Rettighetene er det planlagte backendbruket krever, ikke `ALL`: full CRUD på `properties`, `analyses`, `viewings`, `user_properties`, `scenarios`, de fire private detaljtabellene og `analysis_jobs`; `SELECT/INSERT/UPDATE` på `profiles`, `property_snapshots` og `subscriptions`; bare `SELECT/INSERT` på `course_purchases` og `usage_events` (regnskap og betalingshistorikk endres ikke bakover). Aldri `TRUNCATE`, `REFERENCES` eller `TRIGGER`. Begrunnelse per tabell står i migrasjonen. Sekvenser trengs ikke (alle id-er er uuid), og funksjonene er bare trigger-funksjoner, så ingen EXECUTE-grants er gitt.
+- **Klientrollene** er uendret: `anon` har ingenting, `authenticated` har fortsatt least privilege (tabell- og kolonnerettigheter er fastlåst av testene 0.10 og 0.11).
+- **`public.rls_auto_enable()`** er en Supabase-funksjon i det hostede prosjektet (SECURITY DEFINER, brukt av event-triggeren `ensure_rls` til å slå på RLS på nye tabeller), ikke en Flippsjekk-funksjon. Den hadde standard `EXECUTE` for `PUBLIC`, så `anon` og `authenticated` kunne kalt den som RPC. Migrasjon 7 fjerner EXECUTE for `PUBLIC`, `anon` og `authenticated` **betinget** (bare hvis funksjonen finnes), uten å røre funksjonen, kroppen, eieren eller event-triggeren.
+- Merk: i et prosjekt med `ensure_rls` får nye tabeller RLS automatisk. Migrasjonene slår likevel på RLS eksplisitt, og en statisk test sikrer at hver tabell har `enable row level security`, siden matrisen alene ikke ville avdekket en glemt linje i et slikt miljø.
+
 ## SECURITY DEFINER
 
 Bare to funksjoner er `SECURITY DEFINER`, begge med tom `search_path` (alt skjemakvalifisert) og `REVOKE EXECUTE … FROM public, anon, authenticated`:
@@ -153,19 +164,19 @@ npm run test:sql        # bare Supabase-testene (statiske kontroller, PGlite, ko
 npm test                # alt, inkludert over
 ```
 
-- **`supabase/tests/rls_matrix.sql`** (176 sjekker): bruker A mot bruker B for hver tabell, `anon`, `authenticated` og `service_role`. Hver avvisning forventes med en bestemt SQLSTATE (42501 rettighet/RLS/guard, 23503 fremmednøkkel, 23505 unik, 23514 check, 54000 radgrense), så en skrivefeil i testen ikke teller som «avvist». Den dekker blant annet: A leser/endrer egne data; B får nektet å lese, endre og slette As scenarioer, referanser og risikoer; B kan ikke sette As scenario som primært; vanlig bruker kan ikke skrive `properties` eller felles analyser; vanlig bruker kan ikke sette abonnementet til `active` eller skrive forbruk/kurs; privat analyse kan ikke bli felles; unik versjon, dedupe og idempotens; cascade ved fjerning av bolig og sletting av bruker. En innledende inventarsjekk (0.x) kontrollerer RLS, rettigheter og funksjonsrettigheter.
-- **Lokal kjøring:** `src/services/supabase/supabase.pglite.test.ts` anvender stub + migrasjoner + matrisen mot PGlite (PostgreSQL 18). Stubben etterligner Supabase-roller, `auth.uid()` og standardrettighetene. Mutasjonstest utført manuelt: 11 bevisste feil (RLS av, policy `true`, manglende fremmednøkkel, fjernet indeks m.fl.) ble alle fanget av matrisen.
+- **`supabase/tests/rls_matrix.sql`** (204 sjekker): bruker A mot bruker B for hver tabell, `anon`, `authenticated` og `service_role`. Hver avvisning forventes med en bestemt SQLSTATE (42501 rettighet/RLS/guard, 23503 fremmednøkkel, 23505 unik, 23514 check, 54000 radgrense), så en skrivefeil i testen ikke teller som «avvist». Den dekker blant annet: A leser/endrer egne data; B får nektet å lese, endre og slette As scenarioer, referanser og risikoer; B kan ikke sette As scenario som primært; vanlig bruker kan ikke skrive `properties` eller felles analyser; vanlig bruker kan ikke sette abonnementet til `active` eller skrive forbruk/kurs; privat analyse kan ikke bli felles; unik versjon, dedupe og idempotens; cascade ved fjerning av bolig og sletting av bruker. En innledende inventarsjekk (0.x) kontrollerer RLS, rettigheter og funksjonsrettigheter.
+- **Lokal kjøring:** `src/services/supabase/supabase.pglite.test.ts` anvender stub + migrasjoner + matrisen mot PGlite (PostgreSQL 18). Stubben etterligner Supabase-roller, `auth.uid()` og standardrettighetene til `anon`/`authenticated` – men gir **`service_role` ingen standardrettigheter** (alle må komme fra migrasjonene). Mutasjonstest utført manuelt: 17 bevisste feil (RLS av, policy `true`, manglende fremmednøkkel, fjernet indeks, for mye eller for lite til `service_role`, åpen `rls_auto_enable()` m.fl.) ble alle fanget. En egen negativ kontroll kjører de seks første migrasjonene alene mot den strammede stubben og krever at matrisen feiler (39 feil, i de samme områdene som i faktisk Supabase).
 - **Statiske kontroller** (`migrations.static.test.ts`): RLS og REVOKE på hver tabell, ingen grants til `anon`/`public`, ingen `using (true)`, SECURITY DEFINER bare der det er begrunnet, ingen hemmeligheter, og at CHECK-listene i SQL er de samme som appens enum-er/Zod-skjemaer.
 
 ### Kjøre matrisen mot Supabase
 
-Etter at migrasjonene er anvendt i utviklingsprosjektet: kjør `supabase/tests/rls_matrix.sql` som `postgres` (SQL-editor, `psql` eller MCP `execute_sql`). Scriptet lager egne testbrukere (`@rls-test.invalid`) og testdata i en transaksjon og avslutter med `ROLLBACK`. Det siste uttrykket returnerer én rad per test; kolonnen `ok` skal være `true` på alle (forventet 176 rader). Hopper verktøyet over `begin`/`rollback`, må testbrukerne slettes manuelt. Kjør aldri mot et prosjekt med ekte brukerdata uten å lese gjennom scriptet.
+Etter at migrasjonene er anvendt i utviklingsprosjektet: kjør `supabase/tests/rls_matrix.sql` som `postgres` (SQL-editor, `psql` eller MCP `execute_sql`). Scriptet lager egne testbrukere (`@rls-test.invalid`) og testdata i en transaksjon og avslutter med `ROLLBACK`. Det siste uttrykket returnerer én rad per test; kolonnen `ok` skal være `true` på alle (forventet 204 rader). Hopper verktøyet over `begin`/`rollback`, må testbrukerne slettes manuelt. Kjør aldri mot et prosjekt med ekte brukerdata uten å lese gjennom scriptet.
 
 ## Må verifiseres i faktisk Supabase
 
 Ingenting under er gjort av Claude; alt skal kontrolleres mot utviklingsprosjektet:
 
-1. Migrasjonene kan anvendes i rekkefølge uten feil, spesielt triggerne på `auth.users` og `ON DELETE SET NULL (kolonne)`. Postgres-versjonen i prosjektet er ≥ 15 og stemmer med `supabase/config.toml`.
+1. Migrasjonene (1–7) kan anvendes i rekkefølge uten feil, spesielt triggerne på `auth.users` og `ON DELETE SET NULL (kolonne)`. Postgres-versjonen i prosjektet er ≥ 15 og stemmer med `supabase/config.toml`.
 2. Faktisk skjema: 15 tabeller, constraints, indekser og kolonnetyper som i migrasjonene. RLS er på for alle; `list_tables` og `pg_policies` viser 37 policyer, alle for `authenticated`.
 3. **Standardrettigheter i det hostede prosjektet.** Inventarsjekkene `0.2–0.5` i matrisen kontrollerer at `REVOKE`-ene faktisk fjernet det Supabase gir på nye tabeller.
 4. Kjør `rls_matrix.sql` (alle rader `ok = true`). Avvik skyldes ofte miljøforskjeller: ekstra `NOT NULL`-kolonner i `auth.users`, hvem som kan `set role`, eller at triggeren på `auth.users` ikke fyrer.
@@ -174,6 +185,7 @@ Ingenting under er gjort av Claude; alt skal kontrolleres mot utviklingsprosjekt
 7. Trigger for profil: ny Auth-bruker (e-post og Google) får profil med riktig visningsnavn; e-postendring synkroniseres; sletting av Auth-bruker fjerner private rader (cascade).
 8. PostgREST: `public` er eksponert, skjemacache er lastet, og feilkodene (403/409/23xxx) er forståelige i klienten. Verifiser at klientens PKCE-valg fungerer med Googles OAuth og hash-ruteren.
 9. Bekreft at ingen `anon`-tilgang finnes via REST på noen av de 15 tabellene.
+9b. **Migrasjon 7:** anvend den, kjør hele matrisen på nytt (inventar `0.8–0.14` og seksjon `8` er nye; `service_role`-testene skal nå nå constraintene med SQLSTATE 23505/23514/23503, ikke `permission denied`), kontroller at `has_function_privilege` for `anon`/`authenticated`/`PUBLIC` på `public.rls_auto_enable()` er false, at event-triggeren `ensure_rls` fortsatt slår på RLS på en ny testtabell i `public`, og kjør Security Advisor og Performance Advisor på nytt.
 10. Bekreft at **anonyme innlogginger er slått av** i Auth-innstillingene: anonyme brukere får rollen `authenticated`, og ville dermed passert alle policyer som sjekker `auth.uid()`, inkludert å opprette egne lister (se «Kjente begrensninger»).
 
 ## Bevisst ikke implementert
