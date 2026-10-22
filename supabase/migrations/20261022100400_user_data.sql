@@ -46,8 +46,7 @@ alter table public.user_properties
   references public.scenarios (owner_id, property_id, id)
   on delete set null (primary_scenario_id);
 
-create index user_properties_primary_scenario_idx on public.user_properties (user_id, property_id, primary_scenario_id)
-  where primary_scenario_id is not null;
+create index user_properties_primary_scenario_idx on public.user_properties (user_id, property_id, primary_scenario_id);
 
 create trigger scenarios_set_updated_at
   before update on public.scenarios

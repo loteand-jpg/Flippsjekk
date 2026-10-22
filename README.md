@@ -138,7 +138,7 @@ src/
   components/    UI-primitiver, layout, liste/tabell, objektfaner, diagrammer
   pages/         forside, slik fungerer det, innlogging, oversikt, objekt, kalender, sammenligning, konto (inkl. abonnement), import
 e2e/             Playwright-test av hovedflyten (desktop og mobil)
-docs/            datamodell, agentkontrakt, formater, integrasjoner og eksempelfiler
+docs/            datamodell, agentkontrakt, formater, integrasjoner, supabase og eksempelfiler
 ```
 
 ## Dokumentasjon
@@ -147,6 +147,7 @@ docs/            datamodell, agentkontrakt, formater, integrasjoner og eksempelf
 - [docs/agentkontrakt.md](docs/agentkontrakt.md): kontrakten agenten skal levere, med komplett eksempel ([docs/eksempel-agent-analyse.json](docs/eksempel-agent-analyse.json))
 - [docs/formater.md](docs/formater.md): import v1 (mapping og regler) og eksportformat for scenarioer
 - [docs/integrasjoner.md](docs/integrasjoner.md): hva som er mock, og hva som gjenstår før kommersiell lansering
+- [docs/supabase.md](docs/supabase.md): backend fase 1 – Supabase-migrasjoner, RLS, SQL-testmatrise (`npm run test:sql`), klientgrunnlag og hva som må verifiseres i faktisk Supabase. Skrevet og testet bare i repoet; ikke anvendt eller verifisert mot Supabase ennå
 
 ## Begrensninger i denne versjonen
 

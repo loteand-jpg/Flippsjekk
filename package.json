@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run test && vite build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:sql": "vitest run src/services/supabase"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",

@@ -500,6 +500,7 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 * **Ny tabell:** legg til Zod-skjema i `domain/schemas.ts`, tabell i `DbState`/`TABLE_SCHEMAS`/seed (`[]`), eventuelt migrering bare hvis eksisterende rader må omformes.
 * **Ny analyse-regel:** `requestAnalysis` + `jobs.ts`; oppdater §6.1-tabellen her, enhetstest og `demokontroller`-e2e.
 * **Endring av tekst brukeren ser:** respekter tekstreglene i §8 og søk e2e-tester etter gamle strenger.
+* **Supabase / backend (fase 1):** `supabase/` (migrasjoner, `tests/rls_matrix.sql`), `src/services/supabase` (offentlig konfigurasjon og klientfabrikk) og `docs/supabase.md`. Alt er skrevet og testet bare i repoet (lokalt mot PGlite) – påstå aldri at det er anvendt eller verifisert i Supabase før det er dokumentert fra faktisk tilgang. `createAppServices()` er uendret (returnerer `null` i produksjonsmodus) og ingen `Supabase*`-tjenester finnes ennå. Skjemaendring = ny migrasjon, og `npm run test:sql` må være grønn. Backend bygges fra `main`, ikke fra designgrenene.
 * **Ny innloggingsmetode:** ny metode i `AuthService`, knapp i `AuthPages.tsx`; behold passordløs UX.
 
 ---

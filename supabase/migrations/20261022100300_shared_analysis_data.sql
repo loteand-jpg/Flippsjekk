@@ -88,7 +88,7 @@ create table public.analyses (
 -- Én versjon per eiendom for felles analyser (publiserte, erstattede og utkast).
 create unique index analyses_shared_version_key on public.analyses (property_id, version) where visibility = 'shared';
 create index analyses_property_id_idx on public.analyses (property_id);
-create index analyses_owner_property_idx on public.analyses (owner_id, property_id) where owner_id is not null;
+create index analyses_owner_property_idx on public.analyses (owner_id, property_id);
 create index analyses_snapshot_idx on public.analyses (snapshot_id, property_id);
 
 create table public.viewings (
@@ -109,7 +109,7 @@ create table public.viewings (
 );
 
 create index viewings_property_start_idx on public.viewings (property_id, start_at);
-create index viewings_replaces_idx on public.viewings (replaces_viewing_id) where replaces_viewing_id is not null;
+create index viewings_replaces_idx on public.viewings (replaces_viewing_id);
 
 -- ---------------------------------------------------------------------------
 -- Publiserte felles analyser er uforanderlige («ny kunnskap gir ny versjon»)

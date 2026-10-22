@@ -87,9 +87,9 @@ create table public.analysis_jobs (
 create unique index analysis_jobs_active_dedupe on public.analysis_jobs (dedupe_key) where status in ('queued', 'running');
 create index analysis_jobs_property_idx on public.analysis_jobs (property_id);
 create index analysis_jobs_requested_by_idx on public.analysis_jobs using gin (requested_by);
-create index analysis_jobs_created_by_idx on public.analysis_jobs (created_by) where created_by is not null;
-create index analysis_jobs_result_analysis_idx on public.analysis_jobs (result_analysis_id) where result_analysis_id is not null;
-create index analysis_jobs_result_snapshot_idx on public.analysis_jobs (result_snapshot_id) where result_snapshot_id is not null;
+create index analysis_jobs_created_by_idx on public.analysis_jobs (created_by);
+create index analysis_jobs_result_analysis_idx on public.analysis_jobs (result_analysis_id);
+create index analysis_jobs_result_snapshot_idx on public.analysis_jobs (result_snapshot_id);
 
 create trigger analysis_jobs_set_updated_at
   before update on public.analysis_jobs
@@ -115,8 +115,8 @@ create table public.usage_events (
 
 create index usage_events_user_created_idx on public.usage_events (user_id, created_at);
 create index usage_events_property_idx on public.usage_events (property_id);
-create index usage_events_job_idx on public.usage_events (job_id) where job_id is not null;
-create index usage_events_analysis_idx on public.usage_events (analysis_id) where analysis_id is not null;
+create index usage_events_job_idx on public.usage_events (job_id);
+create index usage_events_analysis_idx on public.usage_events (analysis_id);
 
 -- ---------------------------------------------------------------------------
 -- RLS: kun lesing for klienten
