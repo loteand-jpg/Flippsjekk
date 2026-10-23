@@ -4,7 +4,7 @@ import { AnalyzeFlowProvider } from './app/analyzeFlow';
 import { ServicesProvider, useServices } from './app/services';
 import { SessionProvider } from './app/session';
 import { ToastProvider } from './app/toast';
-import { DemoFrame, Logo, RequireAuth, RequireBackend } from './components/layout/AppShell';
+import { DemoFrame, Logo, LogoMark, RequireAuth, RequireBackend } from './components/layout/AppShell';
 import { Alert, buttonClass } from './components/ui/primitives';
 import { supabaseConfigFromEnv } from './services/supabase/config';
 import type { Services } from './services/types';
@@ -135,7 +135,7 @@ export function NotConfigured() {
   const supabase = supabaseConfigFromEnv();
   return (
     <div className="mx-auto max-w-xl px-4 py-20">
-      <Logo />
+      <LogoMark />
       <h1 className="mt-6 text-xl font-semibold">Produksjonsmodus mangler Supabase-konfigurasjon</h1>
       <p className="mt-2 text-sm text-slate-700">
         Appen er bygget i produksjonsmodus (VITE_FLIPPROM_MODE=production), men Supabase-URL og offentlig nøkkel mangler eller er ugyldige, så innlogging og profil kan ikke kobles til. Demomodus og

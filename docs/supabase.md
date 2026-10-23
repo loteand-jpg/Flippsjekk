@@ -183,6 +183,14 @@ Appens kolonner følger `camelCase → snake_case` bortsett fra `areaBRAi → ar
 - Produksjonsmodus uten gyldig Supabase-konfigurasjon viser «Produksjonsmodus mangler Supabase-konfigurasjon» med årsaken (verdiene vises aldri). Med gyldig konfigurasjon starter appen med ekte Auth og profil (se «Backend fase 2A»).
 - Pakker lagt til: `@supabase/supabase-js` 2.118.0 (dependencies, pinnet) og `@electric-sql/pglite` 0.5.11 (devDependencies, pinnet; kun til lokal SQL-testing).
 
+### Lokal oppkobling mot utviklingsprosjektet
+
+1. Lag `.env.local` (git-ignorert via `.env.*`) med `VITE_FLIPPROM_MODE=production`, `VITE_SUPABASE_URL=https://<prosjekt-ref>.supabase.co` og `VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…` (Project Settings → API Keys). Aldri `service_role`, `sb_secret_…` eller database-passord; `config.ts` avviser dem.
+2. Start med `npm run dev -- --host 127.0.0.1` (appen på `http://127.0.0.1:5173/`). Mangler URL eller nøkkel, viser appen «Produksjonsmodus mangler Supabase-konfigurasjon» med årsaken – ikke en hvit skjerm. Vite starter serveren på nytt når `.env.local` endres.
+3. I Supabase Dashboard (manuelt, ikke kontrollert av Claude): Authentication → URL Configuration, med Site URL og Redirect URL lik **nøyaktig** adressen i nettleseren, `http://127.0.0.1:5173/` (appen bygger `redirectTo` fra adressen, så `localhost` og `127.0.0.1` er forskjellige). E-postinnlogging på, nye brukere tillatt, anonyme innlogginger av, og e-postmalene må sende `{{ .Token }}` (se «Må konfigureres i Supabase Auth»).
+4. Første testbruker opprettes gjennom den ekte flyten (e-post → kode → Supabase Auth), aldri med SQL mot `auth.users`. Brukeren er en vanlig `authenticated`-bruker; RLS gjelder fullt ut.
+5. `.env.local` styrer også `npm run build` (bygger da i produksjonsmodus, uten demo/mock i bunten). Enhetstestene (`vite.config.ts`) og demo-e2e (`playwright.config.ts`) festes eksplisitt til demo, så en lokal `.env.local` ikke endrer testsuiten; e2e i produksjonsmodus setter sin egen stubbede konfigurasjon.
+
 ## Backend fase 2A: Auth og profil
 
 En ekte bruker skal kunne logge inn (Google eller e-post med engangskode), få sesjonen gjenopprettet etter oppfrisking, logge ut, lese sin egen `profiles`-rad og endre navn og standardforutsetninger – og aldri nå andres profil. Ingen boligdata er koblet til Supabase ennå.

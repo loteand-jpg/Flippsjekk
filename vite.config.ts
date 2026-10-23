@@ -24,6 +24,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    env: { TZ: 'UTC' },
+    // Festes eksplisitt: en lokal .env.local (f.eks. produksjonsmodus mot ekte Supabase) skal aldri endre hva enhetstestene kjører mot.
+    env: { TZ: 'UTC', VITE_FLIPPROM_MODE: 'demo', VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' },
   },
 });

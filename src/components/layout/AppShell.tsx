@@ -12,14 +12,33 @@ import type { ServiceArea } from '../../services/types';
 import { Alert, buttonClass, PageLoading } from '../ui/primitives';
 import { DemoBar, DemoControls } from './DemoControls';
 
-export function Logo({ to = '/' }: { to?: string }) {
+const LOGO_CLASS = 'flex items-center gap-2 font-semibold text-pine-900';
+
+function LogoContent() {
   return (
-    <Link to={to} className="flex items-center gap-2 font-semibold text-pine-900" aria-label="Flippsjekk – til forsiden">
+    <>
       <span className="flex size-8 items-center justify-center rounded-lg bg-pine-800 text-white">
         <House className="size-4" aria-hidden />
       </span>
       <span className="text-lg tracking-tight">Flippsjekk</span>
+    </>
+  );
+}
+
+export function Logo({ to = '/' }: { to?: string }) {
+  return (
+    <Link to={to} className={LOGO_CLASS} aria-label="Flippsjekk – til forsiden">
+      <LogoContent />
     </Link>
+  );
+}
+
+/** Logoen uten lenke, for sider som rendres utenfor ruteren (f.eks. forklaringen når Supabase-konfigurasjonen mangler). `<Link>` krever router-kontekst. */
+export function LogoMark() {
+  return (
+    <div className={LOGO_CLASS}>
+      <LogoContent />
+    </div>
   );
 }
 

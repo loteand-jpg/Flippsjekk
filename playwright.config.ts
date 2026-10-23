@@ -32,6 +32,8 @@ export default defineConfig({
       url: 'http://localhost:5198/',
       reuseExistingServer: true,
       timeout: 60_000,
+      // Demoen festes eksplisitt: Vite leser ellers .env.local, og en lokal produksjonskonfigurasjon ville ødelagt alle demotestene (hvit skjerm/timeout).
+      env: { VITE_FLIPPROM_MODE: 'demo', VITE_SUPABASE_URL: '', VITE_SUPABASE_PUBLISHABLE_KEY: '' },
     },
     {
       // Produksjonsmodus med en URL som aldri kan nås (.invalid): all trafikk mot «Supabase» fanges og besvares av testen.
