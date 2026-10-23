@@ -5,9 +5,10 @@ import { useSearchParams } from 'react-router';
 import { BarList } from '../../components/analysis/charts';
 import { Field, NumberInput, Segmented, Select } from '../../components/ui/forms';
 import { Alert, Button } from '../../components/ui/primitives';
-import { CASE_LABEL, solveMaxBid, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
+import { CASE_LABEL, MAX_BID_LIMIT_LABEL, SOLVER_TOLERANCE_KR, type Breakdown } from '../../calc/engine';
 import type { ScenarioEvaluation } from '../../calc/scenario';
-import { evaluateCourseScenario as evaluateScenario } from '../evaluate';
+import { evaluateCourseScenario as evaluateScenario, evaluateCourseSaleCases } from '../evaluate';
+import { bidText, MaxBidSummary } from './MaxBidSummary';
 import { DUTY_BASES, DUTY_BASIS_LABEL, type DutyBasis } from '../../domain/enums';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatHours, formatNOK, formatNOKSigned, formatPct, NO_BASIS, UNKNOWN } from '../../lib/format';
@@ -80,6 +81,9 @@ export function BreakdownRows({ b }: { b: Breakdown }) {
       <Row label="Samlede kontantkostnader (C)" value={formatNOK(b.C)} />
       <Row label="Resultat før skatt og egen tid (S − C)" strong value={formatNOK(b.profit)} />
       <Row label="Etter verdsatt egen tid" value={b.profitAfterOwnWork === null ? UNKNOWN : formatNOK(b.profitAfterOwnWork)} />
+      <Row label="Fortjeneste per egeninnsatstime" value={b.profitPerOwnHour === null ? (b.ownHours === 0 ? 'Ingen egne timer' : UNKNOWN) : `${formatNOK(b.profitPerOwnHour)}/t`} />
+      <Row label="Egenkapitalbehov" sub="Før salgsoppgjør, uten salgskostnader. Ikke det samme som prosjektkostnad." value={formatNOK(b.equityNeed)} />
+      <Row label="Finansieringsgap" sub="Mot tilgjengelig egenkapital" value={formatNOK(b.equityGap, UNKNOWN)} />
       <Row label="Prosjektavkastning" sub="Ikke egenkapitalavkastning" value={formatPct(b.projectReturn, NO_BASIS)} />
     </div>
   );
@@ -114,7 +118,6 @@ export function FlippCalculator() {
   const ev = result.evaluation;
   const b = ev.base;
   const tenure = calc.dutyBasis === 'ingen' ? 'borettslag' : calc.dutyBasis === 'kjopesum_pluss_fellesgjeld' && calc.dutyPct === 2.5 ? 'selveier' : 'annet';
-  const high = ev.resolved && calc.saleHigh !== null ? solveMaxBid(ev.resolved, calc.saleHigh, { kind: 'profit', value: calc.profitTarget ?? 0 }) : null;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -171,9 +174,14 @@ export function FlippCalculator() {
 
           <Group title="Prosjekt og finansiering" sub="Forutsetninger – ikke finansieringstilbud.">
             <CalcField label="Prosjektmåneder (m)" k="months" unit="mnd" decimals={1} tag="mine" />
-            <CalcField label="Månedlige kostnader (M)" k="monthlyCost" unit="kr" tag="analyse" hint="Felleskostnader, strøm, forsikring, avgifter m.m." />
+            <CalcField label="Månedlige kostnader (M)" k="monthlyCost" unit="kr" tag="analyse" hint="Hele felleskostnaden inkl. gjeldsbetjening, strøm, forsikring og avgifter. Renter på fellesgjeld legges ikke til på nytt." />
             <CalcField label="Årlig rente (r)" k="interestPct" unit="%" decimals={2} tag="mine" />
             <CalcField label="Låneandel av kjøpesum (fP)" k="purchaseFinancingPct" unit="%" decimals={0} tag="mine" hint="Regnes kun av kontant kjøpesum (P), ikke kjøpskostnadene." />
+            <label className="flex items-start gap-2 text-sm sm:col-span-2">
+              <input type="checkbox" className="mt-1 accent-pine-700" checked={calc.financeRunningCosts} onChange={(e) => setCalc({ financeRunningCosts: e.target.checked })} />
+              Lånefinansier løpende renter og drift (gradvis opptrekk)
+            </label>
+            <CalcField label="Tilgjengelig egenkapital" k="availableEquity" unit="kr" tag="mine" />
             <CalcField label="Låneandel av oppussing (fR)" k="renovationFinancingPct" unit="%" decimals={0} tag="mine" hint="Egen låneandel av oppussing inklusive reserve (RB)." />
           </Group>
 
@@ -202,6 +210,7 @@ export function FlippCalculator() {
             <CalcField label="Egne timer (H)" k="lumpSumHours" unit="t" />
             <CalcField label="Illustrativ verdi av egen tid (h)" k="hourValue" unit="kr/t" tag="mine" hint="Vises separat som alternativverdi. Trekkes ikke fra resultatet eller som kostnad i maksbudet." />
             <CalcField label="Ønsket minimumsfortjeneste" k="profitTarget" unit="kr" tag="mine" hint="Brukes til maksbud." />
+            <CalcField label="Minimum fortjeneste per egeninnsatstime" k="minProfitPerOwnHour" unit="kr/t" tag="mine" hint="Redigerbart eksempel: 500 kr/t. Egen maksbudgrense, ikke en kostnad." />
           </Group>
         </div>
 
@@ -248,27 +257,7 @@ export function FlippCalculator() {
                   <BarList rows={(['low', 'base', 'high'] as const).map((k) => ({ label: `${CASE_LABEL[k]} salg`, value: ev.cases[k]?.profit ?? null }))} />
                 </div>
               </section>
-              <section className="rounded-xl border border-pine-300 bg-pine-50 p-4">
-                <h4 className="font-semibold">Modellert maksbud</h4>
-                <p className="text-xs text-slate-700">Regnet baklengs fra ønsket minimumsfortjeneste ({formatNOK(calc.profitTarget, 'ikke satt')}). Toleranse {SOLVER_TOLERANCE_KR} kr. Ikke en budfullmakt eller garanti.</p>
-                {ev.maxBid ? (
-                  <dl className="num mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-lg bg-white p-2">
-                      <dt className="text-xs text-slate-600">I base-scenarioet</dt>
-                      <dd className="font-semibold">{ev.maxBid.price === null ? 'Ingen gjennomførbar pris' : formatNOK(ev.maxBid.price)}</dd>
-                    </div>
-                    <div className="rounded-lg bg-white p-2">
-                      <dt className="text-xs text-slate-600">I høyt scenario</dt>
-                      <dd className="font-semibold">{!high ? NO_BASIS : high.price === null ? 'Ingen gjennomførbar pris' : formatNOK(high.price)}</dd>
-                    </div>
-                    <div className="col-span-2 rounded-lg bg-white p-2 text-xs text-slate-700">
-                      Din kjøpspris {formatNOK(b.P)} er {ev.maxBid.price !== null ? <strong>{formatNOKSigned(ev.maxBid.price - b.P)}</strong> : 'uten løsning'} fra maksbudet i base.
-                    </div>
-                  </dl>
-                ) : (
-                  <p className="mt-2 text-sm">Sett en ønsket minimumsfortjeneste for å få et maksbud.</p>
-                )}
-              </section>
+              <MaxBidSummary evaluation={ev} purchasePrice={calc.purchasePrice} />
               <section className="rounded-xl border border-amber-300 bg-amber-50 p-4">
                 <h4 className="font-semibold">Skattebehandling: {ev.tax?.mode === 'antatt' ? 'Illustrasjon' : 'Ikke avklart'}</h4>
                 <p className="text-xs text-slate-700">Skatt trekkes ikke fra hovedresultatet. Velg bare et illustrativt alternativ hvis du vil se en separat beregning.</p>
@@ -338,7 +327,7 @@ export function StressPanel() {
                 {sel.noEffect ? 'Ingen effekt – prisgrunnlaget er kontantpris.' : <>Endring {formatNOKSigned(sel.deltaProfit)} · avkastning {formatPct(sel.result.projectReturn)}</>}
               </p>
               <p className="mt-1 text-xs text-slate-600">{sel.detail}</p>
-              {sel.maxBid && <p className="mt-1 text-xs text-slate-700">Maksbud i denne testen: {sel.maxBid.price === null ? 'ingen gjennomførbar pris' : formatNOK(sel.maxBid.price)}</p>}
+              {sel.maxBid && <p className="mt-1 text-xs text-slate-700">Maksbud etter fortjenestemålet i denne testen: {sel.maxBid.price === null ? 'ingen gjennomførbar pris' : formatNOK(sel.maxBid.price)}</p>}
             </>
           ) : (
             <p className="text-sm text-slate-600">Velg en stresstest for å se hvordan hele kalkylen endres.</p>
@@ -391,13 +380,13 @@ export function HourlyPanel({ showOwn = true }: { showOwn?: boolean } = {}) {
             </div>
             <div className="rounded-lg bg-slate-50 p-2">
               <dt className="text-xs text-slate-600">Resultat før verdsatt tid / antall egne timer</dt>
-              <dd className="font-semibold">{calc.lumpSumHours ? `${formatNOK(b.profit / calc.lumpSumHours)} per time` : calc.lumpSumHours === null ? UNKNOWN : 'Ingen egne timer'}</dd>
+              <dd className="font-semibold">{b.profitPerOwnHour !== null ? `${formatNOK(b.profitPerOwnHour)} per time` : b.ownHours === null ? UNKNOWN : 'Ingen egne timer'}</dd>
             </div>
           </dl>
         ) : (
           <p className="mt-2 text-sm text-slate-600">Kalkylen fra modul 8 er ufullstendig, så ingen resultat vises. Prøv eksempelet under.</p>
         )}
-        <p className="mt-2 text-xs text-slate-600">Egne timer: {formatHours(calc.lumpSumHours)} · timeverdi {formatNOK(calc.hourValue)}/t.</p>
+        <p className="mt-2 text-xs text-slate-600">Egne timer: {formatHours(result.renovation.hours)} · timeverdi {formatNOK(calc.hourValue)}/t.</p>
       </div>
       )}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -425,8 +414,8 @@ export function HurdlePanel() {
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="1. Minimum fortjeneste" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr" value={calc.profitTarget} onChange={(v) => setCalc({ profitTarget: v })} />}</Field>
-        <Field label="2. Minimum prosjektavkastning" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="%" decimals={1} value={h.minReturnPct} onChange={(v) => setH({ minReturnPct: v })} />}</Field>
-        <Field label="3. Minimum fortjeneste per egen time" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr/t" value={h.minHourValue} onChange={(v) => setH({ minHourValue: v })} />}</Field>
+        <Field label="2. Minimum prosjektavkastning" hint="Informativt mål; inngår ikke i anbefalt maksbud." labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="%" decimals={1} value={h.minReturnPct} onChange={(v) => setH({ minReturnPct: v })} />}</Field>
+        <Field label="3. Minimum fortjeneste per egen time" labelAside={<EvidenceTag kind="mine" />}>{(p) => <NumberInput {...p} unit="kr/t" value={calc.minProfitPerOwnHour} onChange={(v) => setCalc({ minProfitPerOwnHour: v })} />}</Field>
       </div>
       {ev.status === 'complete' ? (
         <table className="num w-full text-sm">
@@ -443,11 +432,10 @@ export function HurdlePanel() {
             {(['low', 'base', 'high'] as const).map((k) => {
               const c = ev.cases[k];
               if (!c) return null;
-              const hours = calc.lumpSumHours;
               const rows = [
                 { met: calc.profitTarget === null ? null : c.profit >= calc.profitTarget, val: formatNOK(c.profit) },
                 { met: h.minReturnPct === null || c.projectReturn === null ? null : c.projectReturn * 100 >= h.minReturnPct, val: formatPct(c.projectReturn, NO_BASIS) },
-                { met: h.minHourValue === null || !hours ? null : c.profit / hours >= h.minHourValue, val: hours ? `${formatNOK(c.profit / hours)}/t` : UNKNOWN },
+                { met: c.meetsHourlyRequirement, val: c.profitPerOwnHour === null ? (c.ownHours === 0 ? 'Ingen egne timer' : UNKNOWN) : `${formatNOK(c.profitPerOwnHour)}/t` },
               ];
               return (
                 <tr key={k}>
@@ -475,6 +463,7 @@ export function HurdlePanel() {
       ) : (
         <Alert tone="warning">Kalkylen er ufullstendig, så kravene kan ikke sjekkes. Åpne modul 8.</Alert>
       )}
+      {ev.status === 'complete' && <MaxBidSummary evaluation={ev} purchasePrice={calc.purchasePrice} />}
       <p className="text-xs text-slate-600">Eksempelinnstillinger er 400 000 kr i fortjenestemål, 15 % prosjektavkastning og 500 kr i fortjeneste per egeninnsatstime. Timekravet er en redigerbar grense for maksbud – ikke en ekstra prosjektkostnad eller automatisk dom over lønnsomheten.</p>
     </div>
   );
@@ -559,67 +548,50 @@ export function ReturnsPanel() {
   );
 }
 
-/** Regn baklengs til maks kjøpspris for valgt resultatkrav (side 8.5). */
+/** Samme lagrede mål som kalkulatoren og kravpanelet (side 8.5). */
 export function MaxBidPanel() {
-  const { calc, result } = useCalc();
-  const [target, setTarget] = useState<number | null>(300_000);
-  const [custom, setCustom] = useState(false);
+  const { calc, setCalc, result } = useCalc();
   const ev = result.evaluation;
-  const rows = useMemo(() => {
-    if (ev.status !== 'complete' || !ev.resolved || target === null) return null;
-    return (['low', 'base', 'high'] as const).map((k) => {
-      const v = calc[k === 'low' ? 'saleLow' : k === 'base' ? 'saleBase' : 'saleHigh'];
-      return { k, v, bid: v === null ? null : solveMaxBid(ev.resolved!, v, { kind: 'profit', value: target }) };
-    });
-  }, [ev, calc, target]);
+  const rows = useMemo(() => evaluateCourseSaleCases(calc), [calc]);
   return (
     <div className="space-y-3">
       <div role="group" aria-label="Resultatkrav" className="flex flex-wrap gap-2">
         {PROFIT_TARGETS.map((t) => (
-          <Button key={t} size="sm" variant={!custom && target === t ? 'primary' : 'secondary'} aria-pressed={!custom && target === t} onClick={() => { setCustom(false); setTarget(t); }}>
+          <Button key={t} size="sm" variant={calc.profitTarget === t ? 'primary' : 'secondary'} aria-pressed={calc.profitTarget === t} onClick={() => setCalc({ profitTarget: t })}>
             {formatNOK(t)}
           </Button>
         ))}
-        <Button size="sm" variant={custom ? 'primary' : 'secondary'} aria-pressed={custom} onClick={() => setCustom(true)}>
-          Egendefinert
-        </Button>
       </div>
-      {custom && (
-        <div className="max-w-xs">
-          <Field label="Eget fortjenestemål">{(p) => <NumberInput {...p} unit="kr" value={target} onChange={setTarget} />}</Field>
-        </div>
-      )}
-      {ev.status !== 'complete' ? (
-        <MissingAlert result={result} />
-      ) : target === null || !rows ? (
-        <Alert tone="warning">Velg eller skriv inn et fortjenestemål.</Alert>
-      ) : (
-        <section className="rounded-xl border border-pine-300 bg-pine-50 p-4" aria-live="polite">
-          <h4 className="font-semibold">Modellert maks kjøpspris for {formatNOK(target)} resultat</h4>
-          <p className="text-xs text-slate-700">Regnet baklengs med toleranse {SOLVER_TOLERANCE_KR} kr. Dokumentavgift og renter beregnes på nytt for hver pris. Ikke en budfullmakt eller garanti.</p>
-          <table className="num mt-2 w-full text-sm">
-            <thead className="text-left text-xs text-slate-600">
-              <tr>
-                <th className="py-1 font-medium">Salgsscenario</th>
-                <th className="py-1 text-right font-medium">Salgspris</th>
-                <th className="py-1 text-right font-medium">Maks kjøpspris</th>
-                <th className="py-1 text-right font-medium">Mot din kjøpspris</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-pine-200">
-              {rows.map(({ k, v, bid }) => (
-                <tr key={k}>
-                  <th scope="row" className="py-1.5 text-left font-normal">
-                    {CASE_LABEL[k]}
-                  </th>
-                  <td className="py-1.5 text-right">{formatNOK(v, NO_BASIS)}</td>
-                  <td className="py-1.5 text-right font-semibold">{!bid ? NO_BASIS : bid.price === null ? 'Ingen gjennomførbar pris' : formatNOK(bid.price)}</td>
-                  <td className="py-1.5 text-right">{bid?.price != null && calc.purchasePrice !== null ? formatNOKSigned(bid.price - calc.purchasePrice) : '–'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <CalcField label="Eget fortjenestemål" k="profitTarget" unit="kr" />
+        <CalcField label="Minimum fortjeneste per egeninnsatstime" k="minProfitPerOwnHour" unit="kr/t" hint="Eksempel: 500 kr/t. Tomt betyr at kravet ikke er satt." />
+        <CalcField label="Egne timer (H)" k="lumpSumHours" unit="t" />
+      </div>
+      {ev.status !== 'complete' ? <MissingAlert result={result} /> : (
+        <>
+          <MaxBidSummary evaluation={ev} purchasePrice={calc.purchasePrice} />
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 className="font-semibold">Maksbud ved lavt, normalt og høyt salg</h4>
+            <p className="text-xs text-slate-700">Samme mål, egne timer og kostnader i alle scenarioene. Renter og dokumentavgift beregnes på nytt. Toleranse {SOLVER_TOLERANCE_KR} kr.</p>
+            <div className="mt-2 grid grid-cols-1 gap-3">
+              {rows.map(({ key, sale, evaluation }) => {
+                const rec = evaluation?.recommendedMaxBid;
+                return (
+                  <section key={key} className="rounded-lg bg-slate-50 p-3" aria-label={`Maksbud – ${CASE_LABEL[key]}`}>
+                    <h5 className="font-semibold">{CASE_LABEL[key]} salg · {formatNOK(sale, NO_BASIS)}</h5>
+                    <dl className="num mt-1 text-sm">
+                      <Row label="Etter fortjenestemål" value={bidText(evaluation?.maxBid)} />
+                      <Row label="Etter timekrav" value={bidText(evaluation?.maxBidHourly)} />
+                      <Row label="Anbefalt maksbud" strong value={bidText(rec?.limits.find((l) => l.id === rec.limitedBy)?.result)} />
+                    </dl>
+                    {rec?.limitedBy && <p className="text-xs">Begrenses av: {MAX_BID_LIMIT_LABEL[rec.limitedBy]}.</p>}
+                    {rec?.limits.some((l) => l.result.status === 'none') && <p className="text-xs text-red-800">Kravet kan ikke oppfylles selv ved kjøpspris 0 kr.</p>}
+                  </section>
+                );
+              })}
+            </div>
+          </section>
+        </>
       )}
     </div>
   );

@@ -57,6 +57,8 @@ Eksempel (samme prosjekt): 100 egne timer og krav 5 000 kr/t gir timekravsgrense
 
 **B. Scenario-rangering.** Ved samme kjøpspris er lav fortjeneste per egeninnsatstime et reelt svakhetstegn (kriteriet «Fortjeneste per egeninnsatstime», vekt 15 %). Et scenario som krever svært mye arbeid for liten merfortjeneste rangeres dårligere enn et enklere. Men: **et scenario under kravet blir ikke automatisk «ikke anbefalbart».** Kjøpsprisen kan være lav nok til at det er attraktivt, så timekravet er en mål-/maksbudparameter og en rangeringsfaktor – ikke en hard gjennomførbarhetsport. Scenarioet får flagget «Under timekravet ved dette kjøpsbudet» og et lavere maksbud.
 
+**Kursversjon 2:** Kalkulator, kravpanel og maksbud-side bruker samme private `calc.minProfitPerOwnHour` og `calc.profitTarget`. Eldre `hurdle.minHourValue` overføres ved lesing når standardfeltet er null; en versjonsmarkør bevarer senere bevisst tømte felt. Den gamle verdien beholdes for historikk. Separat illustrativ `hourValue` er ikke timekravet. Sluttcase følger samme anbefaling med egne finansieringsandeler. Se [økonomiporten](kurs-v2.md) for lagringsregler og validering.
+
 ### 2.3 Øvrig
 
 - **Salgskostnader** inngår fullt i resultatet, men ikke i egenkapitalbehovet.

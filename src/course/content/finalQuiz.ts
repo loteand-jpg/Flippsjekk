@@ -7,7 +7,7 @@ export const FINAL_QUIZ: QuizDef[] = [
     question: 'En sliten bolig koster 3,0 millioner og en ferdig bolig ser ut til å være verdt 3,5 millioner. Hvor stor er fortjenesten?',
     options: ['Alltid 500 000 kr', 'Kan ikke fastslås før alle prosjektkostnadene er beregnet', 'Minst 400 000 kr'],
     correct: 1,
-    explain: 'Prisforskjellen må først dekke alle kjøps-, oppussings-, finansierings-, drifts- og salgskostnader, og eventuell skatt og egen tid.',
+    explain: 'Prosjektresultatet før skatt finnes først etter alle kjøps-, oppussings-, finansierings-, drifts- og salgskostnader. Skatt og illustrativ verdsetting av egen tid vurderes separat.',
   },
   {
     id: 'q2',
@@ -97,7 +97,7 @@ export const FINAL_QUIZ: QuizDef[] = [
   {
     id: 'q13',
     question: 'Hva bør bestemme maksbudet ditt?',
-    options: ['Prisantydningen', 'Hvor mye neste budgiver byr', 'Kalkylen og ditt avkastnings-/fortjenestekrav', 'Bankens absolutte maksimum'],
+    options: ['Prisantydningen', 'Hvor mye neste budgiver byr', 'Kalkylen, fortjenestemålet og timekravet', 'Bankens absolutte maksimum'],
     correct: 2,
     explain: 'Maksbudet bestemmes av kalkylen før budrunden.',
   },

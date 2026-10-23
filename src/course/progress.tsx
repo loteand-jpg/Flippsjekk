@@ -44,7 +44,12 @@ export interface FinalCaseState {
   /** Identifisert risiko i kroner. null = uavklart (aldri 0). */
   pipeRisk: number | null;
   interestPct: number | null;
+  /** Eldre felles sats beholdes som historikk. */
   financingPct: number | null;
+  purchaseFinancingPct: number | null;
+  renovationFinancingPct: number | null;
+  minProfitPerOwnHour: number | null;
+  saleBasis: 'kontant' | 'total';
   saleFixed: number | null;
   commissionPct: number | null;
   buyFees: number | null;
@@ -54,6 +59,8 @@ export interface FinalCaseState {
 }
 
 export interface CourseState {
+  /** Skiller et bevisst tømt timekrav fra eldre, separat kurslagring. */
+  hourlyRequirementVersion: 1;
   /** Sider markert som lest: «modul:sideindeks». */
   read: string[];
   /** Siste sted brukeren var: «modul:side», «modul:q» eller sluttcase/sluttquiz/ferdig. */
@@ -88,6 +95,10 @@ export function defaultFinalCase(): FinalCaseState {
     pipeRisk: null,
     interestPct: 7,
     financingPct: 100,
+    purchaseFinancingPct: 100,
+    renovationFinancingPct: 100,
+    minProfitPerOwnHour: 500,
+    saleBasis: 'total',
     saleFixed: 55_000,
     commissionPct: 1.5,
     buyFees: 6_000,
@@ -99,6 +110,7 @@ export function defaultFinalCase(): FinalCaseState {
 
 export function defaultState(): CourseState {
   return {
+    hourlyRequirementVersion: 1,
     read: [],
     lastLocation: null,
     quiz: {},
@@ -140,6 +152,10 @@ function sanitizeFinalCase(raw: unknown): FinalCaseState {
     pipeRisk: numOrNull(raw.pipeRisk),
     interestPct: pick('interestPct'),
     financingPct: pick('financingPct'),
+    purchaseFinancingPct: 'purchaseFinancingPct' in raw ? numOrNull(raw.purchaseFinancingPct) : pick('financingPct'),
+    renovationFinancingPct: 'renovationFinancingPct' in raw ? numOrNull(raw.renovationFinancingPct) : pick('financingPct'),
+    minProfitPerOwnHour: pick('minProfitPerOwnHour'),
+    saleBasis: raw.saleBasis === 'kontant' ? 'kontant' : 'total',
     saleFixed: pick('saleFixed'),
     commissionPct: pick('commissionPct'),
     buyFees: pick('buyFees'),
@@ -160,6 +176,12 @@ export function sanitizeState(raw: unknown): CourseState {
   };
   const calc = ScenarioValuesSchema.safeParse(raw.calc);
   const hurdle = isObj(raw.hurdle) ? { minReturnPct: numOrNull(raw.hurdle.minReturnPct), minHourValue: numOrNull(raw.hurdle.minHourValue) } : d.hurdle;
+  // Før samordningen var hurdle.minHourValue det redigerbare kravet; calc-feltet var normalt null.
+  // Et eksplisitt standardmodellkrav prioriteres ved konflikt. Eldre felt beholdes uten overskriving.
+  const values = calc.success ? calc.data : d.calc;
+  if (raw.hourlyRequirementVersion !== 1 && calc.success && values.minProfitPerOwnHour === null && isObj(raw.hurdle) && 'minHourValue' in raw.hurdle) {
+    values.minProfitPerOwnHour = numOrNull(raw.hurdle.minHourValue);
+  }
   const lines: Record<string, BudgetLine> = {};
   if (isObj(raw.budget) && isObj(raw.budget.lines)) {
     for (const [k, v] of Object.entries(raw.budget.lines)) {
@@ -174,12 +196,13 @@ export function sanitizeState(raw: unknown): CourseState {
         .map((r, i) => ({ id: typeof r.id === 'string' ? r.id : `r-${i}`, label: typeof r.label === 'string' ? r.label : '', likely: numOrNull(r.likely), hidden: numOrNull(r.hidden) }))
     : d.risk;
   return {
+    hourlyRequirementVersion: 1,
     read: Array.isArray(raw.read) ? [...new Set(raw.read.filter((x): x is string => typeof x === 'string' && VALID_READ_KEYS.has(x)))] : [],
     lastLocation: typeof raw.lastLocation === 'string' ? raw.lastLocation : null,
     quiz: record(raw.quiz, (x): x is number => typeof x === 'number' && Number.isInteger(x), (k) => VALID_QUIZ_IDS.has(k)),
     final: record(raw.final, (x): x is number => typeof x === 'number' && Number.isInteger(x), (k) => VALID_FINAL_IDS.has(k)),
     checks: record(raw.checks, (x): x is string[] => Array.isArray(x) && x.every((i) => typeof i === 'string')),
-    calc: calc.success ? calc.data : d.calc,
+    calc: values,
     hurdle,
     budget: { lines, reservePct: isObj(raw.budget) && 'reservePct' in raw.budget ? numOrNull(raw.budget.reservePct) : 20 },
     risk,

@@ -205,7 +205,10 @@ export const M7_11: CourseModule[] = [
               'Ved totalpris er kontantsalget **S = V − D1**. Ved kontantpris er **S = V**.',
               'Salgskostnader **Csale = Sf + s × S**, og samlede kostnader **C = P + K + RB + I + O + Csale**',
               'Resultat før skatt og egen tid **= S − C**, og etter verdsatt egeninnsats **= S − C − H × h**',
-              'Prosjektavkastning **= (S − C) / (C + D0)**',
+              'Fortjeneste per egeninnsatstime **= (S − C) / H**. Ved null eller ukjente timer finnes ingen timesats.',
+              'Prosjektavkastning **= (S − C) / (C + D0)**. Fellesgjelden inngår i kapitalgrunnlaget, ikke som et ekstra kontantkjøp.',
+              'Egenkapitalbehov **= (P − Lp) + K + (RB − Lr) + I + O** når løpende utgifter betales med egenkapital. Ved lånefinansierte løpende utgifter dekkes I og O av lån i modellen. Salgskostnadene betales ved salget og inngår ikke i dette kapitalbehovet.',
+              'Anbefalt modellert maksbud er laveste relevante grense fra fortjenestemål og timekrav. Prosjektavkastningsmålet holdes separat.',
             ],
           },
         ],
@@ -271,7 +274,7 @@ export const M7_11: CourseModule[] = [
           { t: 'lead', x: 'Hva kan jeg betale og fortsatt få resultatet jeg krever?' },
           {
             t: 'p',
-            x: 'Velg fortjenestemål i kalkulatoren under og se modellert maksimal kjøpspris i lavt, normalt og høyt scenario. Kjøpsavgift og renter beregnes på nytt for hver pris. Et eget krav til fortjeneste per egeninnsatstime kan gi et lavere forsvarlig maksbud; et prosjekt under timekravet er ikke automatisk ulønnsomt, men må vurderes ved en lavere kjøpspris.'
+            x: 'Velg fortjenestemål i kalkulatoren under og se modellert maksimal kjøpspris i lavt, normalt og høyt scenario. Kjøpsavgift og renter beregnes på nytt for hver pris. Anbefalt maksbud er den laveste relevante grensen fra fortjenestemål og timekrav. Avkastningsmålet er informativt og blandes ikke inn. Et eget krav til fortjeneste per egeninnsatstime kan gi et lavere modellert maksbud; et prosjekt under timekravet er ikke automatisk ulønnsomt, men må vurderes ved en lavere kjøpspris.'
           },
           { t: 'widget', id: 'maxbud' },
           {

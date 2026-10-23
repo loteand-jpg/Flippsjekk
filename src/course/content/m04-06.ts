@@ -284,7 +284,7 @@ export const M4_6: CourseModule[] = [
               { title: 'Finansiering', x: 'Renter og finansieringskostnader.' },
               { title: 'Eiertid', x: 'Felleskostnader og annen drift.' },
               { title: 'Salg', x: 'Megler og andre salgskostnader.' },
-              { title: 'Egen tid', x: 'Arbeidet brukeren selv legger inn.' },
+              { title: 'Egen tid – separat vurdering', x: 'Egne timer og alternativverdi, uten fratrekk i kontantkostnadene.' },
             ],
           },
           { t: 'lead', x: 'Totalkostnad ≠ kjøpesum + oppussing' },
@@ -367,7 +367,7 @@ export const M4_6: CourseModule[] = [
         blocks: [
           {
             t: 'p',
-            x: 'I budsjettet må du ta med prosjektets varighet, finansiert andel og rente. Legg til felleskostnader, forsikring, strøm og kommunale kostnader der det er relevant. Jo lengre prosjektet varer, desto mer koster de.',
+            x: 'I budsjettet må du ta med hele prosjektets varighet frem til økonomisk oppgjør, separate låneandeler av kontant kjøpesum og oppussing inklusive reserve, og rente. Legg til felleskostnader, forsikring, strøm og kommunale kostnader der det er relevant. Jo lengre prosjektet varer, desto mer koster de. Hele felleskostnaden inngår i driften; ikke legg renter på fellesgjeld til en gang til. Kjøpskostnadene må dekkes separat, fordi kjøpslånet i modellen bare gjelder kontant kjøpesum.',
           },
           {
             t: 'box',
@@ -396,7 +396,7 @@ export const M4_6: CourseModule[] = [
           },
           {
             t: 'p',
-            x: 'Deretter kommer din egen tid. Egen tid har en alternativ økonomisk verdi, også når den ikke gir et skattefradrag.',
+            x: 'Deretter kommer din egen tid. Egen tid har en alternativ økonomisk verdi, også når den ikke gir et skattefradrag. Denne verdsettingen vises separat fra faktisk prosjektresultat før skatt. Minimum fortjeneste per egeninnsatstime er et annet begrep: et mål som kan gi et lavere maksbud, ikke en ekstra prosjektkostnad.',
           },
           {
             t: 'box',

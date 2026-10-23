@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { MODULES } from '../src/course/content';
 import { FINAL_QUIZ } from '../src/course/content/finalQuiz';
+import { CASE_A } from '../src/course/caseData';
+import { evaluateScenario } from '../src/calc/scenario';
+import { formatNOK } from '../src/lib/format';
 
 async function noHorizontalScroll(page: Page) {
   const ok = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
@@ -97,6 +100,7 @@ test('kurs: kalkulator, stresstest, maksbud, scenarioer og sjekkliste', async ({
   await noHorizontalScroll(page);
 
   await page.goto('/#/kurs/flipping-privat?modul=8&side=5');
+  await page.getByRole('button', { name: /300\s?000\s?kr/ }).click();
   await expect(page.getByText(/2[,.]91|2\s?91\d\s?\d{3}/).first()).toBeVisible();
   await noHorizontalScroll(page);
 
@@ -212,4 +216,127 @@ test('kurs: betalingsmur – kjøp med Vipps gir varig tilgang', async ({ page }
   await expect(page.getByRole('heading', { name: 'Mine kurs' })).toBeVisible();
   await expect(page.getByText(/Kjøpt .* · 2\s999\skr · Vipps · varig tilgang/)).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+
+test('kursøkonomi: samme lagrede mål, standardmaksbud og informativ avkastning på tvers av sidene', async ({ page }) => {
+  await login(page);
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
+  await page.getByRole('textbox', { name: 'Ønsket minimumsfortjeneste', exact: true }).fill('100000');
+  await page.getByRole('textbox', { name: 'Minimum fortjeneste per egeninnsatstime', exact: true }).fill('2000');
+  const values = { ...CASE_A, profitTarget: 100_000, minProfitPerOwnHour: 2_000 };
+  const expected = evaluateScenario(values).evaluation;
+  const checkBid = async () => {
+    await expect(page.getByTestId('course-profit-bid')).toHaveText(formatNOK(expected.maxBid!.price));
+    await expect(page.getByTestId('course-hourly-bid')).toHaveText(formatNOK(expected.maxBidHourly!.price));
+    await expect(page.getByTestId('course-recommended-bid')).toHaveText(formatNOK(expected.recommendedMaxBid!.price));
+    await expect(page.getByTestId('course-bid-limit')).toContainText('Minimum fortjeneste per egeninnsatstime');
+    await noHorizontalScroll(page);
+  };
+  await checkBid();
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Minimum fortjeneste per egeninnsatstime', exact: true })).toHaveValue(/2\s?000/);
+  await checkBid();
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=4');
+  await expect(page.getByRole('textbox', { name: '3. Minimum fortjeneste per egen time', exact: true })).toHaveValue(/2\s?000/);
+  await page.getByRole('textbox', { name: '2. Minimum prosjektavkastning', exact: true }).fill('99');
+  await checkBid();
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=5');
+  await expect(page.getByRole('textbox', { name: 'Eget fortjenestemål', exact: true })).toHaveValue(/100\s?000/);
+  await checkBid();
+  // Lavere bud oppfyller timekravet med samme kostnader og finansiering.
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
+  await page.getByRole('textbox', { name: 'Kjøpspris (kontant)', exact: true }).fill(String(expected.recommendedMaxBid!.price));
+  await expect(page.getByText('2 000 kr/t', { exact: true })).toBeVisible();
+});
+
+test('kursøkonomi: ukjente timer, null timer, usatte mål og uoppnåelige krav', async ({ page }) => {
+  await login(page);
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=5');
+  const hours = page.getByRole('textbox', { name: 'Egne timer (H)', exact: true });
+  const hourly = page.getByRole('textbox', { name: 'Minimum fortjeneste per egeninnsatstime', exact: true });
+  const target = page.getByRole('textbox', { name: 'Eget fortjenestemål', exact: true });
+  const profitBid = await page.getByTestId('course-profit-bid').innerText();
+  await hours.fill('');
+  await expect(page.getByText('Egne timer er uavklart.', { exact: false })).toBeVisible();
+  await expect(page.getByTestId('course-recommended-bid')).toHaveText(profitBid);
+  await hours.fill('0');
+  await expect(page.getByText('Ingen egne timer. Timekravet gjelder ikke', { exact: false })).toBeVisible();
+  await expect(page.getByTestId('course-recommended-bid')).toHaveText(profitBid);
+  await hours.fill('250');
+  await hourly.fill('1000000');
+  await expect(page.getByTestId('course-recommended-bid')).toHaveText('Ingen gjennomførbar pris');
+  await expect(page.getByText('Minimum fortjeneste per egeninnsatstime kan ikke oppfylles selv ved kjøpspris 0 kr.', { exact: true })).toBeVisible();
+  await hourly.fill('');
+  await expect(page.getByTestId('course-recommended-bid')).toHaveText(profitBid);
+  await target.fill('');
+  await expect(page.getByTestId('course-recommended-bid')).toHaveText('Ikke beregnet');
+  await page.reload();
+  await expect(hourly).toHaveValue('');
+  await expect(target).toHaveValue('');
+  await noHorizontalScroll(page);
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
+  await page.getByRole('textbox', { name: 'Base salgspris', exact: true }).fill('');
+  await expect(page.getByText('Ufullstendig kalkyle – ingen fortjeneste vises', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('course-recommended-bid')).toHaveCount(0);
+});
+
+test('kursøkonomi: eldre timekrav og utfylte oppgaver beholdes etter oppgradering', async ({ page }) => {
+  await login(page);
+  await page.goto('/#/kurs/flipping-privat?modul=8&side=1');
+  await page.getByRole('button', { name: 'Marker siden som lest' }).click();
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.includes('.course.flipping-privat.v2'))!;
+    const state = JSON.parse(localStorage.getItem(key)!);
+    delete state.hourlyRequirementVersion;
+    state.calc.minProfitPerOwnHour = null;
+    state.hurdle.minHourValue = 875;
+    state.calc.purchaseFinancingPct = 75;
+    state.calc.renovationFinancingPct = 20;
+    state.checks.beforeBid = ['mitt-lagrede-svar'];
+    state.budget.lines['o-bad'] = { amount: 123456, tag: 'mine', include: true };
+    localStorage.setItem(key, JSON.stringify(state));
+  });
+  await page.reload();
+  const hourly = page.getByRole('textbox', { name: 'Minimum fortjeneste per egeninnsatstime', exact: true });
+  await expect(hourly).toHaveValue('875');
+  await expect(page.getByRole('textbox', { name: 'Låneandel av kjøpesum (fP)', exact: true })).toHaveValue('75');
+  await expect(page.getByRole('textbox', { name: 'Låneandel av oppussing (fR)', exact: true })).toHaveValue('20');
+  await expect(page.getByRole('button', { name: /Markert som lest/ })).toBeVisible();
+  await hourly.fill('');
+  await page.reload();
+  await expect(hourly).toHaveValue('');
+  const saved = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.includes('.course.flipping-privat.v2'))!;
+    return JSON.parse(localStorage.getItem(key)!);
+  });
+  expect(saved.checks.beforeBid).toEqual(['mitt-lagrede-svar']);
+  expect(saved.budget.lines['o-bad'].amount).toBe(123456);
+  expect(saved.hurdle.minHourValue).toBe(875);
+});
+
+
+test('kursøkonomi: sluttcaset bruker separate lån og bevarer egne tall og prisgrunnlag', async ({ page }) => {
+  await login(page);
+  await page.goto('/#/kurs/flipping-privat?modul=sluttcase');
+  await page.getByRole('button', { name: /Trinn 2/ }).click();
+  await page.getByRole('textbox', { name: 'Lavt', exact: true }).fill('3100000');
+  await page.getByRole('textbox', { name: 'Normalt', exact: true }).fill('3300000');
+  await page.getByRole('textbox', { name: 'Høyt', exact: true }).fill('3500000');
+  await page.getByRole('button', { name: /Trinn 5/ }).click();
+  await page.getByRole('textbox', { name: 'Låneandel av kjøpesum', exact: true }).fill('75');
+  await page.getByRole('textbox', { name: 'Låneandel av oppussing', exact: true }).fill('20');
+  await expect(page.getByText('Betinget regneeksempel', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('course-recommended-bid')).not.toHaveText('Ikke beregnet');
+  await noHorizontalScroll(page);
+  await page.reload();
+  await page.getByRole('button', { name: /Trinn 5/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Låneandel av kjøpesum', exact: true })).toHaveValue('75');
+  await expect(page.getByRole('textbox', { name: 'Låneandel av oppussing', exact: true })).toHaveValue('20');
+  await page.getByRole('button', { name: /Trinn 2/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Normalt', exact: true })).toHaveValue(/3\s?300\s?000/);
+  await page.getByRole('radio', { name: 'Kontantpris', exact: true }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /Trinn 2/ }).click();
+  await expect(page.getByRole('radio', { name: 'Kontantpris', exact: true })).toHaveAttribute('aria-checked', 'true');
 });

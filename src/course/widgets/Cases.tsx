@@ -32,7 +32,7 @@ const ROWS: { label: string; value: string; tag: Parameters<typeof EvidenceTag>[
   { label: 'Andre kjøpskostnader', value: '2 000 kr', tag: 'mine' },
   { label: 'Prosjekt', value: '6 måneder', tag: 'mine' },
   { label: 'Månedlig drift', value: '5 000 kr', tag: 'analyse' },
-  { label: 'Finansiert andel', value: '90 %', tag: 'mine' },
+  { label: 'Kjøpslån / oppussingslån', value: '90 % av kontantkjøp / 90 % av oppussing med reserve', tag: 'mine' },
   { label: 'Prosjektrente i regnestykket', value: '5,8 %', tag: 'mine' },
   { label: 'Fast salgskostnad', value: '80 000 kr', tag: 'analyse' },
   { label: 'Provisjon', value: '1,5 %', tag: 'analyse' },
@@ -117,7 +117,7 @@ export function CaseAWidget() {
             <dd className="text-xs text-slate-600">Kurset: ned mot ca. 2,63 millioner.</dd>
           </div>
         </dl>
-        <p className="mt-2 text-sm font-semibold">Maksbudet skal regnes baklengs fra resultatkravet.</p>
+        <p className="mt-2 text-sm font-semibold">Maksbudet skal regnes baklengs fra resultatkravet. Med eksempelkravet 500 kr/t og 250 egne timer er timekravet 125 000 kr totalt; her er fortjenestemålet på 300 000 kr strengere.</p>
       </section>
 
       <Button variant="primary" icon={<ArrowRight className="size-4" aria-hidden />} onClick={() => open(CASE_A)}>

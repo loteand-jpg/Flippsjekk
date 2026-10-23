@@ -65,6 +65,7 @@ export const CASE_A: ScenarioValues = {
   saleCommissionPct: 1.5,
   hourValue: 350,
   profitTarget: 400_000,
+  minProfitPerOwnHour: 500,
 };
 
 /** Case B – billig borettslagsleilighet? Bare tallene fra kurset. Resten er uavklart. */
@@ -107,6 +108,7 @@ export const CASE_C: ScenarioValues = {
 
 export interface HurdleState {
   minReturnPct: number | null;
+  /** Eldre lagringsfelt. Beholdes for historikk; kalkulatoren bruker minProfitPerOwnHour. */
   minHourValue: number | null;
 }
 

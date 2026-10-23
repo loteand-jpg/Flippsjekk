@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { Field, NumberInput, Segmented, TextInput } from '../../components/ui/forms';
 import { Alert, Button, buttonClass } from '../../components/ui/primitives';
-import { CASE_LABEL, solveMaxBid } from '../../calc/engine';
-import { evaluateCourseScenario as evaluateScenario } from '../evaluate';
+import { CASE_LABEL } from '../../calc/engine';
+import { evaluateCourseScenario as evaluateScenario, evaluateCourseSaleCases } from '../evaluate';
+import { bidText, MaxBidSummary } from './MaxBidSummary';
+import { BreakdownRows } from './Calculator';
 import type { PriceBasis } from '../../domain/enums';
 import type { ScenarioValues } from '../../domain/schemas';
 import { formatNOK, UNKNOWN } from '../../lib/format';
@@ -85,8 +87,9 @@ export function finalCaseValues(fc: FinalCaseState, basis: PriceBasis, purchase:
     months: MONTHS,
     monthlyCost: MONTHLY,
     interestPct: fc.interestPct,
-    purchaseFinancingPct: fc.financingPct,
-    renovationFinancingPct: fc.financingPct,
+    purchaseFinancingPct: fc.purchaseFinancingPct,
+    renovationFinancingPct: fc.renovationFinancingPct,
+    minProfitPerOwnHour: fc.minProfitPerOwnHour,
     saleBasis: basis,
     saleLow: fc.low,
     saleBase: fc.base,
@@ -103,15 +106,15 @@ export function FinalCase() {
   const fc = state.finalCase;
   const set = (p: Partial<FinalCaseState>) => update((s) => ({ ...s, finalCase: { ...s.finalCase, ...p } }));
   const [step, setStep] = useState(0);
-  const [basis, setBasis] = useState<PriceBasis>('total');
+  const basis = fc.saleBasis;
+  const setBasis = (saleBasis: PriceBasis) => set({ saleBasis });
 
   const calc = useMemo(() => {
     const values = finalCaseValues(fc, basis, ASKING);
     const ev = evaluateScenario(values);
-    const resolved = ev.evaluation.resolved;
-    const rows = (['low', 'base', 'high'] as const).map((k) => {
-      const v = k === 'low' ? fc.low : k === 'base' ? fc.base : fc.high;
-      const bid = resolved && v !== null && fc.target !== null ? solveMaxBid(resolved, v, { kind: 'profit', value: fc.target }) : null;
+    const rows = evaluateCourseSaleCases(values).map(({ key: k, sale: v, evaluation }) => {
+      const rec = evaluation?.recommendedMaxBid;
+      const bid = rec?.limits.find((l) => l.id === rec.limitedBy)?.result;
       return { k, v, bid };
     });
     return { ev, rows };
@@ -277,15 +280,17 @@ export function FinalCase() {
         {step === 4 && (
           <div className="space-y-3">
             <h4 className="font-semibold">Trinn 5 – Maksbud</h4>
-            <p className="text-sm text-slate-700">Kalkulatoren regner baklengs fra scenarioene, kostnadene og fortjenestemålet ditt. Eksempelforutsetningene kan endres.</p>
+            <p className="text-sm text-slate-700">Kalkulatoren regner baklengs fra scenarioene, kostnadene, fortjenestemålet og timekravet ditt. Den laveste relevante grensen brukes. Eksempelforutsetningene kan endres.</p>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <Field label="Fortjenestemål">{(p) => <NumberInput {...p} unit="kr" value={fc.target} onChange={(v) => set({ target: v })} />}</Field>
               <Field label="Rente">{(p) => <NumberInput {...p} unit="%" decimals={1} value={fc.interestPct} onChange={(v) => set({ interestPct: v })} />}</Field>
-              <Field label="Finansiert andel">{(p) => <NumberInput {...p} unit="%" value={fc.financingPct} onChange={(v) => set({ financingPct: v })} />}</Field>
+              <Field label="Låneandel av kjøpesum">{(p) => <NumberInput {...p} unit="%" value={fc.purchaseFinancingPct} onChange={(v) => set({ purchaseFinancingPct: v })} />}</Field>
+              <Field label="Låneandel av oppussing">{(p) => <NumberInput {...p} unit="%" value={fc.renovationFinancingPct} onChange={(v) => set({ renovationFinancingPct: v })} />}</Field>
+              <Field label="Minimum fortjeneste per egeninnsatstime">{(p) => <NumberInput {...p} unit="kr/t" value={fc.minProfitPerOwnHour} onChange={(v) => set({ minProfitPerOwnHour: v })} />}</Field>
               <Field label="Faste salgskostnader">{(p) => <NumberInput {...p} unit="kr" value={fc.saleFixed} onChange={(v) => set({ saleFixed: v })} />}</Field>
               <Field label="Provisjon">{(p) => <NumberInput {...p} unit="%" decimals={1} value={fc.commissionPct} onChange={(v) => set({ commissionPct: v })} />}</Field>
               <Field label="Kjøpsgebyrer">{(p) => <NumberInput {...p} unit="kr" value={fc.buyFees} onChange={(v) => set({ buyFees: v })} />}</Field>
-              <Field label="Timeverdi">{(p) => <NumberInput {...p} unit="kr/t" value={fc.hourValue} onChange={(v) => set({ hourValue: v })} />}</Field>
+              <Field label="Illustrativ verdi av egen tid" hint="Separat alternativverdi, ikke kostnad i maksbudet.">{(p) => <NumberInput {...p} unit="kr/t" value={fc.hourValue} onChange={(v) => set({ hourValue: v })} />}</Field>
             </div>
             <p className="text-xs text-slate-600">Borettslag: ingen dokumentavgift. Felleskostnader 5 800 kr/mnd i 6 måneder. Fellesgjeld 350 000 kr ved kjøp og salg. Eksempelforutsetninger – ikke fasit.</p>
             {calc.ev.evaluation.status !== 'complete' ? (
@@ -297,13 +302,16 @@ export function FinalCase() {
                 </ul>
               </Alert>
             ) : (
-              <div className="rounded-xl border border-pine-300 bg-pine-50 p-3">
+              <div className="space-y-3">
+                {fc.pipeRisk === null && <Alert tone="warning" title="Betinget regneeksempel">Rørrehabiliteringen er uavklart og holdes utenfor dette regneeksempelet. Tallene er ikke et ubetinget anbefalt bud. Avklar risikoen eller legg inn et eksplisitt risikoscenario.</Alert>}
+                <BreakdownRows b={calc.ev.evaluation.base!} />
+                <MaxBidSummary evaluation={calc.ev.evaluation} purchasePrice={ASKING} />
                 <table className="num w-full text-sm">
                   <thead className="text-left text-xs text-slate-600">
                     <tr>
                       <th className="py-1 font-medium">Scenario</th>
                       <th className="py-1 text-right font-medium">Salgspris</th>
-                      <th className="py-1 text-right font-medium">Maks kjøpspris (kontant)</th>
+                      <th className="py-1 text-right font-medium">Anbefalt maksbud (kontant)</th>
                       <th className="py-1 text-right font-medium">Tilsvarer gjeldsinkludert</th>
                     </tr>
                   </thead>
@@ -312,7 +320,7 @@ export function FinalCase() {
                       <tr key={k}>
                         <th scope="row" className="py-1.5 text-left font-normal">{CASE_LABEL[k]}</th>
                         <td className="py-1.5 text-right">{formatNOK(v)}</td>
-                        <td className="py-1.5 text-right font-semibold">{!bid ? UNKNOWN : bid.price === null ? 'Ingen gjennomførbar pris' : formatNOK(bid.price)}</td>
+                        <td className="py-1.5 text-right font-semibold">{bidText(bid)}</td>
                         <td className="py-1.5 text-right">{bid?.price != null ? formatNOK(bid.price + DEBT) : '–'}</td>
                       </tr>
                     ))}

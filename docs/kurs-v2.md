@@ -1,6 +1,6 @@
 # Kursversjon 2 – forbedring og trygg innføring
 
-**Status 22. oktober 2026:** Under arbeid på grenen `kurs-v2`. `main` og dagens kurs er referanse og skal ikke erstattes før faglig, teknisk og kommersiell godkjenning.
+**Status 23. oktober 2026:** Økonomidelen er implementert og lokalt validert; klar for overlevering til faglig og pedagogisk revisjon. Fortsatt under arbeid på grenen `kurs-v2`. `main` og dagens kurs er referanse og skal ikke erstattes før faglig, teknisk og kommersiell godkjenning.
 
 ## Beslutning: oppgrader eksisterende kurs, ikke lag parallell kopiprodukt
 
@@ -77,4 +77,60 @@
 - Claude: større innholdsrevisjon og sammenheng på tvers av hele kurset.
 - GitHub: kilde for beslutning, endringer og dokumentasjon.
 
-**Neste prioritet:** Fullfør leveranse A og kjør automatisk og manuell faglig kontroll. Deretter leveranse B og C før lanseringsarbeid D.
+**Neste prioritet:** Økonomiporten for leveranse A er dokumentert under. Claude kan overta den brede faglige og pedagogiske revisjonen (B og C) før lanseringsarbeid D.
+
+
+## Økonomiport 23. oktober 2026 – overlevering til faglig revisjon
+
+Arbeidet viderefører `a52f782` på `kurs-v2` og oppgaven i [issue #3](https://github.com/loteand-jpg/Flippsjekk/issues/3). Historisk teststatus over gjelder den første endringspakken; denne delen beskriver den ferdig implementerte økonomien.
+
+### Endringer og kontrollgrunnlag
+
+- Kurskalkulatoren, kravpanelet og maksbud-siden bruker nå samme lagrede `calc.profitTarget` og `calc.minProfitPerOwnHour`. Den tidligere lokale 300 000-kronersinnstillingen på maksbud-siden er fjernet; hurtigvalgene endrer det lagrede målet.
+- Standardmotoren beregner separat maksbud etter fortjenestemål og timekrav. Felles visning bruker `Evaluation.recommendedMaxBid`, viser laveste relevante grense og hva som begrenser. Prosjektavkastningsmålet er bare informativt. Lavt/normalt/høyt salg bruker samme mål og motor; det finnes ingen egen konkurrerende løser i kurset.
+- Ingen timer, ukjente timer eller usatt timekrav gir ingen timegrense og blokkerer ikke fortjenestemålet. Et uoppnåelig krav gir «Ingen gjennomførbar pris», også når den andre grensen har en løsning. Ingen mål gir «Ikke beregnet», aldri et bud på 0 kr.
+- `hourValue` er fortsatt separat illustrativ alternativverdi; det påvirker ikke prosjektresultat, egenkapitalbehov eller anbefalt maksbud. Timekravet legges ikke til kostnadene.
+- Kalkulatoren viser fortjeneste per egeninnsatstime, egenkapitalbehov og finansieringsgap. Separate lån, finansiering av løpende kostnader, ukjent tilgjengelig egenkapital og fellesgjeld følger standardmodellen.
+- Sluttcaset bruker samme anbefaling og har separate kjøps-/oppussingslån. Prisgrunnlaget beholdes etter omlasting. Uavklart rørrehabilitering markeres uttrykkelig som et betinget regneeksempel uten denne risikoen, før nøkkeltallene. Det er ikke et ubetinget anbefalt bud.
+- Konkrete motsetninger i modul 6/8, Case A, ordlisten og økonomiforklaringer i sluttquizen er rettet. Quiz-ID-er, fasitindekser og fremdrift er uendret. Øvrig fagstoff og skatteregler er ikke revidert.
+
+**Før/etter-eksempel:** Case A med fortjenestemål 100 000 kr, 250 egne timer og krav 2 000 kr/t gir fortjenestegrense **2 823 760 kr**, timegrense **2 443 206 kr**, og anbefalt modellert maksbud **2 443 206 kr**. Tidligere viste kurset bare fortjenestegrensen. Kjøpsbud ved den lavere grensen oppfyller begge mål. Et positivt resultat under timekravet ved en høyere pris er fortsatt positivt.
+
+### Bevaring av lagrede data
+
+Lagringsnøkkelen `${uid}.course.flipping-privat.v2`, kurs-ID `flipping-privat`, 11 moduler og 53 sider beholdes. Kurskjøp, abonnement og produksjonsdatabase endres ikke.
+
+`hurdle.minHourValue` var et eget redigerbart krav til fortjeneste per time, mens `calc.minProfitPerOwnHour` normalt var null. Ved lesing av eldre tilstand overføres det eldre kravet til kalkulatoren når standardfeltet er null. Null og 0 beholdes. Hvis begge gamle felt har ulike eksplisitte tall, prioriteres standardfeltet, mens den gamle verdien fortsatt ligger urørt i `hurdle.minHourValue`. Illustrativ `hourValue` overføres aldri som timekrav.
+
+`hourlyRequirementVersion: 1` markerer samordningen. Dermed kan studenten senere tømme eller endre det aktive kravet uten at eldre verdier gjeninnføres ved omlasting. Den gamle felles `finalCase.financingPct` beholdes og brukes som utgangspunkt for begge nye låneandeler når de ikke finnes. Bevisst ukjente andeler beholdes som null.
+
+### Validering og avgrensning
+
+Regresjonstester kontrollerer økonomisk paritet, uavhengig kontrollregning ved 90/0, 90/90 og 75/20 prosent lån, fellesgjeld, ukjente verdier, separate maksbudgrenser, lavere kjøpsbud, uoppnåelige mål og bevaring av lagrede arbeidsark/quiz/fremdrift. Nettlesertestene kontrollerer de samme kursmålene på PC og mobil, navigasjon, alle 53 sider, simulerte kjøp og lagring etter omlasting.
+
+Skytestene bruker installert Chromium gjennom en ignorert lokal Playwright-konfigurasjon fordi den vanlige nettlesernedlastingen er sperret av nettverkspolicy. Ingen nettverksbegrensninger eller signaturkontroller omgås. CI-oppsettet som installerer Playwrights Chromium er uendret.
+
+Dette er økonomiporten for overlevering til Claude. Full regel-/kildekontroll, pedagogisk gjennomgang av alle sider og kommersiell produksjonssetting inngår fortsatt i leveranse B–D. Versjon 1 og tidligere kursøkonomi kan gjenfinnes i Git-historikken. `main` endres ikke av denne leveransen.
+
+
+**Faktiske lokale testresultater 23. oktober 2026:**
+
+| Kontroll | Resultat |
+|---|---|
+| `npm run typecheck` | Bestått |
+| `npm test` | 429 bestått i 22 testfiler, 0 feil (29 nye økonomiregresjoner) |
+| `npm run build` | Bestått; eksisterende advarsler om pakkestørrelse og tredjepartskommentarer |
+| `npm run test:e2e -- --config .cloud.local/playwright.config.ts --workers 1 --output .cloud.local/verified-results` | 61 bestått, 1 eksisterende mobiltest hoppet over, 0 feil |
+| Visuell kontroll | Maksbudvisning på PC (1440 px) og mobil (393 px), uten avkuttet innhold |
+
+Første samlede nettleserkjøring med to arbeidere fikk én `ERR_ABORTED` ved omlasting i en eksisterende kontotest (60 bestått, 1 hoppet over). De berørte kontotestene bestod deretter tre isolerte gjentakelser (6 testkjøringer totalt). En helt ny samlet kjøring med én arbeider bestod som vist over. Ingen assertions eller eksisterende kontokode ble endret for denne navigasjonsfeilen. GitHub Actions etter push er ikke verifisert av disse lokale testene.
+
+**Endrede filer i denne pakken:**
+
+- Beregning og lagring: `src/course/evaluate.ts`, `src/course/caseData.ts`, `src/course/progress.tsx`.
+- Kursverktøy: `src/course/widgets/Calculator.tsx`, `MaxBidSummary.tsx` (ny), `Cases.tsx`, `Finish.tsx`.
+- Økonomitekst: `src/course/content/m04-06.ts`, `m07-11.ts`, `finalQuiz.ts` og `src/course/glossary.ts`.
+- Regresjoner: `src/course/economy.test.ts` (ny) og `e2e/kurs.spec.ts`.
+- Dokumentasjon: `docs/kurs-v2.md` og `docs/scenarier-og-marked.md`.
+
+**Vurdering:** Økonomidelen er klar til å overleveres til Claude for den avgrensede faglige og pedagogiske revisjonen. Dette er ikke en godkjenning for produksjonssetting; leveranse B–D og faglig kvalitetssikring av kilder gjenstår.
