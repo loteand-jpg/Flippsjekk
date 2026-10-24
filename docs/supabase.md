@@ -2,7 +2,7 @@
 
 Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert på branch `backend-supabase-auth` og e-post-OTP + profil er live-verifisert mot utviklingsprosjektet 24. oktober 2026**: ny bruker, 6-sifret OTP via egen SMTP, profiltrigger, lesing/oppdatering av egen profil, oppfrisking, utlogging, ny innlogging og vedvarende sesjon i samme nettleser er bekreftet. **Google OAuth er fortsatt ikke live-verifisert.** Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
 
-**Fase 2B (branch `backend-data-phase-2b`) er implementert og live-verifisert mot utviklings-Supabase 24.10.2026, og er godkjent for merge. Den er fortsatt ikke produksjonsklar.** Den kobler brukerens objektliste og scenarioer til Supabase, lukker den kjente UUID-veien til felles eiendomsdata (migrasjon 9) og bruker eksisterende servicekontrakter, beregningsmotor og UI. **Migrasjon 9 er anvendt i utviklings-Supabase 24.10.2026, og hele RLS-matrisen er kjørt live 228/228.** Nettleserflyten med det seedede testobjektet gjenstår før merge.
+**Fase 2B er implementert, live-verifisert mot utviklings-Supabase 24.10.2026 og merget til `main` (`03a9acfe`). Den er fortsatt ikke produksjonsklar.** Den kobler brukerens objektliste og scenarioer til Supabase, lukker den kjente UUID-veien til felles eiendomsdata (migrasjon 9) og bruker eksisterende servicekontrakter, beregningsmotor og UI. **Migrasjon 9 er anvendt i utviklings-Supabase 24.10.2026, og hele RLS-matrisen er kjørt live 228/228.** Nettleserflyten med det seedede testobjektet gjenstår før merge.
 
 ## Status i ett blikk
 
@@ -414,7 +414,7 @@ Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobb
 
 ## Neste backendfase
 
-1. **Fase 2B er live-verifisert og godkjent for merge:** migrasjon 9, 228/228 RLS, kontrollseed og faktisk Oversikt/objektside/scenarioflyt er bekreftet 24.10.2026.
+1. **Fase 2B er ferdig og merget til `main`:** migrasjon 9, 228/228 RLS, kontrollseed og faktisk Oversikt/objektside/scenarioflyt er bekreftet 24.10.2026.
 2. Bekreft eller endre valget om redigeringstilgang uten abonnement (se «Abonnement og redigeringstilgang»).
 3. Koble egne risikoer, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer. De leses allerede inn i objektbundelen (fase 2B), så mest gjenstår å skrive.
 4. Serverstyrt «legg til bolig» og bestilling av analyse (Edge Function med `service_role`): oppretter eiendom og kobler den til brukeren, og oppretter «Nettsidens vurdering» og første scenario; med abonnement og kvote i database/server. Først da kan `analysis` tas ut av `unavailable`.
