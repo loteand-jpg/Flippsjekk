@@ -1,6 +1,6 @@
 # Supabase – backend (fase 1: databasegrunnmur, fase 2A: Auth og profil)
 
-Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert og testet bare i repositoryet** (branch `backend-supabase-auth`) og er ikke verifisert mot et faktisk Supabase-prosjekt av Claude: Google OAuth, e-postkode, sesjoner og profil-RLS fra nettleseren må kontrolleres live (se «Backend fase 2A»). Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
+Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert på branch `backend-supabase-auth` og e-post-OTP + profil er live-verifisert mot utviklingsprosjektet 24. oktober 2026**: ny bruker, 6-sifret OTP via egen SMTP, profiltrigger, lesing/oppdatering av egen profil, oppfrisking, utlogging, ny innlogging og vedvarende sesjon i samme nettleser er bekreftet. **Google OAuth er fortsatt ikke live-verifisert.** Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
 
 ## Status i ett blikk
 
@@ -12,9 +12,9 @@ Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: m
 | Statiske SQL-kontroller og skjema-mot-Zod-sjekk | Kjører i `npm test` |
 | Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og lat klientfabrikk; brukes nå av Auth- og profiltjenestene (fase 2A) |
 | Backend fase 1 (migrasjon 1–8, 15 tabeller, 37 policyer, matrise 223/223, Security Advisor 0 funn) | **Live-verifisert av ChatGPT og merget til `main`** (rapportert; Claude har ikke selv sett det) |
-| Backend fase 2A: `SupabaseAuthService` (Google + e-postkode) og `SupabaseProfileService` | Implementert i kode, testet lokalt mot stubbet Supabase-klient og stubbet nettverk. **Ikke live-verifisert** (ingen ekte Google, e-post, sesjon eller profil-RLS fra nettleseren er prøvd) |
+| Backend fase 2A: `SupabaseAuthService` (Google + e-postkode) og `SupabaseProfileService` | Implementert og lokalt testet. **E-post-OTP, profil og sesjon er live-verifisert 24.10.2026 mot utviklingsprosjektet. Google OAuth gjenstår.** |
 | Produksjonskomposisjon | Ekte Auth og profil; abonnement, kurs, objekter, scenarioer, referanser, risikoer, analyse, kalender og import er `not_configured` (se «Backend fase 2A») |
-| Anvendt i Supabase / Auth testet | Migrasjon 1–8: ja (ChatGPT). Fase 2A-klientkoden mot ekte Auth: **nei** – gjøres separat mot utviklingsprosjektet (se «Må verifiseres i faktisk Supabase») |
+| Anvendt i Supabase / Auth testet | Migrasjon 1–8: ja (ChatGPT). Fase 2A e-post-OTP/profil/sesjon: **ja, live-verifisert i utviklingsprosjektet 24.10.2026**. Google OAuth: **nei**. |
 
 ## Filer
 
@@ -233,21 +233,23 @@ En ekte bruker skal kunne logge inn (Google eller e-post med engangskode), få s
 - `Services.unavailable: readonly ServiceArea[]` (tom i demoen).
 - Ingen eksisterende metode er endret, og demoen er funksjonelt uendret (alle eksisterende tester og demo-e2e er grønne).
 
-### Må konfigureres i Supabase Auth (ikke gjort eller verifisert av Claude)
+### Supabase Auth-konfigurasjon – status
 
-Klientkoden er ikke «produksjonsklar» før dette er på plass og kontrollert live:
+Status etter live-test i utviklingsprosjektet 24.10.2026:
 
-1. **Google-provider** (Auth → Providers → Google): aktivert med Client ID/Secret fra Google Cloud. Google-konsollens «Authorized redirect URI» er Supabase sin callback `https://<prosjekt-ref>.supabase.co/auth/v1/callback`.
-2. **URL-er** (Auth → URL Configuration): *Site URL* er appens adresse, og *Redirect URLs* inneholder nøyaktig den adressen appen sender som `redirectTo` (`origin + pathname`, f.eks. `https://<vert>/<sti>/` for deployet app og `http://localhost:5173/` lokalt – uten hash). Appen bruker relativ `base`, så stien er der den deployes.
-3. **E-postkode:** *Email*-provider er på. For at brukeren skal få en **kode** (ikke bare en lenke) må e-postmalene inneholde `{{ .Token }}`. Pakkens egen dokumentasjon sier at «Magic Link»-malen må inneholde `{{ .Token }}` for å gi en kode; en helt ny bruker får trolig «Confirm signup»-malen i stedet, så begge bør tilpasses (**kontroller i Dashboard og med en ny og en eksisterende testbruker**). Kodelengden (Auth → Email) må være **6** siden produktbeslutningen er seks siffer.
-4. **OTP-levetid og rate limits** (Auth → Rate Limits / Email): kontroller faktisk kodelevetid, tid mellom nye koder (pakkens dokumentasjon oppgir 60 sekunder per bruker som standard) og e-postgrenser. Appens 10 minutter/60 sekunder er UI-hint, ikke Supabase-innstillinger.
-5. **SMTP:** Supabase sin innebygde e-posttjeneste har typisk svært lave grenser og begrenser mottakere (da svarer Auth `email_address_not_authorized`, som appen viser som «ikke konfigurert»). Kontroller, og sett opp egen SMTP før ekte brukere.
-6. **Nye brukere:** «Allow new users to sign up» må være på (første innlogging oppretter kontoen). **Anonyme innlogginger skal være av.**
+1. **Google-provider:** ikke aktivert/live-verifisert ennå. Når den tas i bruk må Client ID/Secret konfigureres i Google Cloud og Supabase; Google-konsollens «Authorized redirect URI» er Supabase sin callback `https://<prosjekt-ref>.supabase.co/auth/v1/callback`.
+2. **URL-er:** konfigurert for lokal utvikling med `http://127.0.0.1:5173/` som Site URL/Redirect URL. Produksjonsadressen må legges inn når hosting er valgt. `localhost` og `127.0.0.1` er ulike origins og deler ikke nettlesersesjon.
+3. **E-postkode:** konfigurert og live-verifisert. E-postmalen bruker `{{ .Token }}`, kodelengden er satt til **6**, og ny bruker har mottatt og brukt koden med `verifyOtp({ type: 'email' })`.
+4. **OTP-levetid og rate limits:** Email OTP Expiration er satt til **600 sekunder (10 minutter)**. Rate-limit-grenser er ikke belastningstestet; serverinnstillingene er autoritative, mens appens tider bare er UI-hint.
+5. **SMTP:** egen SMTP via **Resend** er konfigurert med verifisert sendingsdomene og sending er live-verifisert. SMTP/API-hemmeligheten ligger utenfor repository og frontend.
+6. **Nye brukere:** «Allow new users to sign up» er på, og **anonyme innlogginger er av** i utviklingsprosjektet.
 7. **Captcha/bot-beskyttelse:** ikke implementert i frontend. Hvis den slås på i Supabase, vil innlogging feile (`captcha_failed`) til frontend sender captcha-token.
 
-### Må verifiseres live (ChatGPT) – ikke gjort av Claude
+### Live-verifisering fase 2A
 
-Ekte Google OAuth-runde (inkludert avbrutt innlogging og redirect-URL-matching); ekte e-postkode (mal, levering, lengde, levetid, rate limit, `otp_expired` for både feil og utløpt kode, og at `verifyOtp({ type: 'email' })` fungerer med klientens PKCE-valg for både ny og eksisterende bruker); ny og eksisterende bruker; trigger som oppretter profil ved første innlogging; sesjon som består oppfrisking og fornyes; utlogging (`scope: local`) i flere faner; profil-RLS fra nettleseren (egen rad lesbar/oppdaterbar, andres usynlig, ingen insert/delete, bare `display_name`/`defaults` skrivbare) og at PostgREST svarer med en matrise på 0 eller 1 rad for både GET og PATCH (`Prefer: return=representation`), som `maybeSingle()` i `postgrest-js` 2.118.0 normaliserer til rad eller `null` (lest i pakkens kode; e2e stubber svaret slik, men har ikke sett det fra Supabase).
+**Bekreftet 24.10.2026 mot utviklingsprosjektet:** egen SMTP leverer e-post; 6-sifret OTP fungerer for ny bruker; Auth-bruker blir bekreftet; profiltrigger oppretter én `profiles`-rad; egen profil kan leses og oppdateres fra appen; oppdaterte profilverdier består refresh; lokal utlogging fungerer; ny OTP-innlogging fungerer; og Supabase-sesjonen gjenopprettes etter at Safari lukkes og åpnes igjen på samme origin. Live-databasen viste én bekreftet Auth-bruker, profil og aktive sesjoner under kontrollen.
+
+**Gjenstår før produksjonsklar Auth:** Google OAuth (inkludert avbrutt flyt og redirect), eksplisitt nettlesertest med bruker A mot bruker B for profil-RLS/kolonnerettigheter, rate-limit/utløpt-kode-kanttilfeller mot live Auth, og produksjons-URL når hosting er valgt. Database-RLS er separat verifisert gjennom fase-1-matrisen.
 
 ### Teststrategi (lokal)
 
@@ -288,7 +290,7 @@ Ingenting under er gjort av Claude; alt skal kontrolleres mot utviklingsprosjekt
 9. Bekreft at ingen `anon`-tilgang finnes via REST på noen av de 15 tabellene.
 9b. **Migrasjon 7:** anvend den, kjør hele matrisen på nytt (inventar `0.8–0.14` og seksjon `8` er nye; `service_role`-testene skal nå nå constraintene med SQLSTATE 23505/23514/23503, ikke `permission denied`), kontroller at `has_function_privilege` for `anon`/`authenticated`/`PUBLIC` på `public.rls_auto_enable()` er false, at event-triggeren `ensure_rls` fortsatt slår på RLS på en ny testtabell i `public`, og kjør Security Advisor og Performance Advisor på nytt.
 9c. **Migrasjon 8** (live-verifisert av ChatGPT; beholdt som kontrollpunkt): anvend den, kjør hele matrisen på nytt (forventet 223 rader, alle `ok = true`; `0.8` og `8.20` er de to som feilet live), kontroller ACL-en (`relacl`) på alle 15 tabeller for `service_role` mot tabellen i migrasjonen (ingen `D` truncate, `x` references eller `t` trigger; ingen kolonne-ACL), at `anon`/`authenticated` er som før, at `pg_default_acl` for `postgres` i `public` ikke gir `service_role`/`anon`/`authenticated` noe på tabeller (`0.15`/`0.16`), og at `rls_auto_enable()` og `ensure_rls` er som etter migrasjon 7. Kjør Security Advisor og Performance Advisor på nytt.
-9d. **Fase 2A** (Auth og profil): se «Må konfigureres i Supabase Auth» og «Må verifiseres live» i avsnittet «Backend fase 2A».
+9d. **Fase 2A** (Auth og profil): e-post-OTP, profil og vedvarende nettlesersesjon er live-verifisert 24.10.2026. Google OAuth og eksplisitt A-mot-B profiltest via nettleseren gjenstår; se «Supabase Auth-konfigurasjon – status» og «Live-verifisering fase 2A».
 10. Bekreft at **anonyme innlogginger er slått av** i Auth-innstillingene: anonyme brukere får rollen `authenticated`, og ville dermed passert alle policyer som sjekker `auth.uid()`, inkludert å opprette egne lister (se «Kjente begrensninger»).
 
 ## Bevisst ikke implementert
@@ -313,8 +315,8 @@ Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobb
 
 ## Neste backendfase
 
-1. ChatGPT: konfigurere og live-verifisere fase 2A (se «Må konfigureres i Supabase Auth» og «Må verifiseres live»), og rapportere avvik. Eventuelle rettelser kommer som en ny, avgrenset oppgave. Fase 2A er ikke merget til `main` før dette er godkjent.
-2. Genererte databasetyper (ChatGPT) og rad-mappere (`snake_case` ↔ domenemodell) for de neste tabellene, med tester mot Zod-skjemaene.
-3. Serverfunksjoner (RPC/edge) for «legg til bolig» og analyseforespørsel med abonnement og kvote; deretter strammes klientens INSERT på `user_properties` og lese-policyene inn.
-4. `Supabase*`-repositoriene for eiendommer, scenarioer, risiko/referanser og kalender mot `Services` (de erstatter stand-ins i `createSupabaseServices()` og tas ut av `Services.unavailable` én og én); kontraktparitet-testene utvides tilsvarende.
-5. Deretter Vipps, jobbkø/agent og datakildeavklaring (se [integrasjoner.md](integrasjoner.md)).
+1. **Fase 2A avsluttes med merge til `main`** etter den dokumenterte live-verifiseringen. Google OAuth kan fullføres som egen Auth-oppgave senere og skal ikke blokkere e-post-OTP-grunnmuren.
+2. **Fase 2B:** genererte databasetyper/rad-mappere og ekte Supabase-repositorier for brukerens objektliste og scenarioer, med kontraktparitet og relevante live-tester.
+3. Før klienten får reell «legg til bolig»-flyt skal den kjente UUID-omgåelsen lukkes: klienten skal ikke kunne opprette `user_properties` vilkårlig uten serverstyrt kontroll. Serverfunksjon/RPC/edge skal senere håndheve abonnement/kvote når dette finnes.
+4. Koble deretter risiko, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer.
+5. Vipps/abonnement, jobbkø/analyseagent og datakildeavklaring kommer etter at datalagring/eierskap er stabilt (se [integrasjoner.md](integrasjoner.md)).
