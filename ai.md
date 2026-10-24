@@ -526,3 +526,8 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 7. Når skal interne «flipprom»-identifikatorer byttes (krever datamigrering)?
 8. Hvilke parametere i markedsvekting V1 og rangeringen skal kalibreres mot reelle salg, og hvem eier områdeprofil-/markedsindeksdata?
 9. Skal arbeidskapasitet (timer per uke) være per person i stedet for for hele teamet?
+
+
+## Lanseringskritiske restpunkter
+
+Se `docs/lanseringssjekkliste.md`. Nye midlertidige løsninger, sikkerhetsfunn og krav som må være lukket før betalende brukere skal legges der fortløpende. Filen er autoritativ for lanseringsberedskap.
