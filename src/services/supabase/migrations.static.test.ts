@@ -265,7 +265,7 @@ describe('anvendte migrasjoner er urørt', () => {
       expect(createHash('sha256').update(text as string).digest('hex'), `${file} er endret – lag en NY migrasjon i stedet`).toBe(expected);
     }
     const later = files.filter((f) => !(f in APPLIED_MIGRATION_SHA256));
-    expect(later).toEqual(['20261024100000_user_properties_backend_only_insert.sql']);
+    expect(later).toEqual(['20261024121059_user_properties_backend_only_insert.sql']);
     for (const f of later) expect(f > '20261022100700').toBe(true);
   });
 });
@@ -391,7 +391,7 @@ describe('migrasjon 8: REVOKE før GRANT for service_role og deny-by-default for
 });
 
 describe('migrasjon 9: brukerens liste (user_properties) kan bare opprettes av backend', () => {
-  const FILE = '20261024100000_user_properties_backend_only_insert.sql';
+  const FILE = '20261024121059_user_properties_backend_only_insert.sql';
   const m9 = sql.find((x) => x.file === FILE)!.text.replace(/--[^\n]*/g, '');
   const stmts = m9.split(';').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
 
