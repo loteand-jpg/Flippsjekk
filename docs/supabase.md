@@ -2,20 +2,20 @@
 
 Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert på branch `backend-supabase-auth` og e-post-OTP + profil er live-verifisert mot utviklingsprosjektet 24. oktober 2026**: ny bruker, 6-sifret OTP via egen SMTP, profiltrigger, lesing/oppdatering av egen profil, oppfrisking, utlogging, ny innlogging og vedvarende sesjon i samme nettleser er bekreftet. **Google OAuth er fortsatt ikke live-verifisert.** Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
 
-**Fase 2B (branch `backend-data-phase-2b`) er implementert og lokalt verifisert, men IKKE live-verifisert og ikke produksjonsklar.** Den kobler brukerens objektliste og scenarioer til Supabase, lukker den kjente UUID-veien til felles eiendomsdata (migrasjon 9) og bruker eksisterende servicekontrakter, beregningsmotor og UI. Se «Backend fase 2B». Migrasjon 9 er skrevet, men **ikke anvendt i Supabase**: ChatGPT må anvende og verifisere den (se «Må verifiseres live»).
+**Fase 2B (branch `backend-data-phase-2b`) er implementert og delvis live-verifisert, men ikke ferdig godkjent eller produksjonsklar.** Den kobler brukerens objektliste og scenarioer til Supabase, lukker den kjente UUID-veien til felles eiendomsdata (migrasjon 9) og bruker eksisterende servicekontrakter, beregningsmotor og UI. **Migrasjon 9 er anvendt i utviklings-Supabase 24.10.2026, og hele RLS-matrisen er kjørt live 228/228.** Nettleserflyten med det seedede testobjektet gjenstår før merge.
 
 ## Status i ett blikk
 
 | | Status |
 |---|---|
-| Skjema, constraints, indekser (15 tabeller) | Migrasjon 1–8 anvendt og live-verifisert i utviklingsprosjektet av ChatGPT (rapportert; Claude har ikke selv sett det; matrise 223/223, Security Advisor 0 funn). **Migrasjon 9 (fase 2B: `user_properties` kan bare opprettes av backend) er skrevet og lokalt testet, men ikke anvendt i Supabase** |
+| Skjema, constraints, indekser (15 tabeller) | Migrasjon 1–9 anvendt i utviklingsprosjektet. Migrasjon 9 (`20261024121059_user_properties_backend_only_insert.sql`) er live-verifisert 24.10.2026; `authenticated` har ikke INSERT på `user_properties`, og INSERT-policyen er fjernet. |
 | RLS og eksplisitte rettigheter | 36 policyer etter migrasjon 9 (37 i fase 1: insert-policyen på `user_properties` er droppet); RLS på alle tabeller |
-| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, **228 sjekker** (223 live-verifisert + 5 nye i fase 2B: `0.17`, `3.16`, `3.17`, `8.7b`, `8.7c`; `3.8`, `3.9`, `3.13` og `0.11` er bevisst endret) – lokalt kjørt mot PGlite (PostgreSQL 18 i WASM). **Den utvidede matrisen er ikke kjørt mot Supabase ennå** |
+| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, **228/228 live-verifisert mot utviklings-Supabase 24.10.2026**. De nye fase-2B-kontrollene for UUID-veien, backend-only medlemskap og referanseintegritet består. |
 | Statiske SQL-kontroller og skjema-mot-Zod-sjekk | Kjører i `npm test` |
 | Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og lat klientfabrikk; brukes nå av Auth- og profiltjenestene (fase 2A) |
 | Backend fase 1 (migrasjon 1–8, 15 tabeller, 37 policyer, matrise 223/223, Security Advisor 0 funn) | **Live-verifisert av ChatGPT og merget til `main`** (rapportert; Claude har ikke selv sett det) |
 | Backend fase 2A: `SupabaseAuthService` (Google + e-postkode) og `SupabaseProfileService` | Implementert og lokalt testet. **E-post-OTP, profil og sesjon er live-verifisert 24.10.2026 mot utviklingsprosjektet. Google OAuth gjenstår.** |
-| Backend fase 2B: `SupabasePropertyRepository`, `SupabaseScenarioRepository` og lesing av analyser | Implementert, lokalt testet mot PGlite med ekte RLS og mot mocken (kontraktparitet), og e2e i produksjonsmodus mot samme etterligning. **Ikke live-verifisert** |
+| Backend fase 2B: `SupabasePropertyRepository`, `SupabaseScenarioRepository` og lesing av analyser | Implementert og lokalt testet. **Database/RLS er live-verifisert** (migrasjon 9 + 228/228 matrise). Ett isolert testobjekt med publisert analyse og låst scenario er seedet til utviklingsbrukeren; nettleserflyten gjenstår. |
 | Produksjonskomposisjon | Ekte Auth, profil, objektliste, scenarioer og lesing av grunnanalyser. `not_configured`: abonnement, kurs, egne sammenlignbare, egne risikoer, kalender, import/eksport og BESTILLING av analyse (se «Backend fase 2B») |
 | Anvendt i Supabase / Auth testet | Migrasjon 1–8: ja (ChatGPT). Fase 2A e-post-OTP/profil/sesjon: **ja, live-verifisert i utviklingsprosjektet 24.10.2026**. Google OAuth: **nei**. |
 
@@ -282,7 +282,7 @@ Målet er at en innlogget bruker i produksjonsmodus kan åpne Oversikt og arbeid
 |---|---|
 | **Implementert i kode** | Migrasjon 9; `SupabasePropertyRepository`, `SupabaseScenarioRepository`, `SupabaseAnalysisReader` (lesing); radlag med validering (`rows.ts`); delt lesemodell (`services/shared/readModel.ts`); `useEditAccess`; justert UI (porter, Oversikt, objektside); utviklingsseed (`npm run db:dev-seed`) |
 | **Lokalt verifisert** (PGlite + stubbet nettverk, IKKE Supabase) | SQL-matrise 228/228 i tre stubb-varianter; demodata → database → rader → domene rundtur; paritet med mocken på alle 12 objekter; A mot B; UUID-veien lukket (også via direkte PostgREST-kall); låst scenario og primærscenario håndhevet av databasen; produksjons-e2e (nettleser + ekte `supabase-js` + PostgREST-emulator + PGlite) |
-| **Live-verifisert** | **Ingenting av fase 2B.** Migrasjon 9 er ikke anvendt i Supabase, og ingen live-test er kjørt |
+| **Live-verifisert** | Migrasjon 9 er anvendt; 36 policies; ingen INSERT-rettighet eller INSERT-policy på `user_properties`; RLS-matrisen er **228/228**; UUID-veien er avvist med 42501 i live-matrisen; Security Advisor har ingen nye fase-2B-funn. Ett testobjekt er seedet. Nettleser/PostgREST-flyten som faktisk innlogget bruker gjenstår. |
 | **Planlagt (ikke gjort)** | Bestilling av analyse (FINN-henting, agent, jobbkø), abonnement/kvote i database og UI, egne sammenlignbare, egne risikoer, kalender, import/eksport, genererte databasetyper, Realtime |
 
 ### Databaseendring: migrasjon 9 (`20261024121059_user_properties_backend_only_insert.sql`)
@@ -343,7 +343,7 @@ Ikke lagt inn. Supabase sin generator krever tilgang til prosjektet (eller en Do
 
 ### Må verifiseres live (ChatGPT) før fase 2B kan godkjennes
 
-1. **Anvend migrasjon 9** (`20261024121059_user_properties_backend_only_insert.sql`) og kjør hele `rls_matrix.sql` (forventet **228** rader, alle `ok = true`, som `postgres`). Kontroller `pg_policies` (36 policyer, ingen INSERT-policy på `user_properties`), `has_any_column_privilege('authenticated','public.user_properties','INSERT')` = false, og Security Advisor (0 funn).
+1. **UTFØRT 24.10.2026:** migrasjon 9 er anvendt og hele `rls_matrix.sql` er kjørt live: **228/228**. Det er 36 policies, ingen INSERT-policy på `user_properties`, og `authenticated` har verken tabell- eller kolonne-INSERT. Security Advisor viser ingen nye fase-2B-funn.
 2. **UUID-veien:** med en ekte bruker uten liste: `POST /rest/v1/user_properties {"property_id": "<kjent uuid>"}` skal gi 403/`42501`, samme for en ukjent UUID; `GET /rest/v1/properties?id=eq.<uuid>` skal gi `[]`.
 3. **Data:** kjør dev-seed for testbrukeren (eller opprett lister som `service_role`), logg inn i appen i produksjonsmodus og kontroller at Oversikt viser objektene, at objektsiden åpner, og at scenarioer kan redigeres og lagres, «lagre som nytt», sett som primært, gi nytt navn og slette – og at alt består etter oppfriskning.
 4. **A mot B** med to ekte brukere som begge har samme eiendom: ingen ser den andres scenarioer, notater eller primærscenario; direkte PostgREST-kall mot den andres rader gir 0 rader; `primary_scenario_id` kan ikke settes til den andres scenario (`23503`).
@@ -413,7 +413,7 @@ Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobb
 
 ## Neste backendfase
 
-1. **Live-verifiser fase 2B** (ChatGPT; se «Må verifiseres live» under «Backend fase 2B»): anvend migrasjon 9, kjør matrisen (228), seed testdata, prøv Oversikt/scenarioflyt og A mot B. Fase 2B merges ikke til `main` før dette er godkjent.
+1. **Fullfør live-verifisering av fase 2B:** migrasjon 9, matrisen (228/228) og kontrollseed er utført. Gjenstår: prøv Oversikt/objektside/scenarioflyt som faktisk innlogget bruker og bekreft at mapping/skriving fungerer gjennom nettleseren. Fase 2B merges ikke til `main` før dette er godkjent.
 2. Bekreft eller endre valget om redigeringstilgang uten abonnement (se «Abonnement og redigeringstilgang»).
 3. Koble egne risikoer, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer. De leses allerede inn i objektbundelen (fase 2B), så mest gjenstår å skrive.
 4. Serverstyrt «legg til bolig» og bestilling av analyse (Edge Function med `service_role`): oppretter eiendom og kobler den til brukeren, og oppretter «Nettsidens vurdering» og første scenario; med abonnement og kvote i database/server. Først da kan `analysis` tas ut av `unavailable`.
