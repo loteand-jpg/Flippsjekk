@@ -33,7 +33,7 @@ supabase/
     20261022100500_billing_usage_jobs.sql          subscriptions, course_purchases, analysis_jobs, usage_events
     20261022100600_service_role_grants.sql         eksplisitte rettigheter til service_role + lukket EXECUTE på rls_auto_enable()
     20261022100700_service_role_privilege_reset.sql   REVOKE ALL før GRANT for service_role + deny-by-default for nye tabeller
-    20261024100000_user_properties_backend_only_insert.sql   fase 2B: user_properties kan bare opprettes av backend (lukker UUID-veien)
+    20261024121059_user_properties_backend_only_insert.sql   fase 2B: user_properties kan bare opprettes av backend (lukker UUID-veien)
   tests/
     rls_matrix.sql                    testmatrise (kan kjøres mot Supabase)
     support/local_supabase_stub.sql   etterligning av Supabase-roller/auth med brede standardrettigheter – KUN for lokal testing, aldri i Supabase
@@ -285,7 +285,7 @@ Målet er at en innlogget bruker i produksjonsmodus kan åpne Oversikt og arbeid
 | **Live-verifisert** | **Ingenting av fase 2B.** Migrasjon 9 er ikke anvendt i Supabase, og ingen live-test er kjørt |
 | **Planlagt (ikke gjort)** | Bestilling av analyse (FINN-henting, agent, jobbkø), abonnement/kvote i database og UI, egne sammenlignbare, egne risikoer, kalender, import/eksport, genererte databasetyper, Realtime |
 
-### Databaseendring: migrasjon 9 (`20261024100000_user_properties_backend_only_insert.sql`)
+### Databaseendring: migrasjon 9 (`20261024121059_user_properties_backend_only_insert.sql`)
 
 Nøyaktig to setninger:
 
@@ -343,7 +343,7 @@ Ikke lagt inn. Supabase sin generator krever tilgang til prosjektet (eller en Do
 
 ### Må verifiseres live (ChatGPT) før fase 2B kan godkjennes
 
-1. **Anvend migrasjon 9** (`20261024100000_user_properties_backend_only_insert.sql`) og kjør hele `rls_matrix.sql` (forventet **228** rader, alle `ok = true`, som `postgres`). Kontroller `pg_policies` (36 policyer, ingen INSERT-policy på `user_properties`), `has_any_column_privilege('authenticated','public.user_properties','INSERT')` = false, og Security Advisor (0 funn).
+1. **Anvend migrasjon 9** (`20261024121059_user_properties_backend_only_insert.sql`) og kjør hele `rls_matrix.sql` (forventet **228** rader, alle `ok = true`, som `postgres`). Kontroller `pg_policies` (36 policyer, ingen INSERT-policy på `user_properties`), `has_any_column_privilege('authenticated','public.user_properties','INSERT')` = false, og Security Advisor (0 funn).
 2. **UUID-veien:** med en ekte bruker uten liste: `POST /rest/v1/user_properties {"property_id": "<kjent uuid>"}` skal gi 403/`42501`, samme for en ukjent UUID; `GET /rest/v1/properties?id=eq.<uuid>` skal gi `[]`.
 3. **Data:** kjør dev-seed for testbrukeren (eller opprett lister som `service_role`), logg inn i appen i produksjonsmodus og kontroller at Oversikt viser objektene, at objektsiden åpner, og at scenarioer kan redigeres og lagres, «lagre som nytt», sett som primært, gi nytt navn og slette – og at alt består etter oppfriskning.
 4. **A mot B** med to ekte brukere som begge har samme eiendom: ingen ser den andres scenarioer, notater eller primærscenario; direkte PostgREST-kall mot den andres rader gir 0 rader; `primary_scenario_id` kan ikke settes til den andres scenario (`23503`).
