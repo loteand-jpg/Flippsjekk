@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useBlocker, useParams, useSearchParams } from 'react-router';
 import { useLiveQuery, useNow } from '../app/hooks';
 import { useServices } from '../app/services';
+import { useEditAccess } from '../app/access';
 import { useSession } from '../app/session';
 import { useToast } from '../app/toast';
 import { buildBaseValues, diffValues, evaluateScenario, rebaseValues } from '../calc/scenario';
@@ -42,6 +43,7 @@ export function PropertyPage() {
   const { id = '' } = useParams();
   const services = useServices();
   const { profile, entitlements } = useSession();
+  const { canEdit } = useEditAccess('scenarios');
   const toast = useToast();
   const now = useNow();
   const [params, setParams] = useSearchParams();
@@ -73,7 +75,6 @@ export function PropertyPage() {
   }, [selected, draftFor]);
 
   const dirty = Boolean(selected && draft && !same(selected.values, draft));
-  const canEdit = entitlements?.canEditScenarios ?? false;
   const locked = Boolean(selected?.locked);
   const editable = canEdit && !locked;
   const defaults = profile?.defaults ?? NEW_ACCOUNT_DEFAULTS;

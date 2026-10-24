@@ -1,6 +1,6 @@
 import { CheckCircle2, ListChecks, Pencil, Plus, RotateCcw, EyeOff } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useSession } from '../../app/session';
+import { useEditAccess } from '../../app/access';
 import { useServices } from '../../app/services';
 import { useToast } from '../../app/toast';
 import { CASE_LABEL } from '../../calc/engine';
@@ -217,8 +217,7 @@ const CHECK_TONE: Record<string, Tone> = { dokumentert: 'pine', delvis: 'amber',
 export function RiskTab({ ctx }: { ctx: PropertyContext }) {
   const services = useServices();
   const toast = useToast();
-  const { entitlements } = useSession();
-  const canEdit = entitlements?.canEditScenarios ?? false;
+  const { canEdit, unavailable } = useEditAccess('risks');
   const { analysis: a, item } = ctx;
   const eff = useMemo(() => effectiveRisks(a.risks, item.riskEdits), [a.risks, item.riskEdits]);
   const risk = aggregateRisk(eff.active);
@@ -361,7 +360,7 @@ export function RiskTab({ ctx }: { ctx: PropertyContext }) {
             </ul>
           </div>
         )}
-        {!canEdit && <p className="mt-2 text-xs text-slate-600">Du trenger aktivt abonnement for å endre risikoer.</p>}
+        {!canEdit && <p className="mt-2 text-xs text-slate-600">{unavailable ? 'Egne risikoer er ikke koblet til ennå.' : 'Du trenger aktivt abonnement for å endre risikoer.'}</p>}
       </Panel>
 
       <RiskDialog open={dialog !== null} initial={dialog?.initial ?? null} busy={busy} onClose={() => setDialog(null)} onSave={(f) => save(f, dialog?.initial ?? null)} />

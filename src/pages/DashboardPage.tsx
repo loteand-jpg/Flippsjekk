@@ -63,6 +63,9 @@ export function DashboardPage() {
   const uid = session?.user.id ?? 'anon';
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const items = useLiveQuery(() => services.properties.listMine({ includeArchived: true }), []);
+  // Produksjon: deler av backend er ikke koblet til ennå. Si det ærlig i stedet for å vise knapper som ikke kan virke.
+  const analysisUnavailable = services.unavailable.includes('analysis');
+  const importsUnavailable = services.unavailable.includes('imports');
   const [view, setView] = usePref<'active' | 'archive'>(`${uid}.view`, 'active');
   const [filters, setFilters] = usePref<ListFilters>(`${uid}.filters`, EMPTY_FILTERS);
   const [sort, setSort] = usePref<{ key: SortKey; dir: SortDirection }>(`${uid}.sort`, { key: 'profit', dir: 'desc' });
@@ -91,18 +94,26 @@ export function DashboardPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Mine objekter</h1>
           <p className="text-sm text-slate-600">Økonomien beregnes fra scenarioet du har valgt som primært for hvert objekt.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/import" className={buttonClass('secondary', 'sm')}>
-            <FileJson className="size-4" aria-hidden /> Importer
-          </Link>
-          <Button size="sm" icon={<Download className="size-4" aria-hidden />} onClick={exportScenarios}>
-            Eksporter scenarioer
-          </Button>
-        </div>
+        {!importsUnavailable && (
+          <div className="flex flex-wrap gap-2">
+            <Link to="/import" className={buttonClass('secondary', 'sm')}>
+              <FileJson className="size-4" aria-hidden /> Importer
+            </Link>
+            <Button size="sm" icon={<Download className="size-4" aria-hidden />} onClick={exportScenarios}>
+              Eksporter scenarioer
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card className="p-4 sm:p-5">
-        {entitlements?.access === 'full' ? (
+        {analysisUnavailable ? (
+          <div data-testid="analysis-unavailable">
+            <Alert tone="info" title="Nye analyser er ikke koblet til ennå">
+              Objektene i listen din og scenarioene dine fungerer. Å legge til nye boliger fra en FINN-lenke kommer med analysetjenesten.
+            </Alert>
+          </div>
+        ) : entitlements?.access === 'full' ? (
           <AnalyzeBox />
         ) : (
           <Alert tone="warning" title="Analyse krever aktivt abonnement" action={<Link to="/konto" className="font-medium underline">Se abonnement</Link>}>

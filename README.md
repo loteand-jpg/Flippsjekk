@@ -21,7 +21,8 @@ npm run dev          # http://localhost:5173
 | `npm test` | Enhets- og tjenestetester (Vitest) |
 | `npm run typecheck` | TypeScript for app, tester og konfig |
 | `npm run test:e2e` | Hovedflyten i Chromium, desktop og mobil, pluss produksjonsmodus med stubbet Supabase-nettverk (Playwright). Første gang: `npx playwright install chromium` |
-| `npm run test:sql` | Bare Supabase-testene (migrasjoner mot PGlite, RLS-matrise, Auth/profil-adaptere) |
+| `npm run test:sql` | Bare Supabase-testene (migrasjoner mot PGlite, RLS-matrise, Auth-, profil-, objekt- og scenarioadaptere) |
+| `npm run db:dev-seed -- --email …` | Lager SQL (kjører ingenting) som legger demoobjekter inn i listen til én bruker i Supabase-UTVIKLINGSprosjektet; se docs/supabase.md |
 | `npm run check` | Typekontroll + tester + bygg |
 
 Appen bruker hash-ruting (`#/oversikt`), så `dist/` kan legges på hvilken som helst statisk server.

@@ -127,20 +127,47 @@ export function toAuthServiceError(err: unknown, context: AuthErrorContext): Ser
   }
 }
 
+/**
+ * Meldinger som databasens egne guard-triggere (migrasjon 3–5) kaster, på norsk og uten interne detaljer. Bare disse slippes gjennom til brukeren;
+ * alle andre databasemeldinger (engelske, tekniske) erstattes av en generell norsk melding.
+ */
+const OWN_GUARD_MESSAGE = /^(Scenarioet|Et scenario|En publisert|En felles analyse|Du kan ha inntil|analysis_version \()/;
+
+/** Fremmednøkler og unike nøkler → forståelig norsk forklaring (samme meldinger som mocken gir). */
+const CONSTRAINT_MESSAGE: Record<string, { code: ServiceError['code']; message: string }> = {
+  scenarios_owner_property_fk: { code: 'forbidden', message: 'Objektet må være i din liste før du kan lagre scenarioer.' },
+  scenarios_analysis_fk: { code: 'forbidden', message: 'Scenarioet må bygge på en grunnanalyse du har tilgang til for samme objekt.' },
+  user_properties_primary_scenario_fk: { code: 'forbidden', message: 'Scenarioet tilhører et annet objekt.' },
+  analyses_owner_property_fk: { code: 'forbidden', message: 'Objektet må være i din liste.' },
+};
+
 /** Feil fra PostgREST (`from('profiles')…`). `status` er HTTP-statusen fra svaret når den finnes. */
 export function toDataServiceError(error: unknown, status?: number): ServiceError {
   const cause = safeCause(error);
   const details = { cause, status };
   const code = cause.code;
   const http = status ?? cause.status;
+  const message = cause.message ?? '';
 
   if (isNetworkError(error)) return new ServiceError('unavailable', 'Får ikke kontakt med databasen. Sjekk nettverket og prøv igjen.', details);
   if (http === 401 || code === 'PGRST301' || code === 'PGRST303') return new ServiceError('not_authenticated', NOT_SIGNED_IN, details);
-  if (code === '42501' || http === 403) return new ServiceError('forbidden', 'Du har ikke tilgang til dette.', details);
+  if (code === '42501' || http === 403) {
+    // Våre egne guard-triggere (låst scenario osv.) har forståelige norske meldinger; «permission denied» og RLS-feil har ikke.
+    if (OWN_GUARD_MESSAGE.test(message)) return new ServiceError('forbidden', message, details);
+    return new ServiceError('forbidden', 'Du har ikke tilgang til dette.', details);
+  }
+  if (code === '54000') return new ServiceError('limit_reached', message || 'Grensen er nådd.', details);
+  if (code === '23503') {
+    const name = /constraint "([^"]+)"/.exec(message)?.[1] ?? '';
+    const known = CONSTRAINT_MESSAGE[name];
+    return known ? new ServiceError(known.code, known.message, details) : new ServiceError('forbidden', 'Referansen peker på noe du ikke har tilgang til.', details);
+  }
+  if (code === '23505') return new ServiceError('conflict', 'Dette finnes allerede.', details);
+  if (code === '23514' && OWN_GUARD_MESSAGE.test(message)) return new ServiceError('validation', message, details);
   if (code === '23514' || code === '23502' || code === '22P02' || code === '22023') return new ServiceError('validation', 'Verdien er ikke gyldig.', details);
   if (code === 'PGRST116') return new ServiceError('not_found', 'Fant ikke profilen.', details);
   if (code === 'PGRST205' || code === 'PGRST106' || code === '42P01') {
-    return new ServiceError('not_configured', 'Databasen mangler tabellen for profiler. Migrasjonene er kanskje ikke anvendt i Supabase.', details);
+    return new ServiceError('not_configured', 'Databasen mangler en tabell appen trenger. Migrasjonene er kanskje ikke anvendt i Supabase.', details);
   }
   if (http === 429) return new ServiceError('rate_limited', 'For mange forsøk. Vent litt før du prøver igjen.', details);
   return new ServiceError('unavailable', 'Kunne ikke hente eller lagre dataene akkurat nå. Prøv igjen om litt.', details);

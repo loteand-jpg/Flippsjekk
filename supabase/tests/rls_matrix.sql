@@ -326,7 +326,6 @@ select t, p from (values
 create temp table _expected_cols (tbl text not null, priv text not null, cols text[] not null);
 insert into _expected_cols (tbl, priv, cols) values
   ('profiles', 'UPDATE', array['display_name','defaults']),
-  ('user_properties', 'INSERT', array['property_id','favorite','work_status','notes','label','last_seen_analysis_version','checks']),
   ('user_properties', 'UPDATE', array['favorite','work_status','notes','primary_scenario_id','label','archived_at','last_seen_analysis_version','checks']),
   ('scenarios', 'INSERT', array['property_id','analysis_id','analysis_version','name','values']),
   ('scenarios', 'UPDATE', array['analysis_id','analysis_version','name','values']),
@@ -469,6 +468,15 @@ begin
          else 'prøvetabellen fikk: ' || v_list end);
 end $probe$;
 
+-- Fase 2B (migrasjon 9): ingen klientvei til medlemskap i user_properties. Katalogkontroll i tillegg til atferdstestene 3.7–3.9 og 3.13.
+select pg_temp.check(
+  '0.17 authenticated har ikke INSERT (heller ikke på kolonner) på user_properties, og tabellen har ingen INSERT-policy',
+  not has_table_privilege('authenticated', 'public.user_properties', 'INSERT')
+  and not has_any_column_privilege('authenticated', 'public.user_properties', 'INSERT')
+  and not has_any_column_privilege('anon', 'public.user_properties', 'INSERT')
+  and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'user_properties' and cmd in ('INSERT', 'ALL')),
+  null);
+
 -- ===========================================================================
 -- 1. PROFILER
 -- ===========================================================================
@@ -567,17 +575,24 @@ select pg_temp.expect_rows('3.3 A kan oppdatere egen rad (favoritt og status)', 
 select pg_temp.expect_fail('3.4 ugyldig arbeidsstatus avvises', $$update public.user_properties set work_status = 'ukjent_status' where property_id = '11111111-1111-4111-8111-111111111111'$$, array['23514']);
 select pg_temp.expect_fail('3.5 A kan ikke sette analyzed_at (kun backend)', $$update public.user_properties set analyzed_at = now() where property_id = '11111111-1111-4111-8111-111111111111'$$, array['42501']);
 select pg_temp.expect_fail('3.6 A kan ikke flytte raden til en annen eiendom', $$update public.user_properties set property_id = '22222222-2222-4222-8222-222222222222' where property_id = '11111111-1111-4111-8111-111111111111'$$, array['42501']);
-select pg_temp.expect_fail('3.7 A kan ikke opprette rad for B (user_id er ikke skrivbar)', $$insert into public.user_properties (user_id, property_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222')$$, array['42501']);
-select pg_temp.expect_fail('3.8 en rad må peke på en eksisterende eiendom', $$insert into public.user_properties (property_id) values (gen_random_uuid())$$, array['23503']);
-select pg_temp.expect_fail('3.9 samme eiendom kan ikke legges til to ganger', $$insert into public.user_properties (property_id) values ('11111111-1111-4111-8111-111111111111')$$, array['23505']);
+-- Fase 2B (migrasjon 9): klienten kan ikke opprette rader i user_properties i det hele tatt. 3.7–3.9 avviste tidligere på constraint (RLS/FK/unik);
+-- nå avvises ALLE innsettinger på manglende rettighet (42501 «permission denied»), og constraintene testes som backend i 8.7b–8.7c.
+select pg_temp.expect_fail('3.7 A kan ikke opprette rad for B', $$insert into public.user_properties (user_id, property_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222')$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('3.8 A kan ikke opprette rad for en eiendom som ikke finnes (samme avvisning som for en som finnes – ingen oppslag av UUID-er)', $$insert into public.user_properties (property_id) values (gen_random_uuid())$$, array['42501'], 'permission denied%');
+select pg_temp.expect_fail('3.9 A kan ikke opprette rad for en eiendom som allerede er i egen liste (avvises før unik-sjekken)', $$insert into public.user_properties (property_id) values ('11111111-1111-4111-8111-111111111111')$$, array['42501'], 'permission denied%');
+-- Ingen annen vei til medlemskap: verken privat analyse eller scenario kan brukes til å få en eiendom inn i listen.
+select pg_temp.expect_fail('3.16 A kan ikke få medlemskap i P2 via et privat analyseutkast (krever rad i egen liste)',
+  $$insert into public.analyses (property_id, snapshot_id, version, schema_version, model_version, status, visibility, owner_id, origin, estimates) values ('22222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222', 9, 1, '1.2.0', 'draft', 'private', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'import_v1', '{}')$$, array['23503']);
+select pg_temp.expect_fail('3.17 A kan ikke få medlemskap i P2 via et scenario (krever rad i egen liste og lesbar analyse)',
+  $$insert into public.scenarios (property_id, analysis_id, analysis_version, name, "values") values ('22222222-2222-4222-8222-222222222222', 'c2222222-2222-4222-8222-222222222222', 1, 'Smugler', '{}')$$, array['42501', '23503']);
 
 select pg_temp.as_user('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
 select pg_temp.expect_count('3.10 B leser bare sine egne rader (P2 og P3)', 'select count(*) from public.user_properties', 2);
 select pg_temp.expect_rows('3.11 B kan ikke oppdatere As rad (0 rader)', $$update public.user_properties set favorite = true where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'$$, 0);
 select pg_temp.expect_rows('3.12 B kan ikke slette As rad (0 rader)', $$delete from public.user_properties where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'$$, 0);
--- KJENT BEGRENSNING I FASE 1: en innlogget bruker kan legge en eiendom til i egen liste hvis hen kjenner UUID-en, og får da lesetilgang
--- til den (abonnement og kvote håndheves ikke i databasen ennå). Testen dokumenterer dagens oppførsel; stram inn før lansering.
-select pg_temp.expect_ok_rollback('3.13 (kjent begrensning fase 1) B kan legge til P1 i egen liste hvis UUID-en er kjent', $$insert into public.user_properties (property_id) values ('11111111-1111-4111-8111-111111111111')$$);
+-- LUKKET I FASE 2B (migrasjon 9). I fase 1 kunne en innlogget bruker legge en eiendom til i egen liste hvis hen kjente UUID-en (og dermed få lesetilgang
+-- til felles data uten abonnement). Nå kan bare backend opprette rader i user_properties. Testen under var «kjent begrensning» og er snudd.
+select pg_temp.expect_fail('3.13 (lukket i fase 2B) B kan IKKE legge til P1 i egen liste selv om UUID-en er kjent', $$insert into public.user_properties (property_id) values ('11111111-1111-4111-8111-111111111111')$$, array['42501'], 'permission denied%');
 select pg_temp.expect_count('3.14 B kan ikke finne P1 uten å være medlem (ingen oppslag av andres eiendommer)', $$select count(*) from public.properties where id = '11111111-1111-4111-8111-111111111111'$$, 0);
 select pg_temp.as_anon();
 select pg_temp.expect_fail('3.15 anon kan ikke lese user_properties', 'select count(*) from public.user_properties', array['42501']);
@@ -782,6 +797,8 @@ select pg_temp.expect_ok_rollback('8.7 backend kan legge en bolig i brukerens li
       insert into public.user_properties (user_id, property_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '11111111-1111-4111-8111-111111111111');
       update public.user_properties set analyzed_at = now() where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' and property_id = '11111111-1111-4111-8111-111111111111';
     end $do$$stmt$);
+select pg_temp.expect_fail('8.7b (som backend) en rad i listen må peke på en eksisterende eiendom', $$insert into public.user_properties (user_id, property_id) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', gen_random_uuid())$$, array['23503']);
+select pg_temp.expect_fail('8.7c (som backend) samme eiendom kan ikke legges to ganger i samme brukers liste', $$insert into public.user_properties (user_id, property_id) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111')$$, array['23505']);
 select pg_temp.expect_ok_rollback('8.8 backend kan opprette, flytte og slette et LÅST scenario (guarden gjelder bare innloggede brukere)',
   $stmt$do $do$ declare sid uuid; begin
       insert into public.scenarios (owner_id, property_id, analysis_id, analysis_version, name, locked, "values") values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'c3333333-3333-4333-8333-333333333333', 1, 'Nettsidens vurdering', true, '{}') returning id into sid;

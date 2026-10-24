@@ -89,6 +89,8 @@ async function stubSupabase(page: Page, opts: { googleLandsAs?: string } = {}): 
         return json(route, 200, [stub.profile]);
       }
     }
+    // Øvrige tabeller (fase 2B: objektlisten m.m.) er tomme i denne stubben; se produksjon-data.spec.ts for ekte data mot PGlite.
+    if (path.startsWith('/rest/v1/') && req.method() === 'GET') return json(route, 200, []);
     return json(route, 404, { message: `ustubbet kall: ${req.method()} ${path}` });
   });
   return stub;
@@ -118,7 +120,7 @@ test('produksjonsmodus starter med Supabase-konfigurasjon: forsiden og innloggin
   const errors = collectErrors(page);
   await stubSupabase(page);
   await page.goto('/');
-  await expect(page.getByText('Tidlig produksjonsversjon: innlogging og profil er koblet til.')).toBeVisible();
+  await expect(page.getByText('Tidlig produksjonsversjon: innlogging, profil, objektlisten og scenarioer er koblet til.')).toBeVisible();
   await expect(page.getByText('Demoversjon – fiktive data.')).toHaveCount(0);
   await expect(page.getByText('Produksjonsmodus mangler Supabase-konfigurasjon')).toHaveCount(0);
 
@@ -241,7 +243,8 @@ test('deler som ikke er koblet til gir en kontrollert melding – ikke tomme dat
   const errors = collectErrors(page);
   await stubSupabase(page);
   await loginWithEmailCode(page);
-  for (const route of ['#/oversikt', '#/objekter/abc', '#/kalender', '#/sammenligning', '#/kurs', '#/kurs/flipping-privat', '#/import']) {
+  // Objekter, scenarioer og sammenligning er koblet til i fase 2B (testes i produksjon-data.spec.ts); resten er det ikke.
+  for (const route of ['#/kalender', '#/kurs', '#/kurs/flipping-privat', '#/import']) {
     await page.goto(`/${route}`);
     await expect(page.getByTestId('not-available-yet'), route).toContainText('Denne delen er ikke koblet til ennå');
     await expect(page.getByText('Noe gikk galt på denne siden')).toHaveCount(0);
@@ -259,8 +262,9 @@ test('Google: sender brukeren til Supabase med PKCE og retur uten hash, og logge
   const stub = await stubSupabase(page, { googleLandsAs: 'kari@eksempel.no' });
   await page.goto('/#/logg-inn');
   await page.getByRole('button', { name: 'Fortsett med Google' }).click();
-  // Via Supabase sin authorize-adresse og tilbake til appen med ?code=…
-  await expect(page).toHaveURL(/#\/konto/);
+  // Via Supabase sin authorize-adresse og tilbake til appen med ?code=… Etter innlogging starter brukeren på Oversikt (objektlisten er koblet til).
+  await expect(page).toHaveURL(/#\/oversikt/);
+  await page.goto('/#/konto');
   const authorize = stub.requests.find((r) => r.path.startsWith('/auth/v1/authorize'))!;
   const q = new URL(`${SB}${authorize.path}`).searchParams;
   expect(q.get('provider')).toBe('google');

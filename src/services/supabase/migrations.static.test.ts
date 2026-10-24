@@ -62,7 +62,15 @@ describe('migrasjonsfilene', () => {
   });
 
   it('har bare policyer for rollen authenticated, aldri «using (true)» og unike navn', () => {
-    const policies = [...code.matchAll(/create policy[\s\S]*?;/gi)].map((m) => m[0].replace(/\s+/g, ' '));
+    // Policyer som er opprettet og senere droppet (migrasjon 9 dropper user_properties_insert_own) teller ikke lenger.
+    const dropped = new Set([...code.matchAll(/drop policy (?:if exists )?(\w+) on public\.(\w+)/gi)].map((m) => `${m[1]}.${m[2]}`));
+    const policies = [...code.matchAll(/create policy[\s\S]*?;/gi)]
+      .map((m) => m[0].replace(/\s+/g, ' '))
+      .filter((p) => {
+        const m = /create policy (\w+) on public\.(\w+)/.exec(p)!;
+        return !dropped.has(`${m[1]}.${m[2]}`);
+      });
+    expect([...dropped]).toEqual(['user_properties_insert_own.user_properties']);
     // Antall policyer per tabell er bevisst fastlåst: en ny eller fjernet policy skal være et overlagt valg som oppdaterer denne listen.
     const perTable: Record<string, number> = {};
     for (const p of policies) {
@@ -70,7 +78,7 @@ describe('migrasjonsfilene', () => {
       perTable[t] = (perTable[t] ?? 0) + 1;
     }
     expect(perTable).toEqual({
-      profiles: 2, properties: 1, user_properties: 4, property_snapshots: 1, viewings: 1, analyses: 4, scenarios: 4, user_comparables: 4,
+      profiles: 2, properties: 1, user_properties: 3, property_snapshots: 1, viewings: 1, analyses: 4, scenarios: 4, user_comparables: 4,
       user_risks: 4, private_events: 4, calendar_overrides: 4, subscriptions: 1, course_purchases: 1, usage_events: 1, analysis_jobs: 1,
     });
     for (const p of policies) {
@@ -235,7 +243,7 @@ describe('ingen hemmeligheter i repoet', () => {
 });
 
 /**
- * Migrasjon 1–7 er anvendt i Flippsjekks faktiske Supabase-utviklingsdatabase og er en del av historikken. De skal aldri redigeres:
+ * Migrasjon 1–8 er anvendt i Flippsjekks faktiske Supabase-utviklingsdatabase og er en del av historikken. De skal aldri redigeres:
  * endringer leveres som en NY migrasjon. Sjekksummene låser filene; feiler denne testen, lag en ny migrasjon i stedet for å endre en gammel.
  */
 const APPLIED_MIGRATION_SHA256: Record<string, string> = {
@@ -246,18 +254,19 @@ const APPLIED_MIGRATION_SHA256: Record<string, string> = {
   '20261022100400_user_data.sql': '114aa2671867ef0e7055d867994299fdddee81cb9e2e4b2765320cac023aca76',
   '20261022100500_billing_usage_jobs.sql': '58dee79e7358cd7cfe3a16a7a6b05a336e28356de31e91a9a2ab7c15ea8f8c79',
   '20261022100600_service_role_grants.sql': '8bb5292e8cf6ddf80739856dce74c29c1ee663005d434695a4c8b656e398018e',
+  '20261022100700_service_role_privilege_reset.sql': '5f182d55119781bd9cd9b3cab12da013fd8ac70c234d83c077bc79d72a0270dd',
 };
 
 describe('anvendte migrasjoner er urørt', () => {
-  it('migrasjon 1–7 har uendret innhold (sjekksum), og alt nytt ligger i senere migrasjoner', () => {
+  it('migrasjon 1–8 har uendret innhold (sjekksum), og alt nytt ligger i senere migrasjoner', () => {
     for (const [file, expected] of Object.entries(APPLIED_MIGRATION_SHA256)) {
       const text = sql.find((s) => s.file === file)?.text;
       expect(text, `${file} finnes`).toBeDefined();
       expect(createHash('sha256').update(text as string).digest('hex'), `${file} er endret – lag en NY migrasjon i stedet`).toBe(expected);
     }
     const later = files.filter((f) => !(f in APPLIED_MIGRATION_SHA256));
-    expect(later).toEqual(['20261022100700_service_role_privilege_reset.sql']);
-    for (const f of later) expect(f > '20261022100600').toBe(true);
+    expect(later).toEqual(['20261024100000_user_properties_backend_only_insert.sql']);
+    for (const f of later) expect(f > '20261022100700').toBe(true);
   });
 });
 
@@ -378,5 +387,28 @@ describe('migrasjon 8: REVOKE før GRANT for service_role og deny-by-default for
     expect(m8).not.toMatch(/grant execute|revoke execute|on all (tables|sequences|functions)|on function|on sequence|truncate/i);
     // Hele migrasjonen er fastlåst til nøyaktig disse setningene: 1 REVOKE ALL + 15 GRANT (tabeller) + REVOKE CREATE + GRANT USAGE + 3 standardregler.
     expect(stmts).toHaveLength(1 + 15 + 1 + 1 + 3);
+  });
+});
+
+describe('migrasjon 9: brukerens liste (user_properties) kan bare opprettes av backend', () => {
+  const FILE = '20261024100000_user_properties_backend_only_insert.sql';
+  const m9 = sql.find((x) => x.file === FILE)!.text.replace(/--[^\n]*/g, '');
+  const stmts = m9.split(';').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+  it('består av nøyaktig to setninger: tar INSERT fra authenticated og dropper insert-policyen', () => {
+    expect(stmts).toEqual([
+      'revoke insert on table public.user_properties from authenticated',
+      'drop policy if exists user_properties_insert_own on public.user_properties',
+    ]);
+  });
+
+  it('gir ingenting til noen, innfører ingen funksjon/RPC, og rører bare user_properties', () => {
+    expect(m9).not.toMatch(/\bgrant\b|create (or replace )?function|security definer|\bto (anon|public|service_role)\b/i);
+    expect(m9.match(/public\.\w+/g)!.every((t) => t === 'public.user_properties')).toBe(true);
+  });
+
+  it('ingen annen migrasjon gir authenticated INSERT på user_properties etter at migrasjon 9 er anvendt (rekkefølgen er stigende)', () => {
+    const after = files.filter((f) => f > FILE);
+    expect(after).toEqual([]);
   });
 });

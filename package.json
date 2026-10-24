@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run test && vite build",
     "test:e2e": "playwright test",
-    "test:sql": "vitest run src/services/supabase"
+    "test:sql": "vitest run src/services/supabase",
+    "db:dev-seed": "esbuild scripts/devSeed.ts --bundle --platform=node --format=esm --log-level=warning --outfile=node_modules/.tmp/devSeed.mjs && node node_modules/.tmp/devSeed.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",

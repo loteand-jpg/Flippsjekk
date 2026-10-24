@@ -1,23 +1,23 @@
 import { systemClock, type Clock } from '../../lib/clock';
 import type { RedirectResult, Services } from '../types';
+import { SupabaseAnalysisReader } from './analysisReader';
 import { SupabaseAuthService } from './authService';
 import { getSupabaseClient, type SupabaseClientProvider } from './client';
 import type { SupabaseConfig } from './config';
 import { SupabaseEvents } from './events';
 import {
   NOT_CONFIGURED_AREAS,
-  notConfiguredAnalysis,
   notConfiguredCalendar,
   notConfiguredComparables,
   notConfiguredCourses,
   notConfiguredImports,
-  notConfiguredProperties,
   notConfiguredRisks,
-  notConfiguredScenarios,
   notConfiguredSubscription,
 } from './notConfigured';
 import { SupabaseProfileService } from './profileService';
+import { SupabasePropertyRepository } from './propertyRepository';
 import { oauthRedirectUrl, readAuthRedirectFromLocation } from './redirect';
+import { SupabaseScenarioRepository } from './scenarioRepository';
 
 export interface SupabaseServicesOptions {
   /** Validert offentlig konfigurasjon (URL og publishable key). Brukes til å kontrollere at Google-adressen ligger på prosjektets opprinnelse. */
@@ -30,15 +30,17 @@ export interface SupabaseServicesOptions {
 }
 
 /**
- * Produksjonskomposisjon for backend fase 2A: ekte Supabase Auth og ekte profil (`public.profiles`). Alt annet er eksplisitt «ikke koblet til»
- * (`notConfigured*`, og områdene står i `Services.unavailable`), så appen kan åpnes uten hvit skjerm og uten å late som at objekter,
- * scenarioer, kalender, abonnement osv. finnes. Ingenting kobles til Supabase før en tjeneste faktisk brukes (klienten lages lat).
+ * Produksjonskomposisjon (backend fase 2A + 2B): ekte Supabase Auth og profil (2A), og brukerens objektliste og scenarioer (2B), pluss lesing av
+ * grunnanalysene objektsiden trenger. Alt annet er eksplisitt «ikke koblet til» (`notConfigured*`, og områdene står i `Services.unavailable`):
+ * bestilling av analyse, abonnement, kurs, egne sammenlignbare objekter, egne risikoer, kalender og import. Appen kan dermed åpnes uten hvit skjerm
+ * og uten å late som at noe finnes som ikke gjør det. Ingenting kobles til Supabase før en tjeneste faktisk brukes (klienten lages lat).
  */
 export function createSupabaseServices(opts: SupabaseServicesOptions = {}): Services {
   const getClient = opts.getClient ?? (() => getSupabaseClient());
   const clock = opts.clock ?? systemClock;
   const events = new SupabaseEvents(getClient);
   const notifyChanged = () => events.emit();
+  const dataDeps = { getClient, clock, notifyChanged };
   return {
     mode: 'production',
     clock,
@@ -53,11 +55,12 @@ export function createSupabaseServices(opts: SupabaseServicesOptions = {}): Serv
     profile: new SupabaseProfileService({ getClient, notifyChanged }),
     subscription: notConfiguredSubscription,
     courses: notConfiguredCourses,
-    properties: notConfiguredProperties,
-    scenarios: notConfiguredScenarios,
+    properties: new SupabasePropertyRepository(dataDeps),
+    scenarios: new SupabaseScenarioRepository(dataDeps),
     comparables: notConfiguredComparables,
     risks: notConfiguredRisks,
-    analysis: notConfiguredAnalysis,
+    // Lesing av grunnanalyser; bestilling av analyse/oppfriskning avvises med not_configured (derfor står «analysis» fortsatt i unavailable).
+    analysis: new SupabaseAnalysisReader(dataDeps),
     calendar: notConfiguredCalendar,
     imports: notConfiguredImports,
     events,

@@ -22,6 +22,9 @@ interface MatrixRow {
 
 const SERVICE_GRANTS_MIGRATION = '20261022100600_service_role_grants.sql';
 const PRIVILEGE_RESET_MIGRATION = '20261022100700_service_role_privilege_reset.sql';
+const USER_PROPERTIES_MIGRATION = '20261024100000_user_properties_backend_only_insert.sql';
+/** Migrasjon 1–8: det som var anvendt før fase 2B. */
+const UP_TO_RESET = migrations.slice(0, 8);
 /** Migrasjon 1–6: før noen service_role-rettigheter ble gitt eksplisitt. */
 const FIRST_SIX = migrations.slice(0, 6);
 /** Migrasjon 1–7: det som var anvendt i Supabase da avviket ble funnet. */
@@ -29,8 +32,11 @@ const UP_TO_GRANTS = migrations.slice(0, 7);
 /** Stubb-varianter for service_role sine standardrettigheter (lastes etter hovedstubben). Hovedstubben alene = brede standarder (worst case). */
 const STUB_NO_DEFAULTS = 'tests/support/local_service_role_no_defaults.sql';
 const STUB_EXTRA_ONLY = 'tests/support/local_service_role_extra_defaults_only.sql';
-/** Matrisetester som fantes før korrekturen (migrasjon 8). De nye (0.8b, 0.9b, 0.15, 0.16, 8.20b) kommer i tillegg. */
-const isLegacyCheck = (test: string) => !/^(0\.8b|0\.9b|0\.15|0\.16|8\.20b)\b/.test(test);
+/**
+ * Matrisetester som fantes og hadde samme mening før korrekturen (migrasjon 8). Utelatt: de nye fra migrasjon 8 (0.8b, 0.9b, 0.15, 0.16, 8.20b) og
+ * de fra fase 2B (migrasjon 9) som er lagt til (0.17, 3.16, 3.17, 8.7b, 8.7c) eller bevisst endret (0.11 kolonneinventar, 3.8, 3.9, 3.13: klienten kan ikke lenger opprette rader).
+ */
+const isLegacyCheck = (test: string) => !/^(0\.8b|0\.9b|0\.11|0\.15|0\.16|0\.17|3\.8|3\.9|3\.13|3\.16|3\.17|8\.7b|8\.7c|8\.20b)\s/.test(test);
 
 interface FreshOptions {
   /** SQL som kjøres etter stubben og før migrasjonene. */
@@ -65,9 +71,10 @@ afterAll(async () => {
 
 describe('RLS- og eierskapsmatrise (lokalt mot PGlite)', () => {
   it('alle migrasjonene kan anvendes i rekkefølge', () => {
-    expect(migrations).toHaveLength(8);
-    expect(migrations.at(-2)).toBe(SERVICE_GRANTS_MIGRATION);
-    expect(migrations.at(-1)).toBe(PRIVILEGE_RESET_MIGRATION);
+    expect(migrations).toHaveLength(9);
+    expect(migrations.at(-3)).toBe(SERVICE_GRANTS_MIGRATION);
+    expect(migrations.at(-2)).toBe(PRIVILEGE_RESET_MIGRATION);
+    expect(migrations.at(-1)).toBe(USER_PROPERTIES_MIGRATION);
   });
 
   it('bruker A og B: alle sjekkene i supabase/tests/rls_matrix.sql består', async () => {
@@ -88,7 +95,7 @@ describe('RLS- og eierskapsmatrise (lokalt mot PGlite)', () => {
 
   it('alle policyer i databasen gjelder bare rollen authenticated', async () => {
     const r = await db.query<{ tablename: string; policyname: string; roles: string }>(`select tablename, policyname, roles::text as roles from pg_policies where schemaname = 'public'`);
-    expect(r.rows.length).toBe(37);
+    expect(r.rows.length).toBe(36); // 37 i fase 1; migrasjon 9 droppet user_properties_insert_own
     for (const p of r.rows) expect(p.roles, `${p.tablename}.${p.policyname}`).toBe('{authenticated}');
   });
 
@@ -228,7 +235,7 @@ describe('migrasjon 8: service_role-rettigheter normaliseres med REVOKE før GRA
     }, 120_000);
   }
 
-  it('slutt-ACL på alle 15 tabeller er nøyaktig det som er bestemt, uten TRUNCATE, REFERENCES eller TRIGGER (og uten kolonnerettigheter)', async () => {
+  it('slutt-ACL på alle 15 tabeller (etter alle migrasjoner) er nøyaktig det som er bestemt, uten TRUNCATE, REFERENCES eller TRIGGER (og uten kolonnerettigheter)', async () => {
     const r = await db.query<{ tbl: string; privs: string }>(`
       select c.relname as tbl, string_agg(a.privilege_type, ',' order by a.privilege_type) as privs
         from pg_class c
@@ -343,6 +350,105 @@ describe('migrasjon 8: service_role-rettigheter normaliseres med REVOKE før GRA
     expect([(await acl()).rows[0].a, (await defaults()).rows[0].a]).toEqual(first);
     await t.close();
   }, 60_000);
+});
+
+/**
+ * Migrasjon 9 (fase 2B): lukker den kjente veien der en innlogget bruker som kjente en eiendoms UUID kunne legge den i egen liste og dermed få
+ * lesetilgang til felles data. Medlemskap (user_properties) opprettes nå bare av backend.
+ */
+describe('migrasjon 9: brukerens liste kan bare opprettes av backend', () => {
+  const USER = '11111111-aaaa-4aaa-8aaa-111111111111';
+  const PROPERTY = '22222222-bbbb-4bbb-8bbb-222222222222';
+  const seed = `
+    insert into auth.users (id, aud, role, email) values ('${USER}', 'authenticated', 'authenticated', 'probe@rls-test.invalid');
+    insert into public.properties (id, finn_id, canonical_url, address, city, municipality, property_type, tenure, data_origin)
+      values ('${PROPERTY}', '900000777', 'https://example.invalid/p', 'Probeveien 1', 'Trondheim', 'Trondheim', 'leilighet', 'selveier', 'demo');`;
+  const asClientInsert = (role: 'authenticated' | 'service_role') => `
+    begin;
+    select set_config('request.jwt.claims', '{"sub":"${USER}","role":"${role}"}', true), set_config('request.jwt.claim.sub', '${USER}', true);
+    set local role ${role};
+    insert into public.user_properties (${role === 'service_role' ? 'user_id, ' : ''}property_id) values (${role === 'service_role' ? `'${USER}', ` : ''}'${PROPERTY}');
+    select count(*) as n from public.user_properties;
+    rollback;`;
+  const rowsOf = async (t: PGlite, sqlText: string) => {
+    const res = await t.exec(sqlText);
+    return (res.find((r) => r.fields?.some((f) => f.name === 'n'))?.rows as { n: number | string }[] | undefined)?.map((r) => ({ n: Number(r.n) }));
+  };
+
+  it('NEGATIV KONTROLL: uten migrasjon 9 (1–8) kan klienten legge en kjent UUID i egen liste, og matrisen avslører det (3.13, 0.17)', async () => {
+    const before = await freshDb({ only: UP_TO_RESET });
+    await before.exec(seed);
+    expect((await rowsOf(before, asClientInsert('authenticated')))?.[0].n).toBe(1); // hullet er åpent: innsettingen lyktes
+    const failed = (await runMatrix(before)).filter((r) => !r.ok).map((r) => r.test);
+    expect(failed.some((n) => n.startsWith('3.13'))).toBe(true);
+    expect(failed.some((n) => n.startsWith('0.17'))).toBe(true);
+    await before.close();
+  }, 120_000);
+
+  it('med migrasjon 9: klienten får «permission denied» (uten å avsløre om eiendommen finnes), mens backend fortsatt kan opprette rader', async () => {
+    const after = await freshDb();
+    await after.exec(seed);
+    await expect(after.exec(asClientInsert('authenticated'))).rejects.toThrow(/permission denied for table user_properties/);
+    await after.exec('rollback;').catch(() => undefined);
+    // Samme avvisning for en UUID som ikke finnes (ingen oppslagsmulighet).
+    await expect(after.exec(asClientInsert('authenticated').replace(PROPERTY, '99999999-9999-4999-8999-999999999999'))).rejects.toThrow(/permission denied for table user_properties/);
+    await after.exec('rollback;').catch(() => undefined);
+    expect((await rowsOf(after, asClientInsert('service_role')))?.[0].n).toBe(1);
+    // Ingen INSERT-policy og ingen kolonnerettighet igjen.
+    const cat = await after.query<{ policies: string; cols: string }>(`
+      select (select count(*)::text from pg_policies where schemaname = 'public' and tablename = 'user_properties' and cmd in ('INSERT', 'ALL')) as policies,
+             (select count(*)::text from pg_attribute a where a.attrelid = 'public.user_properties'::regclass and a.attnum > 0 and not a.attisdropped
+                and has_column_privilege('authenticated', a.attrelid, a.attnum, 'INSERT')) as cols`);
+    expect(cat.rows[0]).toEqual({ policies: '0', cols: '0' });
+    await after.close();
+  }, 60_000);
+
+  it('migrasjon 9 endrer bare INSERT på user_properties for klientrollene: alle øvrige tabell-, kolonne- og funksjonsrettigheter og policyer er uendret', async () => {
+    const snapshot = async (t: PGlite) => {
+      const privs = await t.query<{ k: string }>(`
+        select 'tabell ' || c.relname || ' ' || g.rolname || ' ' || a.privilege_type as k
+          from pg_class c cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a join pg_roles g on g.oid = a.grantee
+         where c.relnamespace = 'public'::regnamespace and c.relkind = 'r' and g.rolname in ('anon', 'authenticated', 'service_role')
+        union all
+        select 'kolonne ' || c.relname || '.' || at.attname || ' ' || g.rolname || ' ' || a.privilege_type
+          from pg_class c join pg_attribute at on at.attrelid = c.oid and at.attacl is not null
+          cross join lateral aclexplode(at.attacl) a join pg_roles g on g.oid = a.grantee
+         where c.relnamespace = 'public'::regnamespace and g.rolname in ('anon', 'authenticated', 'service_role')
+        union all
+        select 'policy ' || tablename || '.' || policyname from pg_policies where schemaname = 'public'
+        union all
+        select 'funksjon ' || p.proname || ' ' || coalesce(g.rolname, 'PUBLIC') || ' ' || a.privilege_type
+          from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a left join pg_roles g on g.oid = a.grantee
+         where p.pronamespace = 'public'::regnamespace
+        order by 1`);
+      return privs.rows.map((r) => r.k);
+    };
+    const pre = await freshDb({ only: UP_TO_RESET });
+    const before = await snapshot(pre);
+    await pre.exec(read(`migrations/${USER_PROPERTIES_MIGRATION}`));
+    const after = await snapshot(pre);
+    const removed = before.filter((k) => !after.includes(k));
+    const added = after.filter((k) => !before.includes(k));
+    expect(added).toEqual([]);
+    expect(removed.sort()).toEqual([
+      'kolonne user_properties.checks authenticated INSERT',
+      'kolonne user_properties.favorite authenticated INSERT',
+      'kolonne user_properties.label authenticated INSERT',
+      'kolonne user_properties.last_seen_analysis_version authenticated INSERT',
+      'kolonne user_properties.notes authenticated INSERT',
+      'kolonne user_properties.property_id authenticated INSERT',
+      'kolonne user_properties.work_status authenticated INSERT',
+      'policy user_properties.user_properties_insert_own',
+    ]);
+    await pre.close();
+  }, 60_000);
+
+  it('service_role beholder INSERT på user_properties (analysetjenesten bruker den veien senere)', async () => {
+    const t = await freshDb();
+    const r = await t.query<{ ok: boolean }>(`select has_table_privilege('service_role', 'public.user_properties', 'INSERT') as ok`);
+    expect(r.rows[0].ok).toBe(true);
+    await t.close();
+  });
 });
 
 describe('public.rls_auto_enable() (Supabase-funksjon som ikke er vår)', () => {

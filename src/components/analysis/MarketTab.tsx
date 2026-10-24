@@ -2,7 +2,7 @@ import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from '../../app/hooks';
 import { useServices } from '../../app/services';
-import { useSession } from '../../app/session';
+import { useEditAccess } from '../../app/access';
 import { useToast } from '../../app/toast';
 import { CASE_LABEL } from '../../calc/engine';
 import { MARKET_MODEL_VERSION, QUALITY_TIER_LABEL, type WeightedReference } from '../../calc/market';
@@ -548,8 +548,7 @@ function MarketValuation({ ctx, canEdit }: { ctx: PropertyContext; canEdit: bool
 export function MarketTab({ ctx }: { ctx: PropertyContext }) {
   const services = useServices();
   const toast = useToast();
-  const { entitlements } = useSession();
-  const canEdit = entitlements?.canEditScenarios ?? false;
+  const { canEdit, unavailable: comparablesUnavailable } = useEditAccess('comparables');
   const { analysis: a, item } = ctx;
   const scen = findAnalysisScenario(a, ctx.draft.analysisScenarioId);
   // Én autoritativ flyt: koden (markedsmotoren) fastsetter salgsverdien. Agentens estimat er historisk referanse, og din kalkyle kan overstyre privat.
@@ -688,7 +687,9 @@ export function MarketTab({ ctx }: { ctx: PropertyContext }) {
       >
         {own.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-600">
-            Du har ikke lagt inn egne sammenlignbare objekter ennå.{canEdit ? ' Trykk «Legg til objekt».' : ' Du trenger aktivt abonnement for å legge til.'}
+            {comparablesUnavailable
+              ? 'Egne sammenlignbare objekter er ikke koblet til ennå. Verdivurderingen bruker bare objektene fra analysen.'
+              : `Du har ikke lagt inn egne sammenlignbare objekter ennå.${canEdit ? ' Trykk «Legg til objekt».' : ' Du trenger aktivt abonnement for å legge til.'}`}
           </p>
         ) : (
           <ComparablesTable rows={own} caption="Mine sammenlignbare objekter" onEdit={canEdit ? (r) => setDialog({ initial: r }) : undefined} onDelete={canEdit ? setDel : undefined} />

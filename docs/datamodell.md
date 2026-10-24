@@ -156,4 +156,4 @@ create policy "les felles analyser" on analyses
   );
 ```
 
-Tilsvarende gjelder for `user_properties`, `private_events`, `calendar_overrides`, `usage_events` (bare lesing for eier) og `profiles`. `primary_scenario_id` kontrolleres med en trigger eller sjekk som krever at scenarioet har samme eier og eiendom. Abonnement og kvoter håndheves i databasefunksjoner/edge functions, ikke i frontend.
+Tilsvarende gjelder for `user_properties`, `private_events`, `calendar_overrides`, `usage_events` (bare lesing for eier) og `profiles`. (I den implementerte modellen, `supabase/migrations`, kan klienten IKKE opprette rader i `user_properties` – medlemskap opprettes bare av backend; se migrasjon 9 og docs/supabase.md.) `primary_scenario_id` kontrolleres med en trigger eller sjekk som krever at scenarioet har samme eier og eiendom. Abonnement og kvoter håndheves i databasefunksjoner/edge functions, ikke i frontend.

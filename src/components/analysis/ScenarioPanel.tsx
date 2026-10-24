@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { analysisScenarioValues, buildBaseValues, renovationTotals } from '../../calc/scenario';
-import { useSession } from '../../app/session';
+import { useEditAccess } from '../../app/access';
 import { resolveAnalysisScenarios, type ResolvedAnalysisScenario } from '../../domain/analysisScenarios';
 import { CHANGE_LEVEL_LABEL, FEASIBILITY_LABEL, RENOVATION_LEVEL_LABEL, SCENARIO_KIND_LABEL, SCENARIO_RISK_DIMENSIONS, SCENARIO_RISK_LABEL, STANDARD_CLASS_LABEL, UNCERTAINTY_LABEL, type FeasibilityStatus } from '../../domain/enums';
 import { SALE_SOURCE_LABEL } from '../../calc/saleValue';
@@ -37,8 +37,7 @@ export function activeScenarioId(ctx: PropertyContext): string {
 }
 
 function ScenarioCard({ ctx, def, active, onCreate }: { ctx: PropertyContext; def: ResolvedAnalysisScenario; active: boolean; onCreate?: (def: ResolvedAnalysisScenario) => void }) {
-  const { entitlements } = useSession();
-  const canEdit = entitlements?.canEditScenarios ?? false;
+  const { canEdit } = useEditAccess('scenarios');
   const totals = renovationTotals({ renovationMode: 'tiltak', renovationItems: def.items, renovationLumpSum: null, lumpSumHours: null, laborModes: ctx.draft.laborModes, maxOwnWork: ctx.draft.maxOwnWork, regulatedCompetence: ctx.draft.regulatedCompetence });
   const months = def.suggestedMonths === null ? null : def.suggestedMonths;
   // Salgsverdien er fastsatt av koden (markedsmotoren). Agentens estimat vises som historisk referanse, ikke som fasit.
