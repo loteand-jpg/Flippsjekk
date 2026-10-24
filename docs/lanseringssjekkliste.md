@@ -37,7 +37,7 @@ Regel:
 - [x] Fase 1 databasegrunnmur og RLS live-verifisert.
 - [x] Migrasjon 9 lukker klientens direkte INSERT til `user_properties`.
 - [x] RLS-matrise fase 2B live: 228/228.
-- [ ] Fullfør live nettlesertest av fase 2B og merge først etter godkjenning.
+- [x] Fase 2B live-verifisert i nettleser og merget til `main` 24.10.2026.
 - [ ] Objekter skal opprettes via autorisert analysetjeneste/backend, aldri ved vilkårlig UUID fra klient.
 - [ ] Låst «Nettsidens vurdering» skal opprettes/oppdateres serverstyrt.
 - [ ] Separate utviklings-/test- og produksjonsmiljøer må være etablert før lansering.
