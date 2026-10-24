@@ -1,5 +1,6 @@
 import { ArrowRight, Calculator, Check, ClipboardCheck, Gavel, GraduationCap, LayoutDashboard, PartyPopper, ShieldCheck, Sparkles, Target, Wallet } from 'lucide-react';
 import { Link } from 'react-router';
+import { useHomePath } from '../app/services';
 import { useSession } from '../app/session';
 import { PublicLayout } from '../components/marketing/PublicLayout';
 import { HeroVisual } from '../components/marketing/HeroVisual';
@@ -105,7 +106,8 @@ function Pricing({ cta }: { cta: string }) {
 
 export function LandingPage() {
   const { session } = useSession();
-  const cta = session ? '/oversikt' : '/logg-inn';
+  const home = useHomePath();
+  const cta = session ? home : '/logg-inn';
   return (
     <PublicLayout>
       <section className="relative overflow-hidden bg-gradient-to-b from-pine-50 via-white to-white">

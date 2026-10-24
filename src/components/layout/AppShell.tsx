@@ -2,23 +2,43 @@ import clsx from 'clsx';
 import { CalendarDays, Columns3, GraduationCap, House, LayoutDashboard, LogOut, Plus, UserRound } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
-import { useServices } from '../../app/services';
+import { homePath, useServices } from '../../app/services';
 import { useSession } from '../../app/session';
 import { SUBSCRIPTION_STATUS_LABEL } from '../../domain/enums';
 import { formatDate } from '../../lib/format';
 import { AnalyzeBox } from '../property/AnalyzeBox';
 import { Dialog } from '../ui/overlay';
-import { Alert, PageLoading } from '../ui/primitives';
+import type { ServiceArea } from '../../services/types';
+import { Alert, buttonClass, PageLoading } from '../ui/primitives';
 import { DemoBar, DemoControls } from './DemoControls';
 
-export function Logo({ to = '/' }: { to?: string }) {
+const LOGO_CLASS = 'flex items-center gap-2 font-semibold text-pine-900';
+
+function LogoContent() {
   return (
-    <Link to={to} className="flex items-center gap-2 font-semibold text-pine-900" aria-label="Flippsjekk – til forsiden">
+    <>
       <span className="flex size-8 items-center justify-center rounded-lg bg-pine-800 text-white">
         <House className="size-4" aria-hidden />
       </span>
       <span className="text-lg tracking-tight">Flippsjekk</span>
+    </>
+  );
+}
+
+export function Logo({ to = '/' }: { to?: string }) {
+  return (
+    <Link to={to} className={LOGO_CLASS} aria-label="Flippsjekk – til forsiden">
+      <LogoContent />
     </Link>
+  );
+}
+
+/** Logoen uten lenke, for sider som rendres utenfor ruteren (f.eks. forklaringen når Supabase-konfigurasjonen mangler). `<Link>` krever router-kontekst. */
+export function LogoMark() {
+  return (
+    <div className={LOGO_CLASS}>
+      <LogoContent />
+    </div>
   );
 }
 
@@ -67,6 +87,39 @@ function StorageNotice({ message, status }: { message: string | null; status: st
   );
 }
 
+/**
+ * Port for sider som trenger en backend-del som ennå ikke er koblet til (produksjon, fase 2A). Viser en tydelig forklaring i stedet for en
+ * side som ville vist feil, tomme data eller falsk status. I demoen er ingenting utilgjengelig, så den slipper alltid gjennom.
+ */
+export function RequireBackend({ areas }: { areas: ServiceArea[] }) {
+  const services = useServices();
+  if (!areas.some((a) => services.unavailable.includes(a))) return <Outlet />;
+  return (
+    <div className="mx-auto max-w-xl py-10" data-testid="not-available-yet">
+      <Alert tone="info" title="Denne delen er ikke koblet til ennå">
+        <p>Du er innlogget, og profilen din fungerer. I denne versjonen av produksjonsbackend er bare innlogging og profil koblet til. Objekter, scenarioer, kalender, abonnement og analyse kommer i senere faser.</p>
+        <p>Ingenting er lagret eller beregnet her, og ingen tilgang er gitt.</p>
+      </Alert>
+      <Link to="/konto" className={buttonClass('primary', 'md', 'mt-4')}>
+        Til kontoen
+      </Link>
+    </div>
+  );
+}
+
+/** Kort forklaring øverst når deler av backend ikke er koblet til. */
+function PhaseBanner() {
+  const services = useServices();
+  if (services.unavailable.length === 0) return null;
+  return (
+    <div className="mx-auto max-w-7xl px-4 pt-4" data-testid="phase-banner">
+      <Alert tone="info" title="Tidlig produksjonsversjon">
+        Innlogging og profil er koblet til. Objekter, scenarioer, kalender, abonnement og analyse kommer i senere faser.
+      </Alert>
+    </div>
+  );
+}
+
 export function RequireAuth() {
   const { ready, session } = useSession();
   const location = useLocation();
@@ -104,9 +157,10 @@ function SubscriptionBanner() {
 
 function AppShell() {
   const services = useServices();
-  const { session, subscription, entitlements } = useSession();
+  const { session, profile, subscription, entitlements } = useSession();
   const navigate = useNavigate();
   const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const canAnalyze = !services.unavailable.includes('analysis');
   const signOut = async () => {
     await services.auth.signOut();
     navigate('/');
@@ -115,7 +169,7 @@ function AppShell() {
     <div className="min-h-dvh pb-20 lg:pb-0">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4">
-          <Logo to="/oversikt" />
+          <Logo to={homePath(services)} />
           <nav aria-label="Hovedmeny" className="hidden items-center gap-1 lg:flex">
             {NAV.map((n) => (
               <NavLink
@@ -132,7 +186,7 @@ function AppShell() {
           </nav>
           <div className="flex items-center gap-3">
             <div className="hidden text-right text-xs leading-tight sm:block">
-              <p className="font-medium text-ink">{session?.user.displayName}</p>
+              <p className="font-medium text-ink">{profile?.displayName ?? session?.user.displayName}</p>
               <p className="text-slate-600">
                 {subscription ? `${SUBSCRIPTION_STATUS_LABEL[subscription.status]}${entitlements?.reason === 'canceling' ? ` til ${formatDate(subscription.currentPeriodEnd)}` : ''}` : 'Uten abonnement'}
               </p>
@@ -143,6 +197,7 @@ function AppShell() {
           </div>
         </div>
       </header>
+      <PhaseBanner />
       <SubscriptionBanner />
       <main id="innhold" className="mx-auto max-w-7xl px-4 py-6">
         <Outlet />
@@ -155,23 +210,27 @@ function AppShell() {
             <MobileLink key={n.to} {...n} />
           ))}
           <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => setAnalyzeOpen(true)}
-              className="-mt-5 flex size-14 flex-col items-center justify-center rounded-full bg-pine-800 text-white shadow-lg ring-4 ring-white"
-              aria-label="Analyser bolig"
-            >
-              <Plus className="size-6" aria-hidden />
-            </button>
+            {canAnalyze && (
+              <button
+                type="button"
+                onClick={() => setAnalyzeOpen(true)}
+                className="-mt-5 flex size-14 flex-col items-center justify-center rounded-full bg-pine-800 text-white shadow-lg ring-4 ring-white"
+                aria-label="Analyser bolig"
+              >
+                <Plus className="size-6" aria-hidden />
+              </button>
+            )}
           </div>
           {NAV.slice(2).map((n) => (
             <MobileLink key={n.to} {...n} label={n.label === 'Sammenligning' ? 'Sammenlign' : n.label} />
           ))}
         </div>
       </nav>
-      <Dialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} title="Analyser bolig" description="Lim inn lenken til en boligannonse på FINN.">
-        <AnalyzeBox autoFocus onDone={() => setAnalyzeOpen(false)} />
-      </Dialog>
+      {canAnalyze && (
+        <Dialog open={analyzeOpen} onClose={() => setAnalyzeOpen(false)} title="Analyser bolig" description="Lim inn lenken til en boligannonse på FINN.">
+          <AnalyzeBox autoFocus onDone={() => setAnalyzeOpen(false)} />
+        </Dialog>
+      )}
     </div>
   );
 }

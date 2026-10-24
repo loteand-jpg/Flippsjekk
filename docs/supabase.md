@@ -1,6 +1,6 @@
-# Supabase – backend fase 1 (databasegrunnmur)
+# Supabase – backend (fase 1: databasegrunnmur, fase 2A: Auth og profil)
 
-Denne siden beskriver databasegrunnmuren som ligger i repoet: migrasjoner, RLS, tester og et lite klientgrunnlag. **Alt er implementert og testet bare i repositoryet.** Det er ikke anvendt i, og ikke verifisert mot, et faktisk Supabase-prosjekt. Appen bruker fortsatt mocktjenestene i demo, og `createAppServices()` returnerer fortsatt `null` i produksjonsmodus.
+Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert på branch `backend-supabase-auth` og e-post-OTP + profil er live-verifisert mot utviklingsprosjektet 24. oktober 2026**: ny bruker, 6-sifret OTP via egen SMTP, profiltrigger, lesing/oppdatering av egen profil, oppfrisking, utlogging, ny innlogging og vedvarende sesjon i samme nettleser er bekreftet. **Google OAuth er fortsatt ikke live-verifisert.** Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
 
 ## Status i ett blikk
 
@@ -10,8 +10,11 @@ Denne siden beskriver databasegrunnmuren som ligger i repoet: migrasjoner, RLS, 
 | RLS og eksplisitte rettigheter | Skrevet; 37 policyer; RLS på alle tabeller |
 | SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, 223 sjekker – lokalt kjørt mot PGlite (PostgreSQL 18 i WASM). ChatGPT rapporterte 202/204 for den forrige versjonen mot migrasjon 1–7 live (feil: `0.8` og `8.20`, se «Rettigheter»). **Migrasjon 8 og den utvidede matrisen (223) er ikke kjørt mot Supabase ennå** |
 | Statiske SQL-kontroller og skjema-mot-Zod-sjekk | Kjører i `npm test` |
-| Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og klientfabrikk finnes, men ingen tjenester bruker dem ennå |
-| Anvendt i Supabase / RLS bekreftet / Auth testet | **Nei.** Skal gjøres separat mot utviklingsprosjektet (se «Må verifiseres i faktisk Supabase») |
+| Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og lat klientfabrikk; brukes nå av Auth- og profiltjenestene (fase 2A) |
+| Backend fase 1 (migrasjon 1–8, 15 tabeller, 37 policyer, matrise 223/223, Security Advisor 0 funn) | **Live-verifisert av ChatGPT og merget til `main`** (rapportert; Claude har ikke selv sett det) |
+| Backend fase 2A: `SupabaseAuthService` (Google + e-postkode) og `SupabaseProfileService` | Implementert og lokalt testet. **E-post-OTP, profil og sesjon er live-verifisert 24.10.2026 mot utviklingsprosjektet. Google OAuth gjenstår.** |
+| Produksjonskomposisjon | Ekte Auth og profil; abonnement, kurs, objekter, scenarioer, referanser, risikoer, analyse, kalender og import er `not_configured` (se «Backend fase 2A») |
+| Anvendt i Supabase / Auth testet | Migrasjon 1–8: ja (ChatGPT). Fase 2A e-post-OTP/profil/sesjon: **ja, live-verifisert i utviklingsprosjektet 24.10.2026**. Google OAuth: **nei**. |
 
 ## Filer
 
@@ -34,8 +37,16 @@ supabase/
     support/local_service_role_extra_defaults_only.sql  variant: bare TRUNCATE/REFERENCES/TRIGGER ekstra, som i live-feilen (kun lokal testing)
     support/local_rls_auto_enable_stub.sql   omtrentlig etterligning av Supabase-funksjonen rls_auto_enable() (kun lokal testing)
 src/services/supabase/
-  config.ts, client.ts, index.ts      klientgrunnlag (offentlig nøkkel, validering)
-  *.test.ts                           konfigurasjon, statiske SQL-kontroller, PGlite-kjøring av migrasjoner og matrise
+  config.ts, client.ts, index.ts      klientgrunnlag (offentlig nøkkel, validering, lat klient)
+  authService.ts                      SupabaseAuthService (Google, e-postkode, sesjon, utlogging)
+  profileService.ts                   SupabaseProfileService + ProfileRow + resolveProfileDefaults
+  userMapping.ts, errors.ts           Supabase-bruker → domene-bruker; Supabase-feil → ServiceError
+  redirect.ts                         retur fra Google (PKCE) med hash-ruter
+  events.ts, notConfigured.ts         DataEvents fra Auth-hendelser; stand-ins som kaster not_configured
+  compose.ts                          createSupabaseServices(): produksjonskomposisjonen
+  testing.ts                          FakeSupabase (kun tester)
+  *.test.ts                           konfigurasjon, statiske SQL-kontroller, PGlite, adaptertester, kontraktparitet, sikkerhet
+e2e/produksjon.spec.ts                produksjonsmodus med stubbet Supabase-nettverk (eget Playwright-prosjekt «produksjon», port 5199)
 .env.example                          kun offentlige variabler
 ```
 
@@ -168,18 +179,91 @@ Appens kolonner følger `camelCase → snake_case` bortsett fra `areaBRAi → ar
 
 - `.env.example`: `VITE_FLIPPROM_MODE`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Bare offentlige verdier. Kopier til `.env.local` (git-ignorert). Aldri `service_role`, `sb_secret_…` eller database-passord.
 - `src/services/supabase/config.ts`: validerer URL (https, unntatt lokal utviklingsserver) og nøkkel. Den **avviser `sb_secret_…` og JWT med rolle `service_role`** og gjengir aldri nøkkelen i feilmeldinger. Mangler eller feiler konfigurasjonen, avviser `getSupabaseClient()` med `ServiceError('not_configured')`.
-- `src/services/supabase/client.ts`: `createSupabaseClient` laster `@supabase/supabase-js` dynamisk (den havner ikke i demoens bunt) og bruker PKCE som standard (`?code=` i spørringen fungerer sammen med hash-ruteren; **må verifiseres mot faktisk Google-OAuth**). Ingen tjenester bruker klienten ennå.
-- Produksjonsmodus viser fortsatt «Produksjonsbackend er ikke koblet til», nå også med en linje om Supabase-konfigurasjonen er funnet (verdiene vises aldri).
+- `src/services/supabase/client.ts`: `createSupabaseClient` laster `@supabase/supabase-js` dynamisk og bruker PKCE som standard (`?code=` i spørringen fungerer sammen med hash-ruteren; **må verifiseres mot faktisk Google-OAuth**). Pakken ligger i en egen chunk (`supabase-*.js`, ca. 219 kB) som ikke forhåndslastes, så demoen laster den aldri. Klienten brukes av `SupabaseAuthService` og `SupabaseProfileService` (fase 2A).
+- Produksjonsmodus uten gyldig Supabase-konfigurasjon viser «Produksjonsmodus mangler Supabase-konfigurasjon» med årsaken (verdiene vises aldri). Med gyldig konfigurasjon starter appen med ekte Auth og profil (se «Backend fase 2A»).
 - Pakker lagt til: `@supabase/supabase-js` 2.118.0 (dependencies, pinnet) og `@electric-sql/pglite` 0.5.11 (devDependencies, pinnet; kun til lokal SQL-testing).
 
-## Auth
+### Lokal oppkobling mot utviklingsprosjektet
 
-Planlagt produksjonsauth er Google OAuth og e-post med engangskode (ingen passord), gjennom eksisterende `AuthService`. I fase 1 finnes bare grunnlaget: tabellen `profiles` med trigger på `auth.users`, klientkonfigurasjon og PKCE-valget. `SupabaseAuthService` er ikke skrevet. Leverandører, e-postmal for engangskode, rate limits og redirect-URL-er settes i Dashboard i neste fase.
+1. Lag `.env.local` (git-ignorert via `.env.*`) med `VITE_FLIPPROM_MODE=production`, `VITE_SUPABASE_URL=https://<prosjekt-ref>.supabase.co` og `VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…` (Project Settings → API Keys). Aldri `service_role`, `sb_secret_…` eller database-passord; `config.ts` avviser dem.
+2. Start med `npm run dev -- --host 127.0.0.1` (appen på `http://127.0.0.1:5173/`). Mangler URL eller nøkkel, viser appen «Produksjonsmodus mangler Supabase-konfigurasjon» med årsaken – ikke en hvit skjerm. Vite starter serveren på nytt når `.env.local` endres.
+3. I Supabase Dashboard (manuelt, ikke kontrollert av Claude): Authentication → URL Configuration, med Site URL og Redirect URL lik **nøyaktig** adressen i nettleseren, `http://127.0.0.1:5173/` (appen bygger `redirectTo` fra adressen, så `localhost` og `127.0.0.1` er forskjellige). E-postinnlogging på, nye brukere tillatt, anonyme innlogginger av, og e-postmalene må sende `{{ .Token }}` (se «Må konfigureres i Supabase Auth»).
+4. Første testbruker opprettes gjennom den ekte flyten (e-post → kode → Supabase Auth), aldri med SQL mot `auth.users`. Brukeren er en vanlig `authenticated`-bruker; RLS gjelder fullt ut.
+5. `.env.local` styrer også `npm run build` (bygger da i produksjonsmodus, uten demo/mock i bunten). Enhetstestene (`vite.config.ts`) og demo-e2e (`playwright.config.ts`) festes eksplisitt til demo, så en lokal `.env.local` ikke endrer testsuiten; e2e i produksjonsmodus setter sin egen stubbede konfigurasjon.
+
+## Backend fase 2A: Auth og profil
+
+En ekte bruker skal kunne logge inn (Google eller e-post med engangskode), få sesjonen gjenopprettet etter oppfrisking, logge ut, lese sin egen `profiles`-rad og endre navn og standardforutsetninger – og aldri nå andres profil. Ingen boligdata er koblet til Supabase ennå.
+
+### Implementert (i kode)
+
+- **`SupabaseAuthService`** ([authService.ts](../src/services/supabase/authService.ts)) bak eksisterende `AuthService`. UI importerer aldri Supabase; det kjenner bare kontrakten.
+  - *Google:* `signInWithOAuth({ provider: 'google', options: { redirectTo, skipBrowserRedirect: true } })` gir en adresse som UI sender nettleseren til (kontrakten har allerede `{ kind: 'redirect', url }`). `redirectTo` er alltid siden selv uten hash og spørring (`origin + pathname`, ikke hardkodet vertsnavn). Adressen må ligge på Supabase-prosjektets egen opprinnelse, ellers avvises den. PKCE brukes (fra klienten).
+  - *Retur fra Google med hash-ruter:* Supabase sender brukeren tilbake til `redirectTo?code=…` (PKCE). `supabase-js` bytter koden mot en sesjon selv (`detectSessionInUrl`), og `getSession()` venter på det. Ved avbrutt/feilet innlogging legger Supabase `error`/`error_code`/`error_description` både i spørringen og i fragmentet (`#error=…`, som hash-ruteren ellers ville tolket som en rute). `redirect.ts` leser utfallet én gang ved oppstart, fjerner feilparameterne fra adressen, og `AuthReturn` (App.tsx) sender brukeren til `/logg-inn`, som viser feilen («Innloggingen med Google ble avbrutt.») eller sender videre når sesjonen er på plass. Dette er en valgfri kontraktmetode `AuthService.takeRedirectResult?()`; mocken har ingen omdirigering og implementerer den ikke.
+  - *E-post med engangskode:* `signInWithOtp({ email, options: { shouldCreateUser: true } })` og `verifyOtp({ email, token, type: 'email' })`. Kontoen opprettes første gang koden bekreftes. Svaret fra `requestEmailCode` er likt for ny og eksisterende konto (UI avslører ikke om kontoen finnes). Ingen egen OTP-validering: klienten sjekker bare formatet (6 siffer, produktbeslutning); om koden er riktig avgjør Supabase.
+  - *`challengeId`:* Supabase har ingen challenge, og koden bekreftes mot e-postadressen. `challengeId` er derfor e-postadressen i en nøytral innpakning (`otp:<e-post>`). Den er ikke en hemmelighet og gir ingen rettigheter, og den kan gjenopprettes uten lagring (også etter oppfrisking). Selve koden lagres, logges og returneres aldri.
+  - *`expiresAt` / `resendAfter`:* kontrakten krever dem. De er **UI-hint fra adapteren** (10 minutter / 60 sekunder), ikke verdier lest fra Supabase og ikke sikkerhetskontroll. UI bruker bare `resendAfter` til å holde «send ny kode»-knappen inaktiv en stund. Serveren er autoritativ: faktisk levetid for koden, tid mellom nye koder og rate limits settes i Supabase Auth. Rate limit-svar fra Supabase («only request this after N seconds») vises med ventetiden. UI-teksten «Koden varer i 10 minutter» vises bare i demoen.
+  - *Gyldig/utløpt kode:* Supabase svarer `otp_expired` («Token has expired or is invalid») for **både** feil og utløpt kode. Vi kan ikke skille dem og mapper begge til `invalid_code` med en melding som nevner begge, slik at brukeren kan rette en skrivefeil uten å miste skjemaet. `code_expired` brukes for en ukjent `challengeId` og for utløpt/feil-startet OAuth-flyt.
+  - *Sesjon:* `session()` leser `getSession()` (lokal sesjon, fornyes av `supabase-js`); ingen JWT kopieres til egen lagring eller datamodell, og ingenting i appen lagrer tokens. Anonyme Auth-brukere regnes ikke som innlogget. UI-sperren (`RequireAuth`) er en bekvemmelighet: **autorisasjon er RLS** (PostgREST validerer JWT-en på hver forespørsel). `SessionProvider` oppdateres av `DataEvents` fra `onAuthStateChange` (`SIGNED_IN` for en annen bruker enn sist, `SIGNED_OUT`, `USER_UPDATED`; også fra andre faner).
+  - *Utlogging:* `signOut({ scope: 'local' })` – bare denne nettleseren. Supabase sin standard (`global`) ville logget brukeren ut på alle enheter.
+- **Bruker-mapping** ([userMapping.ts](../src/services/supabase/userMapping.ts)): Supabase `User` → domenets `User` (`id`, `email`, `displayName`, `isDemoAccount: false`, `createdAt`), validert mot `UserSchema`. Supabase-typen sprer seg ikke videre. `id` er Supabase Auth sin bruker-ID og er det RLS bruker (`auth.uid()`). `displayName` her kommer fra leverandør-metadata (Google leverer navn) og er **bare til visning**: brukeren kan redigere `user_metadata` selv, så det brukes aldri til tilgangsstyring. Autoritativt visningsnavn er `profiles.display_name`, og header viser profilens navn når den er lest.
+- **`SupabaseProfileService`** ([profileService.ts](../src/services/supabase/profileService.ts)) bak eksisterende `ProfileService`, mot `public.profiles`.
+  - *Les:* `select user_id, display_name, email, defaults, updated_at` filtrert på innlogget bruker; RLS (`profiles_select_own`) håndhever eierskap uansett.
+  - *Skriv:* `update` av **bare** `display_name` og/eller `defaults` (kolonnene `authenticated` har UPDATE på). `user_id`, `email`, `created_at` og `updated_at` sendes aldri; bruker-ID brukes som filter, ikke data. Ingen rad tilbake = feil (`not_found`), ikke stille suksess. Varsler appen etter lagring (`events.emit()`), så sesjon og profil hentes på nytt.
+  - *`defaults = null`:* betyr «ingen egne lagrede standarder ennå» og gir en kopi av `NEW_ACCOUNT_DEFAULTS`. Et lagret objekt (komplett eller delvis) legges oppå `NEW_ACCOUNT_DEFAULTS` og valideres av `ProfileDefaultsSchema`; et delvis objekt gir dermed alltid et komplett sett. Ugyldige verdier gir `ServiceError('validation')`, aldri halvferdige standarder. Økonomiske standardverdier er uendret. En delvis endring leser gjeldende standarder, legger endringen oppå, validerer og skriver hele settet; siste skriver vinner (ingen optimistisk låsing – ikke verifisert mot ekte tidsstempelformat).
+  - *Validering:* alle rader fra databasen valideres (`ProfileRowSchema` og deretter `ProfileSchema`); ingen `as Profile`.
+  - *Profilopprettelse:* skjer i databasen (trigger `on_auth_user_created`, migrasjon 2, i samme transaksjon som Auth-brukeren). Frontend oppretter aldri profil. Fordi raden finnes før en sesjon kan finnes, er det ingen race å håndtere; mangler raden likevel, gir `get()` `not_found`, og Konto viser sin eksisterende «Prøv å laste inn på nytt»-boks.
+- **Databasetyper:** ingen genererte typer finnes i repoet, og Claude kan ikke generere dem uten Supabase-tilgang. Adapteren bruker en smal, håndskrevet `ProfileRow`/`ProfileUpdate` ved grensen, som ikke er «generert». ChatGPT kan generere de faktiske typene fra det live-verifiserte prosjektet, f.eks. `npx supabase gen types typescript --project-id <prosjekt-ref> --schema public > src/services/supabase/database.types.ts` (krever Supabase CLI og tilgangstoken; er ikke en del av build eller test). `client.ts` har en TODO for å type klienten med dem.
+- **Feilmapping** ([errors.ts](../src/services/supabase/errors.ts)): Supabase-feil → `ServiceError` med norske meldinger (ugyldig/utløpt kode, rate limit, ikke innlogget, avbrutt OAuth, nettverksfeil, ikke konfigurert, rettighet/RLS, manglende tabell). Rå Supabase-tekst vises aldri; et trygt utdrag (navn, kode, status, melding) ligger i `details.cause` til feilsøking, aldri tokens eller radinnhold.
+
+### Produksjonskomposisjon og uimplementerte tjenester
+
+`createAppServices()` returnerer i produksjonsmodus `createSupabaseServices()` når Supabase-konfigurasjonen er gyldig, ellers `null` (da viser appen forklaringen). Komposisjonen har ekte Auth, profil og `DataEvents`; alle andre tjenester er stand-ins ([notConfigured.ts](../src/services/supabase/notConfigured.ts)) som avviser hvert kall med `ServiceError('not_configured', …)` og en forståelig melding. De gir aldri tomme eller falske data og aldri tilgang (abonnementet kan ikke «bli aktivt» av at tjenesten mangler). `Services.unavailable` lister områdene, og UI bruker den til å si ærlig fra:
+
+- `RequireBackend` (App.tsx) erstatter sider som trenger objekter, scenarioer, kalender, kurs eller import med «Denne delen er ikke koblet til ennå» – ingen feilside, ingen tomme lister, ingen hvit skjerm.
+- Konto viser ekte profil, men «Abonnement og betaling er ikke koblet til ennå» (ingen «Velg abonnement», ingen påstand om «ingen abonnement»), og skjuler eksport/import og kursliste.
+- Etter innlogging starter brukeren på Konto (`homePath`) i stedet for Oversikt, så lenge objekter ikke er koblet til. Header, forside og knapper bruker samme regel.
+- En kort «Tidlig produksjonsversjon»-boks vises i appen, og analyseknappen skjules når analyse ikke finnes.
+- `SessionProvider` fanger nå feil fra `getEntitlements()` (som `getSubscription()` og `profile.get()` allerede ble), slik at et uimplementert område ikke logger brukeren ut av visningen.
+
+### Endringer i eksisterende servicekontrakter (alle additive)
+
+- `ServiceErrorCode` har fått `'unavailable'` (nettverksfeil/midlertidig feil hos leverandøren). Mocken kaster den aldri.
+- `AuthService.takeRedirectResult?()` (valgfri, se over). Mocken implementerer den ikke.
+- `Services.unavailable: readonly ServiceArea[]` (tom i demoen).
+- Ingen eksisterende metode er endret, og demoen er funksjonelt uendret (alle eksisterende tester og demo-e2e er grønne).
+
+### Supabase Auth-konfigurasjon – status
+
+Status etter live-test i utviklingsprosjektet 24.10.2026:
+
+1. **Google-provider:** ikke aktivert/live-verifisert ennå. Når den tas i bruk må Client ID/Secret konfigureres i Google Cloud og Supabase; Google-konsollens «Authorized redirect URI» er Supabase sin callback `https://<prosjekt-ref>.supabase.co/auth/v1/callback`.
+2. **URL-er:** konfigurert for lokal utvikling med `http://127.0.0.1:5173/` som Site URL/Redirect URL. Produksjonsadressen må legges inn når hosting er valgt. `localhost` og `127.0.0.1` er ulike origins og deler ikke nettlesersesjon.
+3. **E-postkode:** konfigurert og live-verifisert. E-postmalen bruker `{{ .Token }}`, kodelengden er satt til **6**, og ny bruker har mottatt og brukt koden med `verifyOtp({ type: 'email' })`.
+4. **OTP-levetid og rate limits:** Email OTP Expiration er satt til **600 sekunder (10 minutter)**. Rate-limit-grenser er ikke belastningstestet; serverinnstillingene er autoritative, mens appens tider bare er UI-hint.
+5. **SMTP:** egen SMTP via **Resend** er konfigurert med verifisert sendingsdomene og sending er live-verifisert. SMTP/API-hemmeligheten ligger utenfor repository og frontend.
+6. **Nye brukere:** «Allow new users to sign up» er på, og **anonyme innlogginger er av** i utviklingsprosjektet.
+7. **Captcha/bot-beskyttelse:** ikke implementert i frontend. Hvis den slås på i Supabase, vil innlogging feile (`captcha_failed`) til frontend sender captcha-token.
+
+### Live-verifisering fase 2A
+
+**Bekreftet 24.10.2026 mot utviklingsprosjektet:** egen SMTP leverer e-post; 6-sifret OTP fungerer for ny bruker; Auth-bruker blir bekreftet; profiltrigger oppretter én `profiles`-rad; egen profil kan leses og oppdateres fra appen; oppdaterte profilverdier består refresh; lokal utlogging fungerer; ny OTP-innlogging fungerer; og Supabase-sesjonen gjenopprettes etter at Safari lukkes og åpnes igjen på samme origin. Live-databasen viste én bekreftet Auth-bruker, profil og aktive sesjoner under kontrollen.
+
+**Gjenstår før produksjonsklar Auth:** Google OAuth (inkludert avbrutt flyt og redirect), eksplisitt nettlesertest med bruker A mot bruker B for profil-RLS/kolonnerettigheter, rate-limit/utløpt-kode-kanttilfeller mot live Auth, og produksjons-URL når hosting er valgt. Database-RLS er separat verifisert gjennom fase-1-matrisen.
+
+### Teststrategi (lokal)
+
+- Adaptertester mot `FakeSupabase` (tilstandsfull etterligning av Auth og `profiles` med RLS og kolonnerettigheter): sesjon, brukermapping, Google-redirect, bestilling og bekreftelse av kode, feil kode, utløpt kode, rate limit, nettverksfeil, utlogging, auth state changes, manglende konfigurasjon, challenge-gjenoppretting, profil (les, `null`, delvis, korrupt, oppdatering, ugyldig, RLS/Supabase-feil).
+- **Kontraktparitet** (`authProfile.contract.test.ts`): samme tester kjøres mot mocken og mot Supabase-adapterne.
+- **Statiske sikkerhetstester** (`adapters.static.test.ts`): ingen `service_role`/hemmeligheter, ingen egen lagring av tokens/koder, `user_metadata` bare til visningsnavn, bare tillatte profilkolonner, ingen skriving utenom `display_name`/`defaults`, UI importerer aldri Supabase.
+- **E2E** (`e2e/produksjon.spec.ts`, Playwright-prosjektet «produksjon»): ekte `supabase-js` mot stubbet GoTrue/PostgREST – oppstart, innloggingsside, e-postkode (feil og riktig), ekte profil på Konto, profilendring, oppfrisking, utlogging, uimplementerte deler, Google (PKCE-retur) og avbrutt Google. Bevarer ikke noe mot ekte Supabase.
+- Mutasjonstest utført manuelt: 31 bevisste feil i adapterne (feil `scope`, `shouldCreateUser`, uvalidert URL, `user_id` sendt som data, manglende validering, manglende varsel osv.) ble alle fanget.
 
 ## Tester
 
 ```bash
-npm run test:sql        # bare Supabase-testene (statiske kontroller, PGlite, konfigurasjon)
+npm run test:sql        # bare Supabase-testene (statiske kontroller, PGlite, konfigurasjon, Auth/profil-adaptere)
+npm run test:e2e        # inkluderer produksjonsmodus (stubbet Supabase-nettverk)
 npm test                # alt, inkludert over
 ```
 
@@ -205,12 +289,13 @@ Ingenting under er gjort av Claude; alt skal kontrolleres mot utviklingsprosjekt
 8. PostgREST: `public` er eksponert, skjemacache er lastet, og feilkodene (403/409/23xxx) er forståelige i klienten. Verifiser at klientens PKCE-valg fungerer med Googles OAuth og hash-ruteren.
 9. Bekreft at ingen `anon`-tilgang finnes via REST på noen av de 15 tabellene.
 9b. **Migrasjon 7:** anvend den, kjør hele matrisen på nytt (inventar `0.8–0.14` og seksjon `8` er nye; `service_role`-testene skal nå nå constraintene med SQLSTATE 23505/23514/23503, ikke `permission denied`), kontroller at `has_function_privilege` for `anon`/`authenticated`/`PUBLIC` på `public.rls_auto_enable()` er false, at event-triggeren `ensure_rls` fortsatt slår på RLS på en ny testtabell i `public`, og kjør Security Advisor og Performance Advisor på nytt.
-9c. **Migrasjon 8:** anvend den, kjør hele matrisen på nytt (forventet 223 rader, alle `ok = true`; `0.8` og `8.20` er de to som feilet live), kontroller ACL-en (`relacl`) på alle 15 tabeller for `service_role` mot tabellen i migrasjonen (ingen `D` truncate, `x` references eller `t` trigger; ingen kolonne-ACL), at `anon`/`authenticated` er som før, at `pg_default_acl` for `postgres` i `public` ikke gir `service_role`/`anon`/`authenticated` noe på tabeller (`0.15`/`0.16`), og at `rls_auto_enable()` og `ensure_rls` er som etter migrasjon 7. Kjør Security Advisor og Performance Advisor på nytt.
+9c. **Migrasjon 8** (live-verifisert av ChatGPT; beholdt som kontrollpunkt): anvend den, kjør hele matrisen på nytt (forventet 223 rader, alle `ok = true`; `0.8` og `8.20` er de to som feilet live), kontroller ACL-en (`relacl`) på alle 15 tabeller for `service_role` mot tabellen i migrasjonen (ingen `D` truncate, `x` references eller `t` trigger; ingen kolonne-ACL), at `anon`/`authenticated` er som før, at `pg_default_acl` for `postgres` i `public` ikke gir `service_role`/`anon`/`authenticated` noe på tabeller (`0.15`/`0.16`), og at `rls_auto_enable()` og `ensure_rls` er som etter migrasjon 7. Kjør Security Advisor og Performance Advisor på nytt.
+9d. **Fase 2A** (Auth og profil): e-post-OTP, profil og vedvarende nettlesersesjon er live-verifisert 24.10.2026. Google OAuth og eksplisitt A-mot-B profiltest via nettleseren gjenstår; se «Supabase Auth-konfigurasjon – status» og «Live-verifisering fase 2A».
 10. Bekreft at **anonyme innlogginger er slått av** i Auth-innstillingene: anonyme brukere får rollen `authenticated`, og ville dermed passert alle policyer som sjekker `auth.uid()`, inkludert å opprette egne lister (se «Kjente begrensninger»).
 
 ## Bevisst ikke implementert
 
-Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobbkø, ekte markedsdata, `has_active_subscription()` og kvotelogikk, serverfunksjoner for «legg til bolig» og analyseforespørsel, Realtime (`DataEvents`), Storage for private dokumenter, produksjonsdeploy, `SupabaseAuthService` og de øvrige `Supabase*`-repositoriene, rad-mappere mellom `snake_case` og domenemodellen, genererte databasetyper, seed-data, opprydding av eiendommer som er solgt, eksport/sletting av data (personvern), og rate limiting. Ingen halvferdige repositories er lagt inn; `createAppServices()` er uendret.
+Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobbkø, ekte markedsdata, `has_active_subscription()` og kvotelogikk, serverfunksjoner for «legg til bolig» og analyseforespørsel, Realtime (data-hendelser utover Auth), Storage for private dokumenter, produksjonsdeploy, `SupabaseSubscriptionService` og repositoriene for objekter, scenarioer, referanser, risikoer, kalender og import (alle `not_configured`), rad-mappere utover profil, genererte databasetyper, seed-data, opprydding av eiendommer som er solgt, eksport/sletting av data (personvern), rate limiting og captcha. Ingen halvferdige repositories er lagt inn: det som ikke er koblet til, avviser med `not_configured`.
 
 ## Kjente begrensninger
 
@@ -220,13 +305,18 @@ Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobb
 - `scenarios_check_refs` kjører som skriveren, så den avhenger av at analysen er lesbar med dagens RLS. Strammes `analyses`-policyen inn senere (f.eks. abonnement), må triggeren vurderes på nytt.
 - Låsesjekken i `scenarios_guard_locked` skiller bruker fra backend ved at `auth.uid()` er `null` for service-rollen.
 - Standardrettighets-regelen i migrasjon 8 gjelder tabeller opprettet av `postgres` i `public`. Tabeller opprettet av andre roller (f.eks. `supabase_admin`) eller i andre skjemaer følger Supabases egne standarder; en global standard (uten `IN SCHEMA`) fjernes ikke. Lokalt er det bare modellert at standardene finnes som `postgres`-standarder i `public`; hvordan det hostede prosjektet faktisk er satt opp er ikke verifisert av Claude.
+- **Fase 2A:** `SupabaseProfileService.update` for forutsetninger er «les, slå sammen, skriv hele settet» – to faner som lagrer samtidig kan overskrive hverandre (siste vinner).
+- **Fase 2A:** Supabase skiller ikke feil fra utløpt e-postkode (`otp_expired`), så UI kan ikke si hvilken av de to det var. Kodelengde 6 er en produktbeslutning som også må være satt i Supabase.
+- **Fase 2A:** `expiresAt`/`resendAfter` for e-postkode er UI-hint, ikke Supabase-verdier; ventetiden fra Supabase vises bare når en forespørsel faktisk avvises med rate limit.
+- **Fase 2A:** `getSession()` bruker den lokale sesjonen (fornyes av `supabase-js`). En bruker som er slettet eller sperret på serveren kan stå innlogget i visningen til tokenet utløper eller fornyes; RLS/PostgREST avviser uansett alle kall.
+- **Fase 2A:** Captcha/bot-beskyttelse, Vipps, mobil/Apple-innlogging og en grundigere gjenoppretting av mislykket OAuth enn en enkel melding er ikke implementert. Forsidens markedsføringstekster (f.eks. eksempelpriser «i demoen») er uendret.
 - Lokal testing bruker PostgreSQL 18 (PGlite), mens Supabase kan kjøre en annen versjon; migrasjonene bruker bare funksjoner fra PostgreSQL 15.
 - `analysis_jobs.requested_by` (array) må ryddes av backend når en bruker slettes.
 
 ## Neste backendfase
 
-1. ChatGPT: anvende migrasjonene i utviklingsprosjektet, verifisere punktene over og rapportere avvik. Eventuelle rettelser kommer som en ny, avgrenset oppgave.
-2. Genererte databasetyper og rad-mappere (`snake_case` ↔ domenemodell) med tester mot Zod-skjemaene.
-3. Serverfunksjoner (RPC/edge) for «legg til bolig» og analyseforespørsel med abonnement og kvote; deretter strammes klientens INSERT på `user_properties` og lese-policyene inn.
-4. `SupabaseAuthService` (Google og e-postkode) og `Supabase*`-repositoriene mot `Services`, valgt i `createAppServices()` i produksjonsmodus; kontrakttestene i `services.test.ts` kjøres mot begge implementasjonene.
-5. Deretter Vipps, jobbkø/agent og datakildeavklaring (se [integrasjoner.md](integrasjoner.md)).
+1. **Fase 2A avsluttes med merge til `main`** etter den dokumenterte live-verifiseringen. Google OAuth kan fullføres som egen Auth-oppgave senere og skal ikke blokkere e-post-OTP-grunnmuren.
+2. **Fase 2B:** genererte databasetyper/rad-mappere og ekte Supabase-repositorier for brukerens objektliste og scenarioer, med kontraktparitet og relevante live-tester.
+3. Før klienten får reell «legg til bolig»-flyt skal den kjente UUID-omgåelsen lukkes: klienten skal ikke kunne opprette `user_properties` vilkårlig uten serverstyrt kontroll. Serverfunksjon/RPC/edge skal senere håndheve abonnement/kvote når dette finnes.
+4. Koble deretter risiko, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer.
+5. Vipps/abonnement, jobbkø/analyseagent og datakildeavklaring kommer etter at datalagring/eierskap er stabilt (se [integrasjoner.md](integrasjoner.md)).

@@ -27,7 +27,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const [profile, subscription, entitlements] = await Promise.all([
         services.profile.get().catch(() => null),
         services.subscription.getSubscription().catch(() => null),
-        services.subscription.getEntitlements(),
+        // Et område som ikke er koblet til (produksjon, fase 2A) skal ikke logge brukeren ut av visningen.
+        services.subscription.getEntitlements().catch(() => null),
       ]);
       setState({ ready: true, session, profile, subscription, entitlements });
     } catch {

@@ -4,7 +4,7 @@ Denne filen er skrevet for AI-kodeassistenter (og mennesker som tar over). Den s
 
 > **Språk:** All brukertekst er norsk bokmål. Kommentarer i kode og kommitmeldinger er også norske. Behold det.
 > **Navn:** Produktet heter **Flippsjekk** (omdøpt fra «Flipprom»). Interne tekniske identifikatorer har beholdt gammelt navn med vilje (se §12).
-> **Status:** Første versjon (demo). Alt som involverer innlogging, betaling og analyseagent er **simulert** i nettleseren. Ikke klart for betalende kunder.
+> **Status:** Demoen finnes fortsatt, men produksjonsmodus har nå ekte Supabase Auth og profil (fase 2A). E-post-OTP, profil og vedvarende sesjon er live-verifisert mot utviklingsprosjektet 24.10.2026. Objekter, scenarioer, kalender, abonnement, betaling og analyseagent er fortsatt ikke koblet til produksjonsbackend. Ikke klart for betalende kunder.
 
 ---
 
@@ -26,7 +26,7 @@ Kjerneprinsipper som styrer alt:
 
 ## 2. Teknologi og kommandoer
 
-React 19 · TypeScript 5.9 · Vite 7 · Tailwind CSS 4 · Zod 4 · Recharts · lucide-react · React Router 7 (**hash-ruting**) · Vitest · Playwright. Ingen backend; alt kjører i nettleseren mot en mockdatabase i `localStorage`.
+React 19 · TypeScript 5.9 · Vite 7 · Tailwind CSS 4 · Zod 4 · Recharts · lucide-react · React Router 7 (**hash-ruting**) · Vitest · Playwright. Demoen kjører mot mockdatabase i `localStorage`; produksjonsmodus bruker nå ekte Supabase Auth og profil, mens øvrige produksjonstjenester fortsatt er eksplisitt `not_configured`.
 
 ```bash
 npm install
@@ -52,7 +52,7 @@ Modus styres av `VITE_FLIPPROM_MODE` (`production` slår av mock og testkontroll
 ```
 UI (pages/components)  ──►  useServices()  ──►  Services (grensesnitt i src/services/types.ts)
                                                    ├─ mock/  (demo: MockDatabase i localStorage)   ← finnes
-                                                   └─ supabase/ + Vipps + agent (produksjon)      ← skal bygges
+                                                   └─ supabase/ (Auth + profil finnes) + øvrig backend/Vipps/agent  ← bygges videre
 ```
 
 * UI kjenner **bare** tjenestegrensesnittene i `src/services/types.ts`. Produksjon kobles på ved å implementere de samme grensesnittene og velge dem i `createAppServices` (`src/app/services.tsx`). Ikke bygg UI om for å bytte backend.
@@ -500,7 +500,7 @@ Disse er brukerens egne krav gjennom prosjektet. **Ikke brudd dem uten eksplisit
 * **Ny tabell:** legg til Zod-skjema i `domain/schemas.ts`, tabell i `DbState`/`TABLE_SCHEMAS`/seed (`[]`), eventuelt migrering bare hvis eksisterende rader må omformes.
 * **Ny analyse-regel:** `requestAnalysis` + `jobs.ts`; oppdater §6.1-tabellen her, enhetstest og `demokontroller`-e2e.
 * **Endring av tekst brukeren ser:** respekter tekstreglene i §8 og søk e2e-tester etter gamle strenger.
-* **Supabase / backend (fase 1):** `supabase/` (migrasjoner, `tests/rls_matrix.sql`), `src/services/supabase` (offentlig konfigurasjon og klientfabrikk) og `docs/supabase.md`. Alt er skrevet og testet bare i repoet (lokalt mot PGlite) – påstå aldri at det er anvendt eller verifisert i Supabase før det er dokumentert fra faktisk tilgang. `createAppServices()` er uendret (returnerer `null` i produksjonsmodus) og ingen `Supabase*`-tjenester finnes ennå. Skjemaendring = ny migrasjon, og `npm run test:sql` må være grønn. Backend bygges fra `main`, ikke fra designgrenene.
+* **Supabase / backend:** `supabase/` (migrasjoner 1–8, `tests/rls_matrix.sql`), `src/services/supabase` (konfigurasjon, lat klient, `SupabaseAuthService`, `SupabaseProfileService`, `createSupabaseServices()`) og `docs/supabase.md`. **Fase 1 (databasegrunnmuren) er live-verifisert og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A (Auth og profil) er live-verifisert for e-post-OTP, profil og vedvarende nettlesersesjon 24.10.2026**; Google OAuth og eksplisitt nettlesertest med bruker A mot B gjenstår. I produksjonsmodus brukes ekte Auth og profil; resten er `ServiceError('not_configured')` og står i `Services.unavailable` (UI viser «ikke koblet til ennå», aldri tomme eller falske data, og aldri gratis abonnement). UI importerer aldri Supabase – bare tjenestekontraktene i `services/types.ts`. Demo/mock er uendret. Backend bygges fra `main`, ikke fra designgrenene.
 * **Ny innloggingsmetode:** ny metode i `AuthService`, knapp i `AuthPages.tsx`; behold passordløs UX.
 
 ---

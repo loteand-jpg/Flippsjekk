@@ -51,7 +51,9 @@ export type ServiceErrorCode =
   | 'invalid_code'
   | 'code_expired'
   | 'too_many_attempts'
-  | 'rate_limited';
+  | 'rate_limited'
+  /** Tjenesten kunne ikke nås akkurat nå (nettverksfeil, midlertidig feil hos leverandøren). Å prøve igjen kan hjelpe. */
+  | 'unavailable';
 
 export class ServiceError extends Error {
   readonly code: ServiceErrorCode;
@@ -100,6 +102,12 @@ export interface SignInResult {
 
 export type GoogleSignInResult = ({ kind: 'signed_in' } & SignInResult) | { kind: 'redirect'; url: string };
 
+/**
+ * Utfallet av en retur fra en ekstern innloggingsside (Google), slik det ser ut når siden lastes på nytt.
+ * `returned`: brukeren kom tilbake (sesjonen hentes som vanlig). `error`: innloggingen ble avbrutt eller feilet.
+ */
+export type RedirectResult = { kind: 'returned' } | { kind: 'error'; message: string };
+
 /** Fiktiv Google-konto som kan velges i demoens kontovelger. */
 export interface SimulatedGoogleAccount {
   email: string;
@@ -119,6 +127,11 @@ export interface AuthService {
   /** Google: i produksjon sendes brukeren til Google; i demoen velges en fiktiv konto. */
   signInWithGoogle(account?: SimulatedGoogleAccount): Promise<GoogleSignInResult>;
   signOut(): Promise<void>;
+  /**
+   * Bare for innlogging via omdirigering (produksjon): hva som skjedde da brukeren kom tilbake fra Google. Gir svaret én gang, og
+   * deretter `null`. Mocken har ingen omdirigering og implementerer ikke metoden.
+   */
+  takeRedirectResult?(): RedirectResult | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -468,6 +481,11 @@ export interface DataEvents {
   subscribe(listener: () => void): () => void;
 }
 
+/**
+ * Deler av backend som UI-et kan avhenge av. Brukes til å si ærlig fra om hva som ennå ikke er koblet til (se `Services.unavailable`).
+ */
+export type ServiceArea = 'subscription' | 'courses' | 'properties' | 'scenarios' | 'comparables' | 'risks' | 'analysis' | 'calendar' | 'imports';
+
 export interface Services {
   mode: 'demo' | 'production';
   clock: Clock;
@@ -484,4 +502,9 @@ export interface Services {
   imports: ImportService;
   events: DataEvents;
   demo: DemoService | null;
+  /**
+   * Områder som ennå ikke er koblet til en backend. Tjenestene for dem kaster `ServiceError('not_configured')`, og UI-et viser da en
+   * tydelig melding i stedet for tomme data. Tom i demoen (alt er simulert lokalt).
+   */
+  unavailable: readonly ServiceArea[];
 }

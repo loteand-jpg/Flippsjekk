@@ -6,10 +6,14 @@ import { readSupabaseConfig, supabaseConfigFromEnv, type SupabaseConfig } from '
  * Supabase-klient for nettleseren. Pakken lastes dynamisk (`import()`), så den ikke havner i demoens hovedbunt, og ingenting kobler til
  * Supabase før noen eksplisitt ber om en klient. Klienten bruker alltid den offentlige nøkkelen: alt den kan gjøre, bestemmes av RLS.
  *
- * TODO (neste fase): erstatt `SupabaseClient` med en klient typet av genererte databasetyper (`Database`) når skjemaet er verifisert
- * i Supabase. Ingen tjenester bruker denne klienten ennå – `createAppServices()` returnerer fortsatt null i produksjonsmodus.
+ * TODO: erstatt `SupabaseClient` med en klient typet av genererte databasetyper (`Database`) når ChatGPT har generert dem fra det
+ * live-verifiserte prosjektet (se docs/supabase.md). Inntil da bruker adapterne smale, eksplisitte rad-typer ved grensen (f.eks. `ProfileRow`).
+ * Auth og profil bruker klienten fra backend fase 2A; øvrige tjenester er ikke koblet til ennå.
  */
 export type FlippsjekkSupabaseClient = SupabaseClient;
+
+/** Gir tjenestene en klient når de trenger den. Klienten lages først da (lat), siden pakken lastes dynamisk. Tester sender inn en stubbet klient. */
+export type SupabaseClientProvider = () => Promise<FlippsjekkSupabaseClient>;
 
 /**
  * Standardvalg for innlogging i en nettleser-SPA. PKCE returnerer `?code=…` i spørringen (ikke tokens i URL-hashen), noe som
