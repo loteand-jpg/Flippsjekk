@@ -1,19 +1,22 @@
-# Supabase – backend (fase 1: databasegrunnmur, fase 2A: Auth og profil)
+# Supabase – backend (fase 1: databasegrunnmur, fase 2A: Auth og profil, fase 2B: objektliste og scenarioer)
 
 Denne siden beskriver backend som ligger i repoet: databasegrunnmuren (fase 1: migrasjoner, RLS, tester, klientgrunnlag) og Auth + profil (fase 2A: `SupabaseAuthService` og `SupabaseProfileService`). **Fase 1 er live-verifisert av ChatGPT og merget til `main`** (restore-tag `backend-foundation-v1`). **Fase 2A er implementert på branch `backend-supabase-auth` og e-post-OTP + profil er live-verifisert mot utviklingsprosjektet 24. oktober 2026**: ny bruker, 6-sifret OTP via egen SMTP, profiltrigger, lesing/oppdatering av egen profil, oppfrisking, utlogging, ny innlogging og vedvarende sesjon i samme nettleser er bekreftet. **Google OAuth er fortsatt ikke live-verifisert.** Demoen bruker fortsatt mocktjenestene uendret. I produksjonsmodus (`VITE_FLIPPROM_MODE=production`) brukes ekte Supabase Auth og profil; alle andre tjenester er eksplisitt «ikke koblet til».
+
+**Fase 2B (branch `backend-data-phase-2b`) er implementert og live-verifisert mot utviklings-Supabase 24.10.2026, og er godkjent for merge. Den er fortsatt ikke produksjonsklar.** Den kobler brukerens objektliste og scenarioer til Supabase, lukker den kjente UUID-veien til felles eiendomsdata (migrasjon 9) og bruker eksisterende servicekontrakter, beregningsmotor og UI. **Migrasjon 9 er anvendt i utviklings-Supabase 24.10.2026, og hele RLS-matrisen er kjørt live 228/228.** Nettleserflyten med det seedede testobjektet gjenstår før merge.
 
 ## Status i ett blikk
 
 | | Status |
 |---|---|
-| Skjema, constraints, indekser (15 tabeller) | 6 migrasjoner + migrasjon 7 (eksplisitte `service_role`-rettigheter), alle anvendt i utviklingsprosjektet av ChatGPT (rapportert; Claude har ikke selv sett det). Migrasjon 8 (REVOKE før GRANT for `service_role`, deny-by-default for nye tabeller) er skrevet som korrigering etter at live-matrisen ga 202/204 og er **ikke anvendt ennå** |
-| RLS og eksplisitte rettigheter | Skrevet; 37 policyer; RLS på alle tabeller |
-| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, 223 sjekker – lokalt kjørt mot PGlite (PostgreSQL 18 i WASM). ChatGPT rapporterte 202/204 for den forrige versjonen mot migrasjon 1–7 live (feil: `0.8` og `8.20`, se «Rettigheter»). **Migrasjon 8 og den utvidede matrisen (223) er ikke kjørt mot Supabase ennå** |
+| Skjema, constraints, indekser (15 tabeller) | Migrasjon 1–9 anvendt i utviklingsprosjektet. Migrasjon 9 (`20261024121059_user_properties_backend_only_insert.sql`) er live-verifisert 24.10.2026; `authenticated` har ikke INSERT på `user_properties`, og INSERT-policyen er fjernet. |
+| RLS og eksplisitte rettigheter | 36 policyer etter migrasjon 9 (37 i fase 1: insert-policyen på `user_properties` er droppet); RLS på alle tabeller |
+| SQL-testmatrise (bruker A mot B m.m.) | `supabase/tests/rls_matrix.sql`, **228/228 live-verifisert mot utviklings-Supabase 24.10.2026**. De nye fase-2B-kontrollene for UUID-veien, backend-only medlemskap og referanseintegritet består. |
 | Statiske SQL-kontroller og skjema-mot-Zod-sjekk | Kjører i `npm test` |
 | Supabase-klientgrunnlag (`@supabase/supabase-js` 2.118.0) | Konfigurasjon og lat klientfabrikk; brukes nå av Auth- og profiltjenestene (fase 2A) |
 | Backend fase 1 (migrasjon 1–8, 15 tabeller, 37 policyer, matrise 223/223, Security Advisor 0 funn) | **Live-verifisert av ChatGPT og merget til `main`** (rapportert; Claude har ikke selv sett det) |
 | Backend fase 2A: `SupabaseAuthService` (Google + e-postkode) og `SupabaseProfileService` | Implementert og lokalt testet. **E-post-OTP, profil og sesjon er live-verifisert 24.10.2026 mot utviklingsprosjektet. Google OAuth gjenstår.** |
-| Produksjonskomposisjon | Ekte Auth og profil; abonnement, kurs, objekter, scenarioer, referanser, risikoer, analyse, kalender og import er `not_configured` (se «Backend fase 2A») |
+| Backend fase 2B: `SupabasePropertyRepository`, `SupabaseScenarioRepository` og lesing av analyser | Implementert og lokalt testet. **Live-verifisert 24.10.2026:** migrasjon 9, 228/228 RLS, seedet objekt, lesing i Oversikt/objektside, oppretting av privat scenario, endret kjøpspris og korrekt lesing tilbake etter full reload. |
+| Produksjonskomposisjon | Ekte Auth, profil, objektliste, scenarioer og lesing av grunnanalyser. `not_configured`: abonnement, kurs, egne sammenlignbare, egne risikoer, kalender, import/eksport og BESTILLING av analyse (se «Backend fase 2B») |
 | Anvendt i Supabase / Auth testet | Migrasjon 1–8: ja (ChatGPT). Fase 2A e-post-OTP/profil/sesjon: **ja, live-verifisert i utviklingsprosjektet 24.10.2026**. Google OAuth: **nei**. |
 
 ## Filer
@@ -30,6 +33,7 @@ supabase/
     20261022100500_billing_usage_jobs.sql          subscriptions, course_purchases, analysis_jobs, usage_events
     20261022100600_service_role_grants.sql         eksplisitte rettigheter til service_role + lukket EXECUTE på rls_auto_enable()
     20261022100700_service_role_privilege_reset.sql   REVOKE ALL før GRANT for service_role + deny-by-default for nye tabeller
+    20261024121059_user_properties_backend_only_insert.sql   fase 2B: user_properties kan bare opprettes av backend (lukker UUID-veien)
   tests/
     rls_matrix.sql                    testmatrise (kan kjøres mot Supabase)
     support/local_supabase_stub.sql   etterligning av Supabase-roller/auth med brede standardrettigheter – KUN for lokal testing, aldri i Supabase
@@ -44,9 +48,18 @@ src/services/supabase/
   redirect.ts                         retur fra Google (PKCE) med hash-ruter
   events.ts, notConfigured.ts         DataEvents fra Auth-hendelser; stand-ins som kaster not_configured
   compose.ts                          createSupabaseServices(): produksjonskomposisjonen
+  propertyRepository.ts               SupabasePropertyRepository (objektlisten, fase 2B)
+  scenarioRepository.ts               SupabaseScenarioRepository (fase 2B)
+  analysisReader.ts                   SupabaseAnalysisReader: lesing av grunnanalyser; bestilling avvises (fase 2B)
+  rows.ts, dataAccess.ts              rad-skjemaer snake_case → domene med validering; felles datatilgang/feilhåndtering
+  dev/                                KUN test/utvikling (ikke i appbygget): PGlite-backend med PostgREST-emulator, seed, radskrivere
   testing.ts                          FakeSupabase (kun tester)
   *.test.ts                           konfigurasjon, statiske SQL-kontroller, PGlite, adaptertester, kontraktparitet, sikkerhet
-e2e/produksjon.spec.ts                produksjonsmodus med stubbet Supabase-nettverk (eget Playwright-prosjekt «produksjon», port 5199)
+src/services/shared/readModel.ts      delt lesemodell: PropertyBundle/MyPropertyItem bygges likt i demo og produksjon
+src/app/access.ts                     useEditAccess: redigeringstilgang per område (se «Abonnement og redigeringstilgang»)
+scripts/devSeed.ts                    npm run db:dev-seed: lager SQL med demodata til én bruker i utviklingsprosjektet (kjører ingenting)
+e2e/produksjon.spec.ts                produksjonsmodus (fase 2A) med stubbet Supabase-nettverk (eget Playwright-prosjekt «produksjon», port 5199)
+e2e/produksjon-data.spec.ts           produksjonsmodus (fase 2B): Oversikt og scenarioflyt mot PGlite-backend
 .env.example                          kun offentlige variabler
 ```
 
@@ -117,7 +130,7 @@ En innlogget bruker kan ikke opprette, låse opp, gi nytt navn eller redigere ve
 Mocklaget lar enhver innlogget bruker slå opp en eiendom og lese felles analyser; abonnement håndheves «server-side». Siden `has_active_subscription()` ikke er forsvarlig å implementere før Vipps og abonnementsdata finnes, er lesing av felles tabeller (`properties`, `property_snapshots`, `viewings`, felles `analyses`) begrenset til **eiendommer brukeren har i egen liste** (`user_properties`). Det er smalere enn mocklaget:
 
 - **Oppslag av en eiendom brukeren ikke har** (f.eks. `getByFinnId` før «legg til») må i fase 2 gå via en serverfunksjon (RPC/edge function) som sjekker abonnement og kvote, oppretter eiendom og analyse med service-rollen og legger boligen i listen.
-- **Kjent begrensning:** `user_properties` kan opprettes av klienten (som spesifisert), så en innlogget bruker som kjenner en eiendoms UUID kan legge den i egen liste og dermed lese de felles dataene, uavhengig av abonnement. UUID-er kan ikke listes opp (ingen lesing av `properties` uten medlemskap), men dette må lukkes før lansering, enten ved å fjerne klientens INSERT på `user_properties` når serverfunksjonen finnes, eller ved å legge abonnementssjekk inn i policyene. Testen `3.13` i matrisen dokumenterer dagens oppførsel.
+- **Lukket i fase 2B (migrasjon 9):** i fase 1 kunne en innlogget bruker som kjente en eiendoms UUID selv legge den i egen liste og dermed lese de felles dataene, uavhengig av abonnement (testen `3.13` dokumenterte det). Nå kan bare backend opprette rader i `user_properties` (se «Backend fase 2B»).
 - Mock-semantikken «leserettigheter etter utløpt abonnement» (se egne data, ikke endre) kan ikke uttrykkes i databasen ennå; endring av egne data er ikke abonnementsstyrt i fase 1.
 
 ## Rettigheter (grants) og `service_role`
@@ -259,6 +272,86 @@ Status etter live-test i utviklingsprosjektet 24.10.2026:
 - **E2E** (`e2e/produksjon.spec.ts`, Playwright-prosjektet «produksjon»): ekte `supabase-js` mot stubbet GoTrue/PostgREST – oppstart, innloggingsside, e-postkode (feil og riktig), ekte profil på Konto, profilendring, oppfrisking, utlogging, uimplementerte deler, Google (PKCE-retur) og avbrutt Google. Bevarer ikke noe mot ekte Supabase.
 - Mutasjonstest utført manuelt: 31 bevisste feil i adapterne (feil `scope`, `shouldCreateUser`, uvalidert URL, `user_id` sendt som data, manglende validering, manglende varsel osv.) ble alle fanget.
 
+## Backend fase 2B: objektliste og scenarioer
+
+Målet er at en innlogget bruker i produksjonsmodus kan åpne Oversikt og arbeide med egne eksisterende objekter og scenarioer fra Supabase, uten mockdata, uten å bygge om UI eller beregningsmotor – og uten at noen kan lese felles eiendomsdata ved å gjette UUID-er.
+
+### Status: implementert / lokalt verifisert / live-verifisert / planlagt
+
+| | |
+|---|---|
+| **Implementert i kode** | Migrasjon 9; `SupabasePropertyRepository`, `SupabaseScenarioRepository`, `SupabaseAnalysisReader` (lesing); radlag med validering (`rows.ts`); delt lesemodell (`services/shared/readModel.ts`); `useEditAccess`; justert UI (porter, Oversikt, objektside); utviklingsseed (`npm run db:dev-seed`) |
+| **Lokalt verifisert** (PGlite + stubbet nettverk, IKKE Supabase) | SQL-matrise 228/228 i tre stubb-varianter; demodata → database → rader → domene rundtur; paritet med mocken på alle 12 objekter; A mot B; UUID-veien lukket (også via direkte PostgREST-kall); låst scenario og primærscenario håndhevet av databasen; produksjons-e2e (nettleser + ekte `supabase-js` + PostgREST-emulator + PGlite) |
+| **Live-verifisert** | Migrasjon 9 er anvendt; 36 policies; ingen INSERT-rettighet eller INSERT-policy på `user_properties`; RLS-matrisen er **228/228**; UUID-veien er avvist med 42501 i live-matrisen; Security Advisor har ingen nye fase-2B-funn. Nettleserflyten er også bekreftet med faktisk innlogget bruker: objekt leses, privat scenario lagres og kjøpspris **3 240 000 kr** leses korrekt tilbake etter full reload. |
+| **Planlagt (ikke gjort)** | Bestilling av analyse (FINN-henting, agent, jobbkø), abonnement/kvote i database og UI, egne sammenlignbare, egne risikoer, kalender, import/eksport, genererte databasetyper, Realtime |
+
+### Databaseendring: migrasjon 9 (`20261024121059_user_properties_backend_only_insert.sql`)
+
+Nøyaktig to setninger:
+
+1. `revoke insert on table public.user_properties from authenticated;` – fjerner også kolonnerettighetene fra migrasjon 3.
+2. `drop policy if exists user_properties_insert_own on public.user_properties;` – to sperrer, så en senere utilsiktet `GRANT` alene ikke åpner veien igjen.
+
+Uendret: `authenticated` kan fortsatt lese egne rader, oppdatere de bestemte kolonnene (favoritt, arbeidsstatus, notater, primært scenario, arkivering, sist sett versjon, avkrysninger) og slette egne rader. `service_role` har allerede INSERT (migrasjon 8) og er den som oppretter lister. Ingen funksjon/RPC, ingen nye grants, ingen endring i `anon`, andre tabeller, `rls_auto_enable()` eller andre policyer. Migrasjon 1–8 er urørt (sjekksummer låst i `migrations.static.test.ts`).
+
+### Hvordan UUID-tilgangsproblemet er løst
+
+**Problemet:** `user_properties` ga klienten INSERT med kolonnen `property_id`. Fremmednøkkelen sjekkes uten RLS, så innsettingen lyktes for en vilkårlig eksisterende eiendom, og alle lesepolicyene for felles data (`properties`, `property_snapshots`, `viewings`, felles `analyses`) bygger på medlemskap i `user_properties`. Dermed ga en kjent UUID lesetilgang, uavhengig av abonnement.
+
+**Valg:** medlemskap kan bare opprettes av backend (`service_role`). Det er den veien analysetjenesten senere bruker (FINN-lenke → eiendom → analyse → kobling til brukerens liste, med abonnement og kvote). En RPC som tok imot en UUID fra klienten ville bare flyttet hullet (samme spørsmål: hvem får lov?), og det finnes ingen klientflyt som trenger å legge til boliger før den tjenesten finnes. `addToMine` i repositoryet avviser derfor med `not_configured` og en forklaring.
+
+**Kontrollert (lokalt):** direkte `POST /rest/v1/user_properties` med gyldig token gir `403 / 42501 permission denied` både for en eiendom som finnes og en som ikke finnes (ingen oppslagsmulighet); privat analyseutkast og scenario på en eiendom utenfor listen gir `23503`/`42501`; leseaksess er fortsatt `null`/tom; `anon` får `401`. Matrisetestene `3.7`–`3.9`, `3.13`, `3.16`, `3.17`, `0.17`, `8.7b`, `8.7c` og vitest-testene i `supabase.pglite.test.ts` og `repositories.pglite.test.ts` dekker dette, og testen uten migrasjon 9 viser at hullet da er åpent.
+
+### Objektlisten (`SupabasePropertyRepository`)
+
+- `listMine`/`getMine`: leser egne `user_properties` og felles data RLS gir tilgang til (eiendom, snapshots, visninger, analyseversjoner), pluss brukerens egne scenarioer, kalenderoverstyring, private hendelser og risikoendringer (klienten kan skrive dem, så å ignorere dem ville vist feil data). Full analyse hentes bare for siste publiserte og for grunnlaget til primærscenarioet (analyser er store); alle versjoner hentes som metadata.
+- Alt går gjennom `rows.ts`: rad-skjema (kolonner og grunntyper) og deretter det eksisterende Zod-skjemaet for domenetypen. Ugyldige data gir `ServiceError('validation')` uten verdier i detaljene; `null` blir aldri 0.
+- `PropertyBundle`/`MyPropertyItem` bygges av de DELTE rene funksjonene i `services/shared/readModel.ts` (flyttet ut av mock-konteksten uten atferdsendring, og brukt av mocken som før): primærscenario, grunnlag, buddag, oppfriskingsbeslutning osv. beregnes likt i demo og produksjon. Ingen økonomiske nøkkeltall regnes i adapteren eller databasen; beregningsmotoren brukes uendret av UI.
+- Skriving: `updatePersonalStatus`, `archiveMine` og `removeMine` (databasen fjerner scenarioer, referanser, risikoer, private hendelser og private utkast via cascade; felles data berøres aldri). Bare kolonnene klienten har UPDATE på sendes.
+- Ikke lest ennå: analysejobber (`analysis_jobs`, skrives bare av backend; `getJob` gir `null`) og kildesignaler om endrede visninger/teknisk grunnlag (kommer med kildehentingen). Brukerens `analyzed_at` settes bare av backend.
+
+### Scenarioer (`SupabaseScenarioRepository`)
+
+`list`, `create`, `update`, `duplicate`, `remove` og `setPrimary` med samme regler og meldinger som mocken. Eierskap og referanseintegritet håndheves av DATABASEN (RLS, sammensatte fremmednøkler, `scenarios_check_refs`, `scenarios_guard_locked`); repositoryet gir bare de forståelige meldingene først. Konkret:
+
+- Eget scenario: `owner_id` sendes aldri; andres scenarioer «finnes ikke» (`not_found`, som RLS gir 0 rader).
+- Scenarioet må tilhøre en bolig i egen liste og bygge på en analyse brukeren kan lese for samme bolig; versjonen leses fra analysen, aldri fra klienten.
+- `primary_scenario_id` kan bare peke på eget scenario for samme bolig (sammensatt fremmednøkkel – testet også ved direkte PostgREST-kall). Første scenario blir primært; ved sletting av primærscenarioet flyttes primær til et annet før sletting.
+- **Låst scenario («Nettsidens vurdering»)**: kan ikke endres, omdøpes, låses opp eller slettes (testet også direkte mot databasen), men kan flyttes til en NY analyseversjon («rebase») med nye verdier, og dupliseres til et vanlig scenario. **Klienten kan ikke opprette låste scenarioer** (RLS). Det låste grunnlagsscenarioet må derfor opprettes av backend når en bolig kobles til brukeren (utviklingsseed gjør det ikke for demodata, som ikke har ett). Forskjell fra mocken: mocken oppretter det automatisk ved første lagrede endring; i produksjon skjer det ikke fra klienten. Databasen krever at et låst scenario faktisk får en ny analyse-id ved «rebase» (mocken godtar samme id; UI kaller det aldri slik).
+- Verdier valideres mot `ScenarioValuesSchema` før de sendes. Ingen separat økonomimotor i Supabase-laget. Nye analyser overskriver aldri lagrede scenarioer (analyseversjonen er en del av scenarioet).
+- Antall scenarioer per objekt begrenses bare i klienten (planens grense, 10) inntil databasen får en sperre sammen med abonnementet.
+
+### Abonnement og redigeringstilgang (viktig valg som eier bør bekrefte)
+
+Fase 2B implementerer ikke abonnement. Mocken sjekker abonnement i alle skriveoperasjoner, og UI bruker `entitlements` til å slå redigering av/på. I produksjon er abonnementstjenesten `not_configured`, så `entitlements` er `null`. For at scenarioer skal kunne arbeides med, tillater `useEditAccess` (`src/app/access.ts`) redigering av egne data **så lenge abonnementstjenesten ikke er koblet til**: ingen abonnementssjekk finnes å følge, og databasen (RLS) eier tilgangen til egne data. Dette er en midlertidig, eksplisitt regel – ikke et gratis abonnement: analyse, oppfriskning, import og eksport er fortsatt utilgjengelige, og områder som ikke er koblet til (`risks`, `comparables`) er deaktivert med forklaring. Er abonnementet kjent, følges det som i demoen; kunne det ikke hentes av annen grunn, er UI skrivebeskyttet. Reelle brukere kan i praksis ikke gjøre noe uten en backend-opprettet liste (migrasjon 9), men regelen **må erstattes av en sjekk i database/server sammen med abonnementet før lansering.**
+
+### UI-justeringer (minimale)
+
+`RequireBackend` slipper nå `/oversikt`, `/objekter/:id` og `/sammenligning` gjennom (resten er forklart). Oversikt viser «Nye analyser er ikke koblet til ennå» og skjuler import/eksport. Objektsiden deaktiverer redigering av egne risikoer og referanser med forklaring («… er ikke koblet til ennå»); kalendervalg gir en kontrollert melding. Etter innlogging starter brukeren på Oversikt. Banner og tekster oppdatert. Demo er funksjonelt uendret.
+
+### Utviklingsdata (dev-seed)
+
+Uten data i Supabase kan ingen prøve flyten live, og klienten kan ikke legge boliger i listen. `npm run db:dev-seed -- --email deg@eksempel.no [--alle | --finn 900000101,900000102] [--ut fil.sql]` skriver SQL-tekst (standard: de tre første demoobjektene, ca. 95 kB; `--finn` med ett objekt er mye mindre). Skriptet kjører ingenting og har ingen nøkler. Teksten kjøres som `postgres` i **utviklingsprosjektet**; brukeren må finnes i `auth.users` fra før (logg inn gjennom appen først). Bare `insert … on conflict do nothing` (ingenting slettes eller overskrives), id-ene til brukerens private rader utledes av e-posten (stabile per bruker, ulike mellom brukere), felles eiendomsdata deles. Demoobjektene har `data_origin = 'demo'` (fiktive, ikke ekte annonser). Dette er det backend senere gjør ved kobling til en analyse.
+
+### Genererte databasetyper
+
+Ikke lagt inn. Supabase sin generator krever tilgang til prosjektet (eller en Docker-basert lokal stack), og en håndskrevet kopi ville vært upålitelig. I stedet er radene ved Supabase-grensen eksplisitte og validert (`rows.ts`: rad-skjema → domeneskjema), og en test (`rows.test.ts`) kontrollerer mot det migrerte skjemaet at kolonnelisten vi leser er NØYAKTIG tabellens kolonner (drift oppdages). ChatGPT kan generere de faktiske typene fra det live-verifiserte prosjektet (kommando i «Backend fase 2A»).
+
+### Lokal etterligning og hva den ikke beviser
+
+`src/services/supabase/dev/pgliteBackend.ts` er PGlite med migrasjonene og en oversetter fra PostgREST-/GoTrue-kall (det `supabase-js` sender) til SQL, kjørt som rollen `authenticated`/`anon` med brukerens JWT-claims. Ekte grants, RLS, triggere og SQLSTATE-koder gjelder, og både Vitest og Playwright bruker den. Den er en forenkling av PostgREST (select, enkle filtre, order, limit, insert/update/delete med `return=representation`) og bevisst ikke Supabase: PostgREST-versjon, Supabase sine standardrettigheter og faktiske svarformater må verifiseres live.
+
+### Må verifiseres live (ChatGPT) før fase 2B kan godkjennes
+
+1. **UTFØRT 24.10.2026:** migrasjon 9 er anvendt og hele `rls_matrix.sql` er kjørt live: **228/228**. Det er 36 policies, ingen INSERT-policy på `user_properties`, og `authenticated` har verken tabell- eller kolonne-INSERT. Security Advisor viser ingen nye fase-2B-funn.
+2. **UTFØRT 24.10.2026:** faktisk nettleserflyt mot utviklings-Supabase er bekreftet: seedet objekt vises, privat scenario kan opprettes og redigeres, og endret kjøpspris leses korrekt tilbake etter full reload.
+2. **UUID-veien:** med en ekte bruker uten liste: `POST /rest/v1/user_properties {"property_id": "<kjent uuid>"}` skal gi 403/`42501`, samme for en ukjent UUID; `GET /rest/v1/properties?id=eq.<uuid>` skal gi `[]`.
+3. **Data:** kjør dev-seed for testbrukeren (eller opprett lister som `service_role`), logg inn i appen i produksjonsmodus og kontroller at Oversikt viser objektene, at objektsiden åpner, og at scenarioer kan redigeres og lagres, «lagre som nytt», sett som primært, gi nytt navn og slette – og at alt består etter oppfriskning.
+4. **A mot B** med to ekte brukere som begge har samme eiendom: ingen ser den andres scenarioer, notater eller primærscenario; direkte PostgREST-kall mot den andres rader gir 0 rader; `primary_scenario_id` kan ikke settes til den andres scenario (`23503`).
+5. **Låst scenario:** opprett ett som `service_role`/`postgres`; klienten skal få 42501 ved endring/omdøping/sletting og når `locked: true` forsøkes satt eller opprettet.
+6. **PostgREST-formater** adapteren forutsetter: `numeric` som JSON-tall, `timestamptz` som ISO med offset, jsonb som objekter, og `select`-lister med kolonnen `values` (reservert ord) uten feil. Se særlig at `GET /rest/v1/scenarios?select=…,values,…` virker.
+7. Ytelse/svartid på Oversikt med realistisk antall objekter (analyser hentes som metadata + noen få fulle).
+
 ## Tester
 
 ```bash
@@ -267,8 +360,9 @@ npm run test:e2e        # inkluderer produksjonsmodus (stubbet Supabase-nettverk
 npm test                # alt, inkludert over
 ```
 
-- **`supabase/tests/rls_matrix.sql`** (223 sjekker): bruker A mot bruker B for hver tabell, `anon`, `authenticated` og `service_role`. Hver avvisning forventes med en bestemt SQLSTATE (42501 rettighet/RLS/guard, 23503 fremmednøkkel, 23505 unik, 23514 check, 54000 radgrense), så en skrivefeil i testen ikke teller som «avvist». Den dekker blant annet: A leser/endrer egne data; B får nektet å lese, endre og slette As scenarioer, referanser og risikoer; B kan ikke sette As scenario som primært; vanlig bruker kan ikke skrive `properties` eller felles analyser; vanlig bruker kan ikke sette abonnementet til `active` eller skrive forbruk/kurs; privat analyse kan ikke bli felles; unik versjon, dedupe og idempotens; cascade ved fjerning av bolig og sletting av bruker. En innledende inventarsjekk (0.x) kontrollerer RLS, rettigheter og funksjonsrettigheter, blant annet `0.8` (`service_role` har nøyaktig de bestemte tabellrettighetene, uten `TRUNCATE`/`REFERENCES`/`TRIGGER`), `0.8b` (ingen kolonnerettigheter), `0.9b` (ikke `CREATE` på schema `public`), `0.15` (ingen standardrettigheter for nye tabeller i katalogen) og `0.16` (en prøvetabell opprettet av `postgres` får ingenting; opprettes og slettes i transaksjonen). `8.20b` avviser `TRUNCATE` på alle 15 tabeller med «permission denied».
+- **`supabase/tests/rls_matrix.sql`** (228 sjekker): bruker A mot bruker B for hver tabell, `anon`, `authenticated` og `service_role`. Hver avvisning forventes med en bestemt SQLSTATE (42501 rettighet/RLS/guard, 23503 fremmednøkkel, 23505 unik, 23514 check, 54000 radgrense), så en skrivefeil i testen ikke teller som «avvist». Den dekker blant annet: A leser/endrer egne data; B får nektet å lese, endre og slette As scenarioer, referanser og risikoer; B kan ikke sette As scenario som primært; vanlig bruker kan ikke skrive `properties` eller felles analyser; vanlig bruker kan ikke sette abonnementet til `active` eller skrive forbruk/kurs; privat analyse kan ikke bli felles; unik versjon, dedupe og idempotens; cascade ved fjerning av bolig og sletting av bruker. En innledende inventarsjekk (0.x) kontrollerer RLS, rettigheter og funksjonsrettigheter, blant annet `0.8` (`service_role` har nøyaktig de bestemte tabellrettighetene, uten `TRUNCATE`/`REFERENCES`/`TRIGGER`), `0.8b` (ingen kolonnerettigheter), `0.9b` (ikke `CREATE` på schema `public`), `0.15` (ingen standardrettigheter for nye tabeller i katalogen) og `0.16` (en prøvetabell opprettet av `postgres` får ingenting; opprettes og slettes i transaksjonen). `8.20b` avviser `TRUNCATE` på alle 15 tabeller med «permission denied».
 - **Lokal kjøring:** `src/services/supabase/supabase.pglite.test.ts` anvender stub + migrasjoner + matrisen mot PGlite (PostgreSQL 18). Stubben etterligner Supabase-roller, `auth.uid()` og **brede standardrettigheter (inkludert `TRUNCATE`, `REFERENCES`, `TRIGGER`) for `anon`, `authenticated` og `service_role`**. Det er med vilje: en stubb uten dem lot migrasjon 7 se komplett ut lokalt, selv om den ikke fjerner det Supabase hadde gitt. To varianter avgrenser dem: `local_service_role_no_defaults.sql` (ingen for `service_role`) og `local_service_role_extra_defaults_only.sql` (bare de tre ekstra, som gjengir live-utfallet nøyaktig). Negative kontroller i testfilen: migrasjon 1–7 med de ekstra rettighetene feiler på nøyaktig `0.8` og `8.20` av de opprinnelige 204 testene (pluss de nye); 1–7 med brede standarder feiler bredere; 1–7 uten standarder for `service_role` feiler bare på `0.15`/`0.16` (det forklarer hvorfor avviket ikke ble sett før). Med migrasjon 1–8 består hele matrisen i alle tre miljøene. Mutasjonstest utført manuelt: de 17 opprinnelige og 23 nye bevisste feil (bl.a. fjernet `REVOKE ALL`, tilbakegitt `TRUNCATE`, fjernede standardregler, utvidet `anon`/`authenticated`, droppet eller endret `rls_auto_enable()`) ble alle fanget; at matrisen i seg selv ikke fanger en droppet `rls_auto_enable()` (0.13/0.14 hopper over der den mangler) er dekket av den statiske testen og før/etter-testen.
+- **Fase 2B-tester:** `rows.test.ts` (kolonner mot skjema, demodata → database → rader → domene), `repositories.pglite.test.ts` (ekte `supabase-js` + PostgREST-emulator + PGlite: paritet med mocken, A mot B, UUID-veien, låst scenario, primærscenario, feil), `devSeed.pglite.test.ts` (det genererte seed-skriptet kjørt mot PGlite), migrasjon 9 i `supabase.pglite.test.ts` og `migrations.static.test.ts`, og `e2e/produksjon-data.spec.ts` (nettleser → ekte `supabase-js` → PGlite). `npm run test:e2e` starter egen dev-server i produksjonsmodus på port 5199 (Playwright-prosjekt «produksjon»).
 - **Statiske kontroller** (`migrations.static.test.ts`): RLS og REVOKE på hver tabell, ingen grants til `anon`/`public`, ingen `using (true)`, SECURITY DEFINER bare der det er begrunnet, ingen hemmeligheter, og at CHECK-listene i SQL er de samme som appens enum-er/Zod-skjemaer.
 
 ### Kjøre matrisen mot Supabase
@@ -291,15 +385,20 @@ Ingenting under er gjort av Claude; alt skal kontrolleres mot utviklingsprosjekt
 9b. **Migrasjon 7:** anvend den, kjør hele matrisen på nytt (inventar `0.8–0.14` og seksjon `8` er nye; `service_role`-testene skal nå nå constraintene med SQLSTATE 23505/23514/23503, ikke `permission denied`), kontroller at `has_function_privilege` for `anon`/`authenticated`/`PUBLIC` på `public.rls_auto_enable()` er false, at event-triggeren `ensure_rls` fortsatt slår på RLS på en ny testtabell i `public`, og kjør Security Advisor og Performance Advisor på nytt.
 9c. **Migrasjon 8** (live-verifisert av ChatGPT; beholdt som kontrollpunkt): anvend den, kjør hele matrisen på nytt (forventet 223 rader, alle `ok = true`; `0.8` og `8.20` er de to som feilet live), kontroller ACL-en (`relacl`) på alle 15 tabeller for `service_role` mot tabellen i migrasjonen (ingen `D` truncate, `x` references eller `t` trigger; ingen kolonne-ACL), at `anon`/`authenticated` er som før, at `pg_default_acl` for `postgres` i `public` ikke gir `service_role`/`anon`/`authenticated` noe på tabeller (`0.15`/`0.16`), og at `rls_auto_enable()` og `ensure_rls` er som etter migrasjon 7. Kjør Security Advisor og Performance Advisor på nytt.
 9d. **Fase 2A** (Auth og profil): e-post-OTP, profil og vedvarende nettlesersesjon er live-verifisert 24.10.2026. Google OAuth og eksplisitt A-mot-B profiltest via nettleseren gjenstår; se «Supabase Auth-konfigurasjon – status» og «Live-verifisering fase 2A».
+9e. **Fase 2B** (objektliste og scenarioer, migrasjon 9): se «Må verifiseres live (ChatGPT) før fase 2B kan godkjennes» i avsnittet «Backend fase 2B».
 10. Bekreft at **anonyme innlogginger er slått av** i Auth-innstillingene: anonyme brukere får rollen `authenticated`, og ville dermed passert alle policyer som sjekker `auth.uid()`, inkludert å opprette egne lister (se «Kjente begrensninger»).
 
 ## Bevisst ikke implementert
 
-Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobbkø, ekte markedsdata, `has_active_subscription()` og kvotelogikk, serverfunksjoner for «legg til bolig» og analyseforespørsel, Realtime (data-hendelser utover Auth), Storage for private dokumenter, produksjonsdeploy, `SupabaseSubscriptionService` og repositoriene for objekter, scenarioer, referanser, risikoer, kalender og import (alle `not_configured`), rad-mappere utover profil, genererte databasetyper, seed-data, opprydding av eiendommer som er solgt, eksport/sletting av data (personvern), rate limiting og captcha. Ingen halvferdige repositories er lagt inn: det som ikke er koblet til, avviser med `not_configured`.
+Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobbkø, ekte markedsdata, `has_active_subscription()` og kvotelogikk, serverfunksjoner for «legg til bolig» og analyseforespørsel, Realtime (data-hendelser utover Auth), Storage for private dokumenter, produksjonsdeploy, `SupabaseSubscriptionService` og tjenestene for egne referanser, risikoer, kalender og import (alle `not_configured`; objektliste og scenarioer er koblet til i fase 2B, men BESTILLING av analyse, som legger boliger i listen, er det ikke), rad-mappere utover profil, genererte databasetyper, seed-data, opprydding av eiendommer som er solgt, eksport/sletting av data (personvern), rate limiting og captcha. Ingen halvferdige repositories er lagt inn: det som ikke er koblet til, avviser med `not_configured`.
 
 ## Kjente begrensninger
 
-- Lesing av felles data bygger på medlemskap i egen liste, og klienten kan opprette medlemskap selv (se over). Alle med rollen `authenticated` (også eventuelle anonyme Auth-brukere, hvis den innstillingen skrus på) omfattes.
+- Lesing av felles data bygger på medlemskap i egen liste, som bare backend kan opprette (migrasjon 9, fase 2B). Uten en backend-opprettet liste kan ingen bruker lese felles eiendomsdata. Abonnement er ikke en del av lesepolicyene ennå.
+- **Fase 2B:** redigering av egne scenarioer er ikke abonnementsstyrt i produksjon (se «Abonnement og redigeringstilgang»). Antall scenarioer per objekt begrenses bare i klienten. Mocken oppretter «Nettsidens vurdering» automatisk ved første lagrede endring; i produksjon må backend opprette det (klienten kan ikke opprette låste rader).
+- **Fase 2B:** `listMine` henter alt for alle objekter i listen i ett sett spørringer (analyser som metadata + noen få fulle). Ingen paginering eller caching; ytelse med mange objekter er ikke målt mot Supabase. Én korrupt rad (f.eks. en analyse med ukjent skjemaversjon) feiler hele listen med en kontrollert feil i stedet for å bli utelatt stille.
+- **Fase 2B:** `scenarios`, `user_properties` og lignende lastes på nytt av alle åpne visninger etter hver skriving (events fra egen klient). Endringer fra en annen fane/enhet oppdateres først ved neste henting (Realtime er ikke koblet til).
+- **Fase 2B:** oppfriskingsbeslutning (`refreshDecision`) og teknisk reanalyse bygger på lagrede data uten kildesignaler (tomme i produksjon); analysejobber leses ikke.
 - Private analyser skrives av eieren uten størrelsesgrense på jsonb (grenser finnes bare på `profiles.defaults`, `scenarios.values` og `user_properties.checks`). Et privat utkast trenger også et snapshot, og snapshots kan bare opprettes av backend, så privat import må gå via serverfunksjon.
 - «Et objekt må ha minst ett scenario» og planens scenariogrense er appregler og ligger ikke i databasen.
 - `scenarios_check_refs` kjører som skriveren, så den avhenger av at analysen er lesbar med dagens RLS. Strammes `analyses`-policyen inn senere (f.eks. abonnement), må triggeren vurderes på nytt.
@@ -315,8 +414,8 @@ Vipps (avtaler og betaling) og webhooks, ekte FINN-henting, analyseagent og jobb
 
 ## Neste backendfase
 
-1. **Fase 2A avsluttes med merge til `main`** etter den dokumenterte live-verifiseringen. Google OAuth kan fullføres som egen Auth-oppgave senere og skal ikke blokkere e-post-OTP-grunnmuren.
-2. **Fase 2B:** genererte databasetyper/rad-mappere og ekte Supabase-repositorier for brukerens objektliste og scenarioer, med kontraktparitet og relevante live-tester.
-3. Før klienten får reell «legg til bolig»-flyt skal den kjente UUID-omgåelsen lukkes: klienten skal ikke kunne opprette `user_properties` vilkårlig uten serverstyrt kontroll. Serverfunksjon/RPC/edge skal senere håndheve abonnement/kvote når dette finnes.
-4. Koble deretter risiko, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer.
-5. Vipps/abonnement, jobbkø/analyseagent og datakildeavklaring kommer etter at datalagring/eierskap er stabilt (se [integrasjoner.md](integrasjoner.md)).
+1. **Fase 2B er live-verifisert og godkjent for merge:** migrasjon 9, 228/228 RLS, kontrollseed og faktisk Oversikt/objektside/scenarioflyt er bekreftet 24.10.2026.
+2. Bekreft eller endre valget om redigeringstilgang uten abonnement (se «Abonnement og redigeringstilgang»).
+3. Koble egne risikoer, egne sammenlignbare og kalender én tjeneste om gangen; fjern tilsvarende `not_configured` bare når hele flyten fungerer. De leses allerede inn i objektbundelen (fase 2B), så mest gjenstår å skrive.
+4. Serverstyrt «legg til bolig» og bestilling av analyse (Edge Function med `service_role`): oppretter eiendom og kobler den til brukeren, og oppretter «Nettsidens vurdering» og første scenario; med abonnement og kvote i database/server. Først da kan `analysis` tas ut av `unavailable`.
+5. Vipps/abonnement, jobbkø/analyseagent og datakildeavklaring (se [integrasjoner.md](integrasjoner.md)); genererte databasetyper og Realtime.

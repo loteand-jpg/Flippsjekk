@@ -50,7 +50,10 @@ describe('createAppServices i produksjonsmodus', () => {
     const s = createAppServices();
     expect(s?.mode).toBe('production');
     expect(s?.demo).toBeNull();
-    expect(s?.unavailable).toContain('properties');
+    // Fase 2B: objektlisten og scenarioer er koblet til; resten er fortsatt ikke koblet til.
+    expect(s?.unavailable).not.toContain('properties');
+    expect(s?.unavailable).not.toContain('scenarios');
+    expect(s?.unavailable).toEqual(expect.arrayContaining(['subscription', 'analysis', 'calendar']));
   });
 
   it('en service_role-nøkkel i frontend avvises (appen starter ikke med den)', async () => {

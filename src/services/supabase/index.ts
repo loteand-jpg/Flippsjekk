@@ -3,3 +3,6 @@ export { DEFAULT_AUTH_OPTIONS, createSupabaseClient, getSupabaseClient, resetSup
 export { createSupabaseServices, type SupabaseServicesOptions } from './compose';
 export { SupabaseAuthService } from './authService';
 export { SupabaseProfileService } from './profileService';
+export { SupabasePropertyRepository } from './propertyRepository';
+export { SupabaseScenarioRepository } from './scenarioRepository';
+export { SupabaseAnalysisReader } from './analysisReader';

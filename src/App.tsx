@@ -94,13 +94,12 @@ const router = createHashRouter([
         errorElement: <RouteError />,
         children: [
           // Konto fungerer med bare innlogging og profil. De øvrige sidene trenger backend-deler som ikke er koblet til i produksjon ennå:
-          // da viser `RequireBackend` en forklaring i stedet for siden (i demoen slipper den alltid gjennom).
+          // da viser `RequireBackend` en forklaring i stedet for siden (i demoen slipper den alltid gjennom). Objekter og scenarioer er koblet til i fase 2B.
           { path: '/konto', element: <AccountPage /> },
-          { element: <RequireBackend areas={['properties', 'scenarios', 'analysis']} />, children: [{ path: '/oversikt', element: <DashboardPage /> }] },
-          {
-            element: <RequireBackend areas={['properties', 'scenarios', 'comparables', 'risks', 'analysis', 'calendar']} />,
-            children: [{ path: '/objekter/:id', element: <PropertyPage /> }],
-          },
+          { element: <RequireBackend areas={['properties', 'scenarios']} />, children: [{ path: '/oversikt', element: <DashboardPage /> }] },
+          // Objektsiden trenger objekter, scenarioer og lesing av analysen. Egne referanser, risikoer, kalender og bestilling av analyse som ikke er koblet
+          // til, er deaktivert eller avvises med en forklaring inne på siden (se useEditAccess).
+          { element: <RequireBackend areas={['properties', 'scenarios']} />, children: [{ path: '/objekter/:id', element: <PropertyPage /> }] },
           { element: <RequireBackend areas={['properties', 'calendar']} />, children: [{ path: '/kalender', element: <CalendarPage /> }] },
           { element: <RequireBackend areas={['properties', 'scenarios']} />, children: [{ path: '/sammenligning', element: <ComparePage /> }] },
           {

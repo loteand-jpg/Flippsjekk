@@ -30,7 +30,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <footer className="border-t border-slate-100">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-xs text-slate-600 sm:flex-row sm:justify-between">
           <p>Flippsjekk er et analyseverktøy. Anslag er ikke pristilbud, verdivurdering, skatteråd eller budfullmakt.</p>
-          <p>{services.demo ? 'Demoversjon – fiktive data.' : 'Tidlig produksjonsversjon: innlogging og profil er koblet til.'}</p>
+          <p>{services.demo ? 'Demoversjon – fiktive data.' : 'Tidlig produksjonsversjon: innlogging, profil, objektlisten og scenarioer er koblet til.'}</p>
         </div>
       </footer>
     </div>

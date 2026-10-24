@@ -24,19 +24,24 @@ async function code(p: Promise<unknown>): Promise<string> {
   return 'lyktes';
 }
 
-describe('produksjonskomposisjon (backend fase 2A)', () => {
-  it('er i produksjonsmodus uten demo, med ekte auth og profil', () => {
+describe('produksjonskomposisjon (backend fase 2A + 2B)', () => {
+  it('er i produksjonsmodus uten demo, med ekte auth, profil, objektliste, scenarioer og lesing av analyser', () => {
     const { services } = build();
     expect(services.mode).toBe('production');
     expect(services.demo).toBeNull();
     expect(services.auth.constructor.name).toBe('SupabaseAuthService');
     expect(services.profile.constructor.name).toBe('SupabaseProfileService');
+    expect(services.properties.constructor.name).toBe('SupabasePropertyRepository');
+    expect(services.scenarios.constructor.name).toBe('SupabaseScenarioRepository');
+    expect(services.analysis.constructor.name).toBe('SupabaseAnalysisReader');
   });
 
-  it('alle andre områder er eksplisitt utilgjengelige, og listen stemmer med stand-ins', () => {
+  it('områdene som fortsatt ikke er koblet til er eksplisitt utilgjengelige; objekter og scenarioer er tatt ut først nå som flyten virker', () => {
     const { services } = build();
-    expect([...services.unavailable].sort()).toEqual(['analysis', 'calendar', 'comparables', 'courses', 'imports', 'properties', 'risks', 'scenarios', 'subscription']);
+    expect([...services.unavailable].sort()).toEqual(['analysis', 'calendar', 'comparables', 'courses', 'imports', 'risks', 'subscription']);
     expect(services.unavailable).toBe(NOT_CONFIGURED_AREAS);
+    expect(services.unavailable).not.toContain('properties');
+    expect(services.unavailable).not.toContain('scenarios');
   });
 
   it('hver metode i hvert uimplementerte område avvises med not_configured – aldri tomme data', async () => {
@@ -44,8 +49,6 @@ describe('produksjonskomposisjon (backend fase 2A)', () => {
     const areas: [keyof Services, string[]][] = [
       ['subscription', ['getSubscription', 'getEntitlements', 'openCustomerPortal', 'listUsage']],
       ['courses', ['listPurchases']],
-      ['properties', ['listMine', 'getMine', 'getById', 'getByFinnId']],
-      ['scenarios', ['list']],
       ['comparables', ['list']],
       ['risks', ['list']],
       ['calendar', ['listEvents', 'exportIcs']],
@@ -57,8 +60,12 @@ describe('produksjonskomposisjon (backend fase 2A)', () => {
         expect(await code(svc[m]('x')), `${String(area)}.${m}`).toBe('not_configured');
       }
     }
+    // Bestilling av analyse er ikke koblet til (lesing av analyser er det).
     expect(await code(services.analysis.requestAnalysis({ url: 'https://finn.no/1', idempotencyKey: 'k' }))).toBe('not_configured');
+    expect(await code(services.analysis.requestRefresh('p', 'light', 'k'))).toBe('not_configured');
     expect(await code(services.subscription.startCheckout({ planId: 'p', interval: 'month', phone: '91234567' }))).toBe('not_configured');
+    // Å legge et objekt i listen er backend-oppgave (migrasjon 9).
+    expect(await code(services.properties.addToMine('x'))).toBe('not_configured');
   });
 
   it('abonnement gir aldri tilgang: ingen aktiv status, ingen entitlements (ikke «gratis abonnement»)', async () => {
@@ -68,8 +75,8 @@ describe('produksjonskomposisjon (backend fase 2A)', () => {
   });
 
   it('meldingen forklarer hva som mangler uten tekniske detaljer', () => {
-    expect(notConfiguredError('properties').message).toMatch(/Objekter er ikke koblet til produksjonsbackend ennå/);
-    expect(notConfiguredError('subscription').message).toMatch(/bare innlogging og profil/);
+    expect(notConfiguredError('calendar').message).toMatch(/Kalender er ikke koblet til produksjonsbackend ennå/);
+    expect(notConfiguredError('subscription').message).toMatch(/innlogging, profil, objektlisten og scenarioer/);
   });
 
   it('ingenting kobler til Supabase før noe brukes (klienten lages lat)', () => {

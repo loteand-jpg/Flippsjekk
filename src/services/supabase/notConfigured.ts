@@ -5,15 +5,13 @@ import {
   type ComparableRepository,
   type CourseService,
   type ImportService,
-  type PropertyRepository,
   type RiskRepository,
-  type ScenarioRepository,
   type ServiceArea,
   type SubscriptionService,
 } from '../types';
 
 /**
- * Tjenester som ennå ikke er koblet til produksjonsbackend (backend fase 2A: bare innlogging og profil). Hvert kall avvises med
+ * Tjenester som ennå ikke er koblet til produksjonsbackend (etter fase 2B: alt unntatt innlogging, profil, objektliste, scenarioer og lesing av analyser). Hvert kall avvises med
  * `ServiceError('not_configured')` og en forståelig melding. De gir aldri tomme eller falske data som om backend var ferdig, og de gir
  * aldri noen tilgang (abonnementet kan for eksempel ikke «bli aktivt» av at tjenesten mangler).
  *
@@ -32,7 +30,7 @@ const LABEL: Record<ServiceArea, string> = {
 };
 
 export function notConfiguredError(area: ServiceArea): ServiceError {
-  return new ServiceError('not_configured', `${LABEL[area]} er ikke koblet til produksjonsbackend ennå. I denne versjonen er bare innlogging og profil i bruk.`, { area });
+  return new ServiceError('not_configured', `${LABEL[area]} er ikke koblet til produksjonsbackend ennå. Foreløpig er innlogging, profil, objektlisten og scenarioer i bruk.`, { area });
 }
 
 const no = (area: ServiceArea) => (): Promise<never> => Promise.reject(notConfiguredError(area));
@@ -49,26 +47,6 @@ export const notConfiguredCourses: CourseService = {
   getAccess: no('courses'),
   listPurchases: no('courses'),
   startPurchase: no('courses'),
-};
-
-export const notConfiguredProperties: PropertyRepository = {
-  getByFinnId: no('properties'),
-  getById: no('properties'),
-  listMine: no('properties'),
-  getMine: no('properties'),
-  addToMine: no('properties'),
-  archiveMine: no('properties'),
-  removeMine: no('properties'),
-  updatePersonalStatus: no('properties'),
-};
-
-export const notConfiguredScenarios: ScenarioRepository = {
-  list: no('scenarios'),
-  create: no('scenarios'),
-  update: no('scenarios'),
-  duplicate: no('scenarios'),
-  remove: no('scenarios'),
-  setPrimary: no('scenarios'),
 };
 
 export const notConfiguredComparables: ComparableRepository = {
@@ -111,5 +89,8 @@ export const notConfiguredImports: ImportService = {
   exportScenarios: no('imports'),
 };
 
-/** Alle områdene som erstattes av stand-ins i fase 2A. Må stemme med objektene over (testes). */
-export const NOT_CONFIGURED_AREAS: readonly ServiceArea[] = ['subscription', 'courses', 'properties', 'scenarios', 'comparables', 'risks', 'analysis', 'calendar', 'imports'];
+/**
+ * Områdene som fortsatt ikke er koblet til produksjonsbackend (= `Services.unavailable` i produksjon). Objekter og scenarioer er koblet til i fase 2B.
+ * «analysis» står her fordi BESTILLING av analyse/oppfriskning ikke finnes; lesing av grunnanalyser fungerer (SupabaseAnalysisReader).
+ */
+export const NOT_CONFIGURED_AREAS: readonly ServiceArea[] = ['subscription', 'courses', 'comparables', 'risks', 'analysis', 'calendar', 'imports'];

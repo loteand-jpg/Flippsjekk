@@ -97,7 +97,7 @@ export function RequireBackend({ areas }: { areas: ServiceArea[] }) {
   return (
     <div className="mx-auto max-w-xl py-10" data-testid="not-available-yet">
       <Alert tone="info" title="Denne delen er ikke koblet til ennå">
-        <p>Du er innlogget, og profilen din fungerer. I denne versjonen av produksjonsbackend er bare innlogging og profil koblet til. Objekter, scenarioer, kalender, abonnement og analyse kommer i senere faser.</p>
+        <p>Du er innlogget, og profilen, objektlisten og scenarioene dine fungerer. Resten av produksjonsbackend (kalender, kurs, abonnement, import og eksport, og bestilling av nye analyser) kommer i senere faser.</p>
         <p>Ingenting er lagret eller beregnet her, og ingen tilgang er gitt.</p>
       </Alert>
       <Link to="/konto" className={buttonClass('primary', 'md', 'mt-4')}>
@@ -114,7 +114,7 @@ function PhaseBanner() {
   return (
     <div className="mx-auto max-w-7xl px-4 pt-4" data-testid="phase-banner">
       <Alert tone="info" title="Tidlig produksjonsversjon">
-        Innlogging og profil er koblet til. Objekter, scenarioer, kalender, abonnement og analyse kommer i senere faser.
+        Innlogging, profil, objektlisten og scenarioer er koblet til. Nye analyser, kalender, abonnement, kurs, import og eksport kommer i senere faser.
       </Alert>
     </div>
   );

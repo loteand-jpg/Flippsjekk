@@ -151,6 +151,33 @@ describe('errors: Supabase → ServiceError', () => {
     expect(toDataServiceError({ message: 'TypeError: Failed to fetch', code: '' }).code).toBe('unavailable');
   });
 
+  it('databasens egne norske guard-meldinger (låst scenario m.m.) vises til brukeren, men tekniske/engelske databasemeldinger gjør det aldri', () => {
+    const pg = (code: string, message: string) => ({ message, details: '', hint: '', code });
+    const locked = toDataServiceError(pg('42501', 'Scenarioet «Nettsidens vurdering» er låst. Lagre det som nytt scenario for å lage din egen redigerbare versjon.'), 403);
+    expect(locked.code).toBe('forbidden');
+    expect(locked.message).toMatch(/er låst\. Lagre det som nytt scenario/);
+    const limit = toDataServiceError(pg('54000', 'Du kan ha inntil 50 rader i user_risks per bolig.'), 400);
+    expect([limit.code, limit.message]).toEqual(['limit_reached', 'Du kan ha inntil 50 rader i user_risks per bolig.']);
+    for (const raw of ['permission denied for table scenarios', 'new row violates row-level security policy for table "scenarios"', 'something Scenario internal']) {
+      const e = toDataServiceError(pg('42501', raw), 403);
+      expect(e.message, raw).toBe('Du har ikke tilgang til dette.');
+    }
+    const check = toDataServiceError(pg('23514', 'new row for relation "scenarios" violates check constraint "scenarios_name_check"'), 400);
+    expect(check.message).toBe('Verdien er ikke gyldig.');
+  });
+
+  it('fremmednøkler og unik nøkkel gir forståelige meldinger (samme som mocken), uten databasens tekst', () => {
+    const fk = (name: string) => ({ message: `insert or update on table "x" violates foreign key constraint "${name}"`, details: 'Key (a)=(b) is not present in table "y".', hint: '', code: '23503' });
+    expect(toDataServiceError(fk('scenarios_owner_property_fk'), 409).message).toBe('Objektet må være i din liste før du kan lagre scenarioer.');
+    expect(toDataServiceError(fk('scenarios_analysis_fk'), 409).message).toBe('Scenarioet må bygge på en grunnanalyse du har tilgang til for samme objekt.');
+    expect(toDataServiceError(fk('user_properties_primary_scenario_fk'), 409).message).toBe('Scenarioet tilhører et annet objekt.');
+    const other = toDataServiceError(fk('ukjent_fk'), 409);
+    expect([other.code, other.message]).toEqual(['forbidden', 'Referansen peker på noe du ikke har tilgang til.']);
+    expect(JSON.stringify(toDataServiceError(fk('scenarios_owner_property_fk'), 409).details)).not.toContain('Key (a)');
+    const dup = toDataServiceError({ message: 'duplicate key value violates unique constraint "x"', details: 'Key (user_id)=(abc)', hint: '', code: '23505' }, 409);
+    expect([dup.code, dup.message]).toEqual(['conflict', 'Dette finnes allerede.']);
+  });
+
   it('ServiceError beholder teknisk årsak i details.cause', () => {
     const e = toAuthServiceError(api(403, 'otp_expired', 'Token has expired or is invalid'), 'otp_verify');
     expect(e).toBeInstanceOf(ServiceError);

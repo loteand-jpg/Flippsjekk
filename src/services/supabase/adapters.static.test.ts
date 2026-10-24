@@ -16,7 +16,9 @@ function walk(dir: string): string[] {
     return statSync(p).isDirectory() ? walk(`${p}/`) : [p];
   });
 }
-const isTest = (p: string) => /\.test\.tsx?$/.test(p) || p.endsWith('/testing.ts');
+/** Test- og utviklingsverktøy som aldri skal inn i appbygget (dev/ = PGlite-backend, seed og radskrivere). */
+const isDev = (p: string) => p.includes('/supabase/dev/');
+const isTest = (p: string) => /\.test\.tsx?$/.test(p) || p.endsWith('/testing.ts') || isDev(p);
 const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
 const adapterFiles = walk(adapterDir).filter((p) => p.endsWith('.ts') && !isTest(p));
@@ -59,10 +61,68 @@ describe('Supabase-adapterne: sikkerhetsregler', () => {
     expect(profile).toMatch(/payload\.display_name = /);
     expect(profile).toMatch(/payload\.defaults = /);
     expect(profile).not.toMatch(/payload\.(user_id|email|created_at|updated_at)/);
-    for (const a of adapters.filter((x) => x.file !== 'profileService.ts')) expect(a.code, a.file).not.toMatch(/\.from\(/);
     // Typen som beskriver det klienten kan skrive har bare de to kolonnene.
     const upd = /export interface ProfileUpdate \{([\s\S]*?)\}/.exec(readFileSync(`${adapterDir}profileService.ts`, 'utf8'))![1];
     expect([...upd.matchAll(/^\s*(\w+)\??:/gm)].map((m) => m[1])).toEqual(['display_name', 'defaults']);
+  });
+
+  /** Setninger (delt på «;») som bruker en gitt metode. */
+  const statementsWith = (file: string, method: string) =>
+    adapters.find((a) => a.file === file)!.code.split(';').filter((st) => new RegExp(`\\.${method}\\(`).test(st)).map((st) => st.replace(/\s+/g, ' ').trim());
+
+  it('hvilke filer som leser/skriver databasen: bare profil-, eiendoms-, scenario- og analysetjenestene (ikke auth, events, feilmapping m.fl.)', () => {
+    const withFrom = adapters.filter((a) => /\.from\(/.test(a.code)).map((a) => a.file).sort();
+    expect(withFrom).toEqual(['analysisReader.ts', 'profileService.ts', 'propertyRepository.ts', 'scenarioRepository.ts']);
+    for (const a of adapters) expect(a.code, a.file).not.toMatch(/\.rpc\(|\.upsert\(/);
+  });
+
+  it('felles data (eiendommer, snapshots, visninger, analyser) skrives aldri fra klienten: analysetjenesten leser bare', () => {
+    const reader = adapters.find((a) => a.file === 'analysisReader.ts')!.code;
+    expect(reader).not.toMatch(/\.(insert|update|delete|upsert)\(/);
+    for (const t of ['properties', 'property_snapshots', 'viewings', 'analyses', 'analysis_jobs', 'subscriptions', 'usage_events', 'course_purchases']) {
+      for (const a of adapters) expect(a.code, `${a.file} skriver ${t}`).not.toMatch(new RegExp(`from\\('${t}'\\)\\s*\\.(insert|update|delete|upsert)\\(`));
+    }
+  });
+
+  it('objektlisten: INSERT i user_properties finnes ikke (medlemskap opprettes bare av backend, migrasjon 9); update/delete bare på user_properties, filtrert på bruker', () => {
+    const repo = adapters.find((a) => a.file === 'propertyRepository.ts')!.code;
+    expect(repo).not.toMatch(/\.insert\(/);
+    for (const m of ['update', 'delete']) {
+      const sts = statementsWith('propertyRepository.ts', m);
+      expect(sts.length, m).toBeGreaterThan(0);
+      for (const st of sts) {
+        expect(st, st).toMatch(/\.from\('user_properties'\)/);
+        expect(st, st).toMatch(/\.eq\('user_id', ctx\.uid\)/);
+      }
+    }
+    // Det som skrives til listen er bare de kolonnene klienten har UPDATE på (migrasjon 3), aldri analyzed_at, user_id, property_id eller added_at.
+    const written = [...repo.matchAll(/payload\.(\w+) = /g)].map((m) => m[1]).sort();
+    expect(written).toEqual(['checks', 'favorite', 'last_seen_analysis_version', 'notes', 'work_status']);
+    expect(repo).toMatch(/\{ archived_at: archived \?/);
+    expect(repo).not.toMatch(/analyzed_at|payload\.user_id|payload\.property_id|payload\.added_at/);
+    expect(repo).toMatch(/Objekter legges i listen din av analysetjenesten/); // addToMine avviser, med forklaring
+  });
+
+  it('scenarioer: insert/update/delete bare på scenarios og primary_scenario_id på user_properties; eier og låsing sendes aldri fra klienten', () => {
+    const repo = adapters.find((a) => a.file === 'scenarioRepository.ts')!.code;
+    const ins = statementsWith('scenarioRepository.ts', 'insert');
+    expect(ins).toHaveLength(1);
+    expect(ins[0]).toMatch(/\.from\('scenarios'\)/);
+    // Nøyaktig de kolonnene klienten har INSERT på (migrasjon 5) – ikke id, eier, locked eller tidsstempler.
+    const keys = [...ins[0].slice(ins[0].indexOf('.insert(')).matchAll(/[{,]\s*(\w+)\s*(?::|(?=\s*[,}]))/g)].map((m) => m[1]).filter((k) => !/^\d+$/.test(k));
+    expect(keys.sort()).toEqual(['analysis_id', 'analysis_version', 'name', 'property_id', 'values']);
+    for (const st of statementsWith('scenarioRepository.ts', 'delete')) expect(st, st).toMatch(/\.from\('scenarios'\)[\s\S]*\.eq\('owner_id', ctx\.uid\)/);
+    for (const st of statementsWith('scenarioRepository.ts', 'update')) {
+      if (/\.from\('user_properties'\)/.test(st)) {
+        expect(st, st).toMatch(/update\(\{ primary_scenario_id: /);
+        expect(st, st).toMatch(/\.eq\('user_id', ctx\.uid\)/);
+      } else {
+        expect(st, st).toMatch(/\.from\('scenarios'\)/);
+        expect(st, st).toMatch(/\.eq\('owner_id', ctx\.uid\)/);
+      }
+    }
+    const written = [...repo.matchAll(/payload\.(\w+) = /g)].map((m) => m[1]).sort();
+    expect(written).toEqual(['analysis_id', 'analysis_version', 'name', 'values']);
   });
 
   it('OTP-koden sendes bare videre til verifyOtp: den lagres ikke, logges ikke og returneres ikke', () => {
@@ -80,6 +140,11 @@ describe('Supabase-adapterne: sikkerhetsregler', () => {
     }
     const client = adapters.find((a) => a.file === 'client.ts')!.code;
     expect(client).toMatch(/await import\('@supabase\/supabase-js'\)/);
+  });
+
+  it('ingen appkode importerer test-/utviklingsverktøyene (dev/): PGlite og seed skal aldri inn i appbygget', () => {
+    const offenders = appFiles.filter((p) => /supabase\/dev\/|from '\.\/dev\//.test(readFileSync(p, 'utf8'))).map((p) => p.slice(srcRoot.length));
+    expect(offenders).toEqual([]);
   });
 
   it('UI og øvrig app importerer aldri Supabase direkte – bare tjenestekontraktene og produksjonskomposisjonen i app/services.tsx', () => {

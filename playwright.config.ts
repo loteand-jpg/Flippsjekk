@@ -18,11 +18,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'desktop', testIgnore: /produksjon\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
-    { name: 'mobil', testIgnore: /produksjon\.spec\.ts/, use: { ...devices['Pixel 7'] } },
+    { name: 'desktop', testIgnore: /produksjon.*\.spec\.ts/, use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
+    { name: 'mobil', testIgnore: /produksjon.*\.spec\.ts/, use: { ...devices['Pixel 7'] } },
     {
       name: 'produksjon',
-      testMatch: /produksjon\.spec\.ts/,
+      testMatch: /produksjon.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, baseURL: `http://localhost:${PRODUKSJON_PORT}/` },
     },
   ],
